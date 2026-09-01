@@ -7,19 +7,20 @@ st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
 st.title("🎯 Wehringer Steelers - Teamcoach")
 
 kader = [
-    "Andrino Czombera", "Andreas Böhm", "Maximilian Zientner", "Michael Mak", 
-    "Thomas Schaudt", "Marco Eser", "Dennis Güttner", "Michael Kummer", 
-    "Michael Neumeier", "Wolfgang Schneider"
+    "Andreas Böhm",
+    "Andrino Czombera",
+    "Dennis Güttner",
+    "Marco Eser",
+    "Maximilian Zientner",
+    "Michael Kummer",
+    "Michael Mak",
+    "Michael Neumeier",
+    "Thomas Schaudt",
+    "Wolfgang Schneider"
 ]
 
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = []
-
-if "active_board_input" not in st.session_state:
-    st.session_state.active_board_input = None
-
-if "show_new_session" not in st.session_state:
-    st.session_state.show_new_session = False
 
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
@@ -85,6 +86,118 @@ def is_session_completed(sess):
             return False
     return True
 
+@st.dialog("➕ Neue Session starten")
+def open_new_session_dialog():
+    session_datum = st.date_input("Datum", date.today())
+    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
+    total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
+    spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
+    anzahl_boards = st.selectbox("Anzahl der Boards", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
+    
+    st.write("### Anwesende Spieler")
+    anwesende = []
+    cols = st.columns(2)
+    half = len(kader) // 2
+    with cols[0]:
+        for spieler in kader[:half]:
+            if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
+                anwesende.append(spieler)
+    with cols[1]:
+        for spieler in kader[half:]:
+            if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
+                anwesende.append(spieler)
+                
+    st.write("### Gastspieler (optional, max. 4)")
+    g1 = st.text_input("Gastspieler 1", key="form_gast_1")
+    g2 = st.text_input("Gastspieler 2", key="form_gast_2")
+    g3 = st.text_input("Gastspieler 3", key="form_gast_3")
+    g4 = st.text_input("Gastspieler 4", key="form_gast_4")
+    
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col_b2:
+        if st.button("Session starten", type="primary", use_container_width=True):
+            gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            aktive_spieler = anwesende + gaeste
+            new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+            boards_cnt = int(anzahl_boards.split()[0])
+            
+            new_session = {
+                "id": new_id,
+                "datum": session_datum.strftime("%d.%m.%Y"),
+                "modus": spielmodus,
+                "boards_count": boards_cnt,
+                "total_rounds": total_rounds,
+                "boards": anzahl_boards,
+                "modus_leg": leg_modus,
+                "spieler": aktive_spieler,
+                "gaeste": gaeste,
+                "results": {}
+            }
+            st.session_state.sessions_list.insert(0, new_session)
+            st.success("Session erfolgreich gestartet!")
+            st.rerun()
+
+@st.dialog("📋 Board-Erfassung")
+def open_board_dialog(board_name, session_idx):
+    sess = st.session_state.sessions_list[session_idx]
+    total_rounds = sess.get("total_rounds", 4)
+    
+    res = sess.get("results", {})
+    completed_rounds = [r for (r, b) in res.keys() if b == board_name]
+    current_round = max(completed_rounds) + 1 if completed_rounds else 1
+    
+    if current_round > total_rounds:
+        st.warning(f"{board_name} hat alle {total_rounds} Runden bereits beendet.")
+        if st.button("Schließen", use_container_width=True):
+            st.rerun()
+        return
+
+    st.write(f"### {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
+    
+    auto_players = get_board_players(sess, current_round, board_name)
+    verfügbare_spieler = sess.get("spieler", kader)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
+        s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
+        score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+    with col2:
+        remaining = [p for p in verfügbare_spieler if p != s1]
+        default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
+        s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
+        score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
+        
+    ergebnis = f"{score1}:{score2}"
+    winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
+    loser = s2 if winner == s1 else (s1 if winner == s2 else None)
+    
+    st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Sieger: **{winner if winner else 'Unentschieden'}**")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("Ergebnis speichern", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
+            if score1 == score2:
+                st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
+            else:
+                if "results" not in sess:
+                    sess["results"] = {}
+                sess["results"][(current_round, board_name)] = {
+                    "s1": s1,
+                    "s2": s2,
+                    "ergebnis": ergebnis,
+                    "winner": winner,
+                    "loser": loser
+                }
+                st.success("Ergebnis gespeichert!")
+                st.rerun()
+    with col_btn2:
+        if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
+            st.rerun()
+
 with tab_übersicht:
     st.subheader("Übersicht")
     col1, col2, col3, col4 = st.columns(4)
@@ -102,7 +215,6 @@ with tab_übersicht:
     with col_l:
         st.markdown("### Letzte Session")
         last_s = st.session_state.sessions_list[0] if st.session_state.sessions_list else {"datum": "–"}
-        total_r_last = last_s.get('total_rounds', 4) if last_s != "–" else 4
         st.info(f"**Datum:** {last_s.get('datum', '–')}\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
@@ -175,129 +287,7 @@ with tab_session:
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
     if st.button("➕ Neue Session starten", use_container_width=True):
-        st.session_state.show_new_session = True
-
-    if st.session_state.show_new_session:
-        with st.form("new_session_form"):
-            st.write("### Neue Session starten")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                session_datum = st.date_input("Datum", date.today())
-                leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
-                total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3) # Standard 4 Runden
-            with col_b:
-                spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
-                anzahl_boards = st.selectbox("Anzahl der Boards", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
-            
-            st.write("### Anwesende Spieler")
-            anwesende = []
-            cols = st.columns(2)
-            half = len(kader) // 2
-            with cols[0]:
-                for spieler in kader[:half]:
-                    if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
-                        anwesende.append(spieler)
-            with cols[1]:
-                for spieler in kader[half:]:
-                    if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
-                        anwesende.append(spieler)
-                        
-            st.write("### Gastspieler (optional, max. 4)")
-            g1 = st.text_input("Gastspieler 1", key="form_gast_1")
-            g2 = st.text_input("Gastspieler 2", key="form_gast_2")
-            g3 = st.text_input("Gastspieler 3", key="form_gast_3")
-            g4 = st.text_input("Gastspieler 4", key="form_gast_4")
-            
-            submitted = st.form_submit_button("Session starten")
-            cancel = st.form_submit_button("Abbrechen")
-            
-            if submitted:
-                gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
-                aktive_spieler = anwesende + gaeste
-                new_id = f"S-{len(st.session_state.sessions_list) + 1}"
-                boards_cnt = int(anzahl_boards.split()[0])
-                
-                new_session = {
-                    "id": new_id,
-                    "datum": session_datum.strftime("%d.%m.%Y"),
-                    "modus": spielmodus,
-                    "boards_count": boards_cnt,
-                    "total_rounds": total_rounds,
-                    "boards": anzahl_boards,
-                    "modus_leg": leg_modus,
-                    "spieler": aktive_spieler,
-                    "gaeste": gaeste,
-                    "results": {}
-                }
-                st.session_state.sessions_list.insert(0, new_session)
-                st.session_state.show_new_session = False
-                st.success("Session erfolgreich gestartet!")
-                st.rerun()
-            if cancel:
-                st.session_state.show_new_session = False
-                st.rerun()
-
-    if st.session_state.active_board_input:
-        board_name, session_idx = st.session_state.active_board_input
-        sess = st.session_state.sessions_list[session_idx]
-        total_rounds = sess.get("total_rounds", 4)
-        
-        res = sess.get("results", {})
-        completed_rounds = [r for (r, b) in res.keys() if b == board_name]
-        current_round = max(completed_rounds) + 1 if completed_rounds else 1
-        
-        st.markdown("---")
-        if current_round > total_rounds:
-            st.warning(f"### 🛑 {board_name} hat alle {total_rounds} Runden bereits beendet!")
-            if st.button("Schließen", key=f"d_close_finished_{board_name}_{session_idx}"):
-                st.session_state.active_board_input = None
-                st.rerun()
-        else:
-            st.write(f"### 📋 Erfassung für {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
-            
-            auto_players = get_board_players(sess, current_round, board_name)
-            verfügbare_spieler = sess.get("spieler", kader)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-                s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-                score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
-            with col2:
-                remaining = [p for p in verfügbare_spieler if p != s1]
-                default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-                s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-                score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
-                
-            ergebnis = f"{score1}:{score2}"
-            winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
-            loser = s2 if winner == s1 else (s1 if winner == s2 else None)
-            
-            st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Automatischer Sieger: **{winner if winner else 'Unentschieden'}**")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}"):
-                    if score1 == score2:
-                        st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
-                    else:
-                        if "results" not in sess:
-                            sess["results"] = {}
-                        sess["results"][(current_round, board_name)] = {
-                            "s1": s1,
-                            "s2": s2,
-                            "ergebnis": ergebnis,
-                            "winner": winner,
-                            "loser": loser
-                        }
-                        st.success(f"Ergebnis gespeichert! Sieger: {winner}")
-                        st.session_state.active_board_input = None
-                        st.rerun()
-            with col_btn2:
-                if st.button("Schließen", key=f"d_close_{board_name}_{session_idx}"):
-                    st.session_state.active_board_input = None
-                    st.rerun()
-        st.markdown("---")
+        open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
     
@@ -327,7 +317,7 @@ with tab_session:
                             label_btn = f"🏆 {b_name}\nBeendet"
                             
                         if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                            st.session_state.active_board_input = (b_name, idx)
+                            open_board_dialog(b_name, idx)
                 st.divider()
 
 with tab_archiv:
