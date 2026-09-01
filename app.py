@@ -20,6 +20,11 @@ if "board_rounds" not in st.session_state:
         "Board 4": 1
     }
 
+if "sessions_list" not in st.session_state:
+    st.session_state.sessions_list = [
+        {"id": "S-1", "datum": "01.09.2026", "modus": "Up & Down", "boards": "4 Boards", "modus_leg": "Best of 5", "gaeste": []}
+    ]
+
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 @st.dialog("Neue Session starten")
@@ -65,7 +70,16 @@ def open_new_session_dialog():
     with col_btn2:
         if st.button("Neue Session starten", type="primary", use_container_width=True):
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
-            st.success(f"Session für den {session_datum} gestartet! Anwesend: {len(anwesende)} Kader-Spieler, {len(gaeste)} Gäste.")
+            new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+            st.session_state.sessions_list.append({
+                "id": new_id,
+                "datum": session_datum.strftime("%d.%m.%Y"),
+                "modus": spielmodus,
+                "boards": anzahl_boards,
+                "modus_leg": leg_modus,
+                "gaeste": gaeste
+            })
+            st.success(f"Session für den {session_datum} gestartet!")
             st.rerun()
 
 @st.dialog("Board-Eingabe (Runde für Runde)")
@@ -92,7 +106,7 @@ if menu == "Übersicht":
     st.subheader("Übersicht")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(label="Up & Down Abende", value="1", delta="4 Runden pro Abend")
+        st.metric(label="Up & Down Abende", value=str(len(st.session_state.sessions_list)), delta="4 Runden pro Abend")
     with col2:
         st.metric(label="Gespielte Matches", value="2", delta="aus dem Archiv")
     with col3:
@@ -105,7 +119,8 @@ if menu == "Übersicht":
     with col_l:
         st.markdown("### Letzte Session")
         st.caption("Die zuletzt gespeicherten Highlights")
-        st.info("**Datum:** 01.09.2026\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
+        last_s = st.session_state.sessions_list[-1] if st.session_state.sessions_list else {"datum": "–"}
+        st.info(f"**Datum:** {last_s['datum']}\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
         st.caption("Sortiert nach Siegquote und absolvierten Matches")
@@ -164,7 +179,7 @@ elif menu == "Session":
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Gespielte Abende", value="1", delta="gefilterte Sessions")
+        st.metric(label="Gespielte Abende", value=str(len(st.session_state.sessions_list)), delta="gefilterte Sessions")
     with col2:
         st.metric(label="Ø Teilnehmer je Session", value="8", delta="aus der Mehrfachauswahl")
     with col3:
@@ -174,30 +189,39 @@ elif menu == "Session":
         open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
-    with st.container():
-        st.markdown("**01.09.2026** — *Up & Down · 4 Boards · Best of 5*")
-        
-        b1, b2, b3, b4 = st.columns(4)
-        with b1:
-            r_b1 = st.session_state.board_rounds["Kaiser B1"]
-            label_b1 = f"🏆 Kaiser B1\nRunde {r_b1}/4" if r_b1 <= 4 else "🏆 Kaiser B1\nBeendet"
-            if st.button(label_b1, use_container_width=True, key="btn_b1"):
-                open_board_dialog("Kaiser B1")
-        with b2:
-            r_b2 = st.session_state.board_rounds["Board 2"]
-            label_b2 = f"🎯 Board 2\nRunde {r_b2}/4" if r_b2 <= 4 else "🎯 Board 2\nBeendet"
-            if st.button(label_b2, use_container_width=True, key="btn_b2"):
-                open_board_dialog("Board 2")
-        with b3:
-            r_b3 = st.session_state.board_rounds["Board 3"]
-            label_b3 = f"🎯 Board 3\nRunde {r_b3}/4" if r_b3 <= 4 else "🎯 Board 3\nBeendet"
-            if st.button(label_b3, use_container_width=True, key="btn_b3"):
-                open_board_dialog("Board 3")
-        with b4:
-            r_b4 = st.session_state.board_rounds["Board 4"]
-            label_b4 = f"🎯 Board 4\nRunde {r_b4}/4" if r_b4 <= 4 else "🎯 Board 4\nBeendet"
-            if st.button(label_b4, use_container_width=True, key="btn_b4"):
-                open_board_dialog("Board 4")
+    
+    for idx, sess in enumerate(st.session_state.sessions_list):
+        with st.container():
+            col_info, col_del = st.columns([0.85, 0.15])
+            with col_info:
+                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}*")
+            with col_del:
+                if st.button("🗑️ Löschen", key=f"del_sess_{idx}"):
+                    st.session_state.sessions_list.pop(idx)
+                    st.rerun()
+            
+            b1, b2, b3, b4 = st.columns(4)
+            with b1:
+                r_b1 = st.session_state.board_rounds["Kaiser B1"]
+                label_b1 = f"🏆 Kaiser B1\nRunde {r_b1}/4" if r_b1 <= 4 else "🏆 Kaiser B1\nBeendet"
+                if st.button(label_b1, use_container_width=True, key=f"btn_b1_{idx}"):
+                    open_board_dialog("Kaiser B1")
+            with b2:
+                r_b2 = st.session_state.board_rounds["Board 2"]
+                label_b2 = f"🎯 Board 2\nRunde {r_b2}/4" if r_b2 <= 4 else "🎯 Board 2\nBeendet"
+                if st.button(label_b2, use_container_width=True, key=f"btn_b2_{idx}"):
+                    open_board_dialog("Board 2")
+            with b3:
+                r_b3 = st.session_state.board_rounds["Board 3"]
+                label_b3 = f"🎯 Board 3\nRunde {r_b3}/4" if r_b3 <= 4 else "🎯 Board 3\nBeendet"
+                if st.button(label_b3, use_container_width=True, key=f"btn_b3_{idx}"):
+                    open_board_dialog("Board 3")
+            with b4:
+                r_b4 = st.session_state.board_rounds["Board 4"]
+                label_b4 = f"🎯 Board 4\nRunde {r_b4}/4" if r_b4 <= 4 else "🎯 Board 4\nBeendet"
+                if st.button(label_b4, use_container_width=True, key=f"btn_b4_{idx}"):
+                    open_board_dialog("Board 4")
+            st.divider()
 
 elif menu == "Match-Archiv":
     st.subheader("Trainingsmatches")
