@@ -3,8 +3,12 @@ import pandas as pd
 from datetime import date
 import json
 import os
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
+
+# Automatischer Refresh alle 15 Sekunden (15000 Millisekunden)
+st_autorefresh(interval=15000, limit=None, key="data_refresh")
 
 DATA_FILE = "sessions.json"
 
@@ -70,7 +74,7 @@ if "sessions_list" not in st.session_state:
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
 
-tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -118,6 +122,44 @@ def get_board_players(session, round_num, board_name):
         return [loser_from_above, winner_from_below]
         
     return ["Offen", "Offen"]
+
+def is_board_ready(session, board_name, next_r):
+    if next_r == 1:
+        return True
+    
+    boards_count = session.get("boards_count", 6)
+    boards = get_boards_list(boards_count)
+    if board_name not in boards:
+        return False
+        
+    b_idx = boards.index(board_name)
+    res = session.get("results", {})
+    prev_r = next_r - 1
+    
+    # Welche Boards müssen in der Vorrunde fertig sein, damit dieses Board starten kann?
+    req_boards = []
+    if b_idx == 0:
+        req_boards.append(boards[0])
+        if boards_count > 1:
+            req_boards.append(boards[1])
+    else:
+        req_boards.append(boards[b_idx - 1])
+        if b_idx + 1 < boards_count:
+            req_boards.append(boards[b_idx + 1])
+        else:
+            req_boards.append(boards[b_idx])
+            
+    # Prüfen, ob für alle benötigten Boards ein Ergebnis in der Vorrunde vorliegt
+    for rb in req_boards:
+        found = False
+        for (r, b) in res.keys():
+            if r == prev_r and b == rb:
+                found = True
+                break
+        if not found:
+            return False
+            
+    return True
 
 def is_session_completed(sess):
     boards_count = sess.get("boards_count", 6)
@@ -282,12 +324,23 @@ with tab_übersicht:
         active_boards_list = get_boards_list(boards_count)
         total_rounds = curr_sess.get("total_rounds", 4)
         
-        session_stats = {p: {"wins": 0, "losses": 0} for p in curr_sess.get("spieler", [])}
+        session_stats = {p: {"legs_won": 0, "legs_lost": 0} for p in curr_sess.get("spieler", [])}
         for match in curr_sess.get("results", {}).values():
-            if match.get("winner") in session_stats:
-                session_stats[match["winner"]]["wins"] += 1
-            if match.get("loser") in session_stats:
-                session_stats[match["loser"]]["losses"] += 1
+            s1 = match.get("s1")
+            s2 = match.get("s2")
+            ergebnis = match.get("ergebnis", "0:0")
+            
+            try:
+                l1, l2 = map(int, ergebnis.split(":"))
+            except ValueError:
+                l1, l2 = 0, 0
+                
+            if s1 in session_stats:
+                session_stats[s1]["legs_won"] += l1
+                session_stats[s1]["legs_lost"] += l2
+            if s2 in session_stats:
+                session_stats[s2]["legs_won"] += l2
+                session_stats[s2]["legs_lost"] += l1
         
         cols_per_row = 3
         for i in range(0, len(active_boards_list), cols_per_row):
@@ -299,17 +352,21 @@ with tab_übersicht:
                         with st.container(border=True):
                             res = curr_sess.get("results", {})
                             completed_rounds = [r for (r, b) in res.keys() if b == b_name]
-                            rounds_played = len(completed_rounds)
                             next_r = max(completed_rounds) + 1 if completed_rounds else 1
                             
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
                             
                             if next_r <= total_rounds:
+                                # Ampel-Logik anzeigen
+                                ready = is_board_ready(curr_sess, b_name, next_r)
+                                ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
+                                st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
+                                
                                 players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
                                 p1, p2 = players_now[0], players_now[1]
                                 
-                                p1_stat = f"{session_stats.get(p1, {}).get('wins', 0)}S - {session_stats.get(p1, {}).get('losses', 0)}N" if p1 != "Offen" else ""
-                                p2_stat = f"{session_stats.get(p2, {}).get('wins', 0)}S - {session_stats.get(p2, {}).get('losses', 0)}N" if p2 != "Offen" else ""
+                                p1_stat = f"Legs: {session_stats.get(p1, {}).get('legs_won', 0)}:{session_stats.get(p1, {}).get('legs_lost', 0)}" if p1 != "Offen" else ""
+                                p2_stat = f"Legs: {session_stats.get(p2, {}).get('legs_won', 0)}:{session_stats.get(p2, {}).get('legs_lost', 0)}" if p2 != "Offen" else ""
                                 
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
                                 
@@ -321,7 +378,8 @@ with tab_übersicht:
                                 st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.1em;'>{p2}</div>", unsafe_allow_html=True)
                                 st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em; margin-bottom: 15px;'>{p2_stat}</div>", unsafe_allow_html=True)
                                 
-                                if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True):
+                                # Button ist deaktiviert (disabled=True), solange das Board noch wartet
+                                if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
                                     open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
                             else:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle {total_rounds} Runden beendet</p>", unsafe_allow_html=True)
@@ -492,47 +550,3 @@ with tab_archiv:
                             st.session_state.confirm_delete_idx = None
                             st.rerun()
                 st.divider()
-
-with tab_bdv:
-    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
-    st.markdown("""
-    ### 1. Mannschaft & Meldung
-    * **Mannschaftsmeldung:** Erledigt[cite: 1].
-    * **Spielerkader:** Besteht aus 10 Spielern[cite: 1]. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga)[cite: 1].
-
-    ### 2. Spielmodus & Ablauf (Liga und Pokal)
-    * **Heimspieltag:** Dienstag[cite: 1].
-    * **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out)[cite: 1].
-    * **Aufstellung (3 Blöcke):**
-        * **Block 1:** 4 Einzelspieler[cite: 1].
-        * **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich)[cite: 1].
-        * **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden)[cite: 1].
-    * **Rahmenbedingungen:**
-        * **Spielzeit:** Mo–Do ab 20:00 Uhr[cite: 1].
-        * **Austragung:** Parallel auf zwei Boards[cite: 1].
-        * **Einwerfzeit:** 30 Minuten für Gäste[cite: 1].
-    * **Board-Zuordnung & Schreiber:**
-        * Die Heimmannschaft schreibt und beginnt auf Board 1[cite: 1].
-        * Die Gastmannschaft schreibt und beginnt auf Board 2[cite: 1].
-    * **Schwabenpokal:**
-        * Nur K.O. Runden[cite: 1].
-        * Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)[cite: 1].
-
-    ### 3. Spielbericht & Online-Meldung
-    * **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben[cite: 1].
-    * **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden[cite: 1].
-    * **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden[cite: 1].
-    * **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden[cite: 1].
-    
-    ### 4. Mannschaftsvorstellung (Kader)
-    * Andreas Böhm[cite: 1]
-    * Andrino Czombera (Teamcaptain)[cite: 1]
-    * Dennis Güttner[cite: 1]
-    * Marco Eser[cite: 1]
-    * Maximilian Zientner[cite: 1]
-    * Michael Kummer[cite: 1]
-    * Michael Mak[cite: 1]
-    * Michael Neumeier[cite: 1]
-    * Thomas Schaudt[cite: 1]
-    * Wolfgang Schneider[cite: 1]
-    """)
