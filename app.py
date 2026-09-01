@@ -14,6 +14,24 @@ kader = [
 
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
 
+@st.dialog("Board-Eingabe (Runde für Runde)")
+def open_board_dialog(board_name):
+    st.write(f"### Erfassung für {board_name}")
+    runde = st.selectbox("Runde auswählen", ["Runde 1", "Runde 2", "Runde 3", "Runde 4"])
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        s1 = st.selectbox("Spieler 1", kader, key=f"s1_{board_name}")
+    with col2:
+        s2 = st.selectbox("Spieler 2", [p for p in kader if p != s1], key=f"s2_{board_name}")
+        
+    ergebnis = st.text_input("Ergebnis (z. B. 3:1)", key=f"res_{board_name}")
+    highlight_180 = st.selectbox("180er erzielt von:", ["Keiner", s1, s2], key=f"180_{board_name}")
+    
+    if st.button("Ergebnis speichern", key=f"save_{board_name}"):
+        st.success(f"{board_name} ({runde}): {s1} vs {s2} [{ergebnis}] erfolgreich gespeichert!")
+        st.rerun()
+
 if menu == "Übersicht":
     st.subheader("Übersicht")
     col1, col2, col3, col4 = st.columns(4)
@@ -55,44 +73,43 @@ elif menu == "Kader":
 
 elif menu == "Session":
     st.subheader("Up & Down Sessions")
+    st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B4.")
     
-    with st.expander("➕ Neue Session starten (inkl. Gastspieler-Erfassung)"):
-        with st.form("new_session_form"):
-            session_datum = st.date_input("Datum des Abends", date.today())
-            anzahl_boards = st.slider("Anzahl Boards", 1, 6, 4)
-            
-            st.write("### Gastspieler hinzufügen (fließen nicht in die Statistik ein)")
-            g1 = st.text_input("Gastspieler 1")
-            g2 = st.text_input("Gastspieler 2")
-            g3 = st.text_input("Gastspieler 3")
-            g4 = st.text_input("Gastspieler 4")
-            
-            submit_session = st.form_submit_button("Session anlegen")
-            if submit_session:
-                gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
-                st.success(f"Session für den {session_datum} mit {anzahl_boards} Boards erstellt! Gäste: {', '.join(gaeste) if gaeste else 'Keine'}")
-
-    st.write("### Laufende Session & Board-Erfassung (Runde für Runde)")
-    st.info("Wähle ein Board aus, um die Ergebnisse für die jeweiligen Runden (1 bis 4) einzutragen.")
-
-    selected_board = st.selectbox("Board auswählen für Eingabe:", [f"Board {i}" for i in range(1, 5)])
-    selected_runde = st.selectbox("Runde auswählen:", ["Runde 1", "Runde 2", "Runde 3", "Runde 4"])
-
-    with st.form(key="board_input_form"):
-        st.write(f"### Eingabe für {selected_board} - {selected_runde}")
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            spieler_a = st.selectbox("Spieler 1", kader, key="s_a")
-        with col_s2:
-            spieler_b = st.selectbox("Spieler 2", kader, key="s_b")
-            
-        ergebnis = st.text_input("Ergebnis (z.B. 3:1)", "")
-        highlight_180 = st.checkbox("180er erzielt?")
-        high_finish = st.text_input("High Finish (optional)", "")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(label="Gespielte Abende", value="1", delta="gefilterte Sessions")
+    with col2:
+        st.metric(label="Ø Teilnehmer je Session", value="8", delta="aus der Mehrfachauswahl")
+    with col3:
+        st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
-        save_match = st.form_submit_button("Ergebnis für diese Runde speichern")
-        if save_match:
-            st.success(f"Ergebnis für {selected_board} ({selected_runde}): {spieler_a} vs {spieler_b} [{ergebnis}] gespeichert!")
+    with st.expander("➕ Neue Session starten (inkl. Gastspieler)"):
+        with st.form("new_session"):
+            session_datum = st.date_input("Datum", date.today())
+            g1 = st.text_input("Gastspieler 1 (optional)")
+            g2 = st.text_input("Gastspieler 2 (optional)")
+            g3 = st.text_input("Gastspieler 3 (optional)")
+            g4 = st.text_input("Gastspieler 4 (optional)")
+            if st.form_submit_button("Session anlegen"):
+                st.success("Neue Session erfolgreich angelegt!")
+
+    st.write("### Bisherige Sessions & Board-Endstände")
+    with st.container():
+        st.markdown("**01.09.2026** — *Up & Down · 4 Boards · Best of 5*")
+        
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            if st.button("🏆 Kaiser B1\n\nOffen", use_container_width=True):
+                open_board_dialog("Kaiser B1")
+        with b2:
+            if st.button("🎯 Board 2\n\nOffen", use_container_width=True):
+                open_board_dialog("Board 2")
+        with b3:
+            if st.button("🎯 Board 3\n\nOffen", use_container_width=True):
+                open_board_dialog("Board 3")
+        with b4:
+            if st.button("🎯 Board 4\n\nOffen", use_container_width=True):
+                open_board_dialog("Board 4")
 
 elif menu == "Match-Archiv":
     st.subheader("Trainingsmatches")
