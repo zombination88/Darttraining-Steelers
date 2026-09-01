@@ -2,16 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
+st.set_page_config(page_title="Wehringer Steelers", layout="centered")
 
-col_logo, col_title = st.columns([1, 4])
-with col_logo:
+col1, col2 = st.columns([1, 6])
+with col1:
     try:
-        st.image("logo.png.png", width=100)
+        st.image("logo.png.png", width=85)
     except Exception:
         pass
-with col_title:
-    st.title("🎯 Wehringer Steelers - Teamcoach")
+with col2:
+    st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
 kader = [
     "Andreas Böhm",
