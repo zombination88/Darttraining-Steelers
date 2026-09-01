@@ -34,12 +34,6 @@ if "sessions_list" not in st.session_state:
         }
     ]
 
-if "active_board_input" not in st.session_state:
-    st.session_state.active_board_input = None
-
-if "show_new_session" not in st.session_state:
-    st.session_state.show_new_session = False
-
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_board_players(session, round_num, board_name):
@@ -78,6 +72,124 @@ def get_board_players(session, round_num, board_name):
     elif b_idx == 3:
         return [l["Board 3"], l["Board 4"]]
     return ["Offen", "Offen"]
+
+@st.dialog("Neue Session starten")
+def open_new_session_dialog():
+    st.write("Einmalig die Rahmenbedingungen festlegen.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        session_datum = st.date_input("Datum", date.today())
+        leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
+    with col2:
+        spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
+        anzahl_boards = st.selectbox("Anzahl der Boards", ["4 Boards", "2 Boards", "3 Boards", "1 Board"])
+        
+    st.write("### Anwesende Spieler")
+    anwesende = []
+    cols = st.columns(2)
+    half = len(kader) // 2
+    with cols[0]:
+        for spieler in kader[:half]:
+            if st.checkbox(spieler, value=True, key=f"dialog_kader_{spieler}"):
+                anwesende.append(spieler)
+    with cols[1]:
+        for spieler in kader[half:]:
+            if st.checkbox(spieler, value=True, key=f"dialog_kader_{spieler}"):
+                anwesende.append(spieler)
+                
+    st.write("### Gastspieler (optional, max. 4)")
+    g1 = st.text_input("Gastspieler 1", key="dialog_gast_1")
+    g2 = st.text_input("Gastspieler 2", key="dialog_gast_2")
+    g3 = st.text_input("Gastspieler 3", key="dialog_gast_3")
+    g4 = st.text_input("Gastspieler 4", key="dialog_gast_4")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col_btn2:
+        if st.button("Session starten", type="primary", use_container_width=True):
+            gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            aktive_spieler = anwesende + gaeste
+            new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+            st.session_state.sessions_list.append({
+                "id": new_id,
+                "datum": session_datum.strftime("%d.%m.%Y"),
+                "modus": spielmodus,
+                "boards": anzahl_boards,
+                "modus_leg": leg_modus,
+                "spieler": aktive_spieler,
+                "gaeste": gaeste,
+                "results": {}
+            })
+            st.success("Session erfolgreich gestartet!")
+            st.rerun()
+
+@st.dialog("Board-Eingabe (Runde für Runde)")
+def open_board_dialog(board_name, session_idx):
+    sess = st.session_state.sessions_list[session_idx]
+    
+    res = sess.get("results", {})
+    completed_rounds = [r for (r, b) in res.keys() if b == board_name]
+    current_round = max(completed_rounds) + 1 if completed_rounds else 1
+    
+    if current_round > 4:
+        st.write(f"### {board_name} ist bereits beendet (alle 4 Runden gespielt).")
+        if st.button("Schließen"):
+            st.rerun()
+        return
+
+    st.write(f"### Erfassung für {board_name} — Runde {current_round} von 4")
+    
+    auto_players = get_board_players(sess, current_round, board_name)
+    verfügbare_spieler = sess.get("spieler", kader)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
+        s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}_{current_round}")
+    with col2:
+        remaining = [p for p in verfügbare_spieler if p != s1]
+        default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
+        s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}_{current_round}")
+        
+    ergebnis = st.text_input("Ergebnis (z. B. 3:1)", key=f"d_res_{board_name}_{session_idx}_{current_round}")
+    
+    winner = None
+    loser = None
+    if ergebnis and ":" in ergebnis:
+        try:
+            parts = ergebnis.split(":")
+            score1 = int(parts[0].strip())
+            score2 = int(parts[1].strip())
+            if score1 > score2:
+                winner = s1
+                loser = s2
+            elif score2 > score1:
+                winner = s2
+                loser = s1
+            st.info(f"🏆 Automatischer Sieger: **{winner}**")
+        except ValueError:
+            st.warning("Ungültiges Format. Bitte z. B. 3:1 eingeben.")
+    
+    if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}_{current_round}"):
+        if not winner:
+            st.error("Bitte ein gültiges Ergebnis eingeben.")
+        else:
+            if "results" not in sess:
+                sess["results"] = {}
+            sess["results"][(current_round, board_name)] = {
+                "s1": s1,
+                "s2": s2,
+                "ergebnis": ergebnis,
+                "winner": winner,
+                "loser": loser
+            }
+            st.success(f"Ergebnis gespeichert! Sieger: {winner}")
+            if st.session_state.board_rounds[board_name] < 4:
+                st.session_state.board_rounds[board_name] += 1
+            st.rerun()
 
 if menu == "Übersicht":
     st.subheader("Übersicht")
@@ -163,129 +275,7 @@ elif menu == "Session":
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
     if st.button("➕ Neue Session starten", use_container_width=True):
-        st.session_state.show_new_session = True
-
-    if st.session_state.show_new_session:
-        with st.form("new_session_form"):
-            st.write("### Neue Session starten")
-            st.write("Einmalig die Rahmenbedingungen festlegen.")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                session_datum = st.date_input("Datum", date.today())
-                leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
-            with col_b:
-                spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
-                anzahl_boards = st.selectbox("Anzahl der Boards", ["4 Boards", "2 Boards", "3 Boards", "1 Board"])
-            
-            st.write("### Anwesende Spieler")
-            anwesende = []
-            cols = st.columns(2)
-            half = len(kader) // 2
-            with cols[0]:
-                for spieler in kader[:half]:
-                    if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
-                        anwesende.append(spieler)
-            with cols[1]:
-                for spieler in kader[half:]:
-                    if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
-                        anwesende.append(spieler)
-                        
-            st.write("### Gastspieler (optional, max. 4)")
-            g1 = st.text_input("Gastspieler 1", key="form_gast_1")
-            g2 = st.text_input("Gastspieler 2", key="form_gast_2")
-            g3 = st.text_input("Gastspieler 3", key="form_gast_3")
-            g4 = st.text_input("Gastspieler 4", key="form_gast_4")
-            
-            submitted = st.form_submit_button("Session starten")
-            cancel = st.form_submit_button("Abbrechen")
-            
-            if submitted:
-                gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
-                aktive_spieler = anwesende + gaeste
-                new_id = f"S-{len(st.session_state.sessions_list) + 1}"
-                st.session_state.sessions_list.append({
-                    "id": new_id,
-                    "datum": session_datum.strftime("%d.%m.%Y"),
-                    "modus": spielmodus,
-                    "boards": anzahl_boards,
-                    "modus_leg": leg_modus,
-                    "spieler": aktive_spieler,
-                    "gaeste": gaeste,
-                    "results": {}
-                })
-                st.session_state.show_new_session = False
-                st.success("Session erfolgreich gestartet!")
-                st.rerun()
-            if cancel:
-                st.session_state.show_new_session = False
-                st.rerun()
-
-    # Aktiver Eingabebereich für das ausgewählte Board
-    if st.session_state.active_board_input:
-        board_name, session_idx = st.session_state.active_board_input
-        sess = st.session_state.sessions_list[session_idx]
-        
-        res = sess.get("results", {})
-        completed_rounds = [r for (r, b) in res.keys() if b == board_name]
-        current_round = max(completed_rounds) + 1 if completed_rounds else 1
-        
-        st.markdown("---")
-        st.write(f"### 📋 Erfassung für {board_name} (Session {sess['id']}) — Runde {current_round} von 4")
-        
-        auto_players = get_board_players(sess, current_round, board_name)
-        verfügbare_spieler = sess.get("spieler", kader)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-            s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-        with col2:
-            remaining = [p for p in verfügbare_spieler if p != s1]
-            default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-            s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-            
-        ergebnis = st.text_input("Ergebnis (z. B. 3:1)", key=f"d_res_{board_name}_{session_idx}")
-        
-        winner = None
-        loser = None
-        if ergebnis and ":" in ergebnis:
-            try:
-                parts = ergebnis.split(":")
-                score1 = int(parts[0].strip())
-                score2 = int(parts[1].strip())
-                if score1 > score2:
-                    winner = s1
-                    loser = s2
-                elif score2 > score1:
-                    winner = s2
-                    loser = s1
-                st.info(f"🏆 Automatischer Sieger: **{winner}**")
-            except ValueError:
-                st.warning("Ungültiges Format. Bitte z. B. 3:1 eingeben.")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}"):
-                if not winner:
-                    st.error("Bitte ein gültiges Ergebnis eingeben.")
-                else:
-                    if "results" not in sess:
-                        sess["results"] = {}
-                    sess["results"][(current_round, board_name)] = {
-                        "s1": s1,
-                        "s2": s2,
-                        "ergebnis": ergebnis,
-                        "winner": winner,
-                        "loser": loser
-                    }
-                    st.success(f"Ergebnis gespeichert! Sieger: {winner}")
-                    st.session_state.active_board_input = None
-                    st.rerun()
-        with col_btn2:
-            if st.button("Schließen", key=f"d_close_{board_name}_{session_idx}"):
-                st.session_state.active_board_input = None
-                st.rerun()
-        st.markdown("---")
+        open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
     
@@ -315,7 +305,7 @@ elif menu == "Session":
                         label_btn = f"🏆 {b_name}\nBeendet"
                         
                     if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                        st.session_state.active_board_input = (b_name, idx)
+                        open_board_dialog(b_name, idx)
             st.divider()
 
 elif menu == "Match-Archiv":
