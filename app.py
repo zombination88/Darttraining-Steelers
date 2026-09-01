@@ -24,6 +24,7 @@ if "show_new_session" not in st.session_state:
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
 
+# Wichtig: Die Tabs müssen definiert werden, BEVOR sie mit 'with' angesprochen werden!
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
