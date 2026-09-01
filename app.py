@@ -18,8 +18,8 @@ if "sessions_list" not in st.session_state:
             "id": "S-1",
             "datum": "01.09.2026",
             "modus": "Up & Down",
-            "boards_count": 4,
-            "boards": "4 Boards",
+            "boards_count": 6,
+            "boards": "6 Boards",
             "modus_leg": "Best of 5",
             "spieler": kader,
             "gaeste": [],
@@ -33,11 +33,18 @@ if "active_board_input" not in st.session_state:
 if "show_new_session" not in st.session_state:
     st.session_state.show_new_session = False
 
+if "confirm_delete_idx" not in st.session_state:
+    st.session_state.confirm_delete_idx = None
+
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
 
+def get_boards_list(boards_count):
+    all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
+    return all_boards[:boards_count]
+
 def get_board_players(session, round_num, board_name):
-    boards_count = session.get("boards_count", 4)
-    boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4"][:boards_count]
+    boards_count = session.get("boards_count", 6)
+    boards = get_boards_list(boards_count)
     if board_name not in boards:
         return ["Offen", "Offen"]
     b_idx = boards.index(board_name)
@@ -68,7 +75,6 @@ def get_board_players(session, round_num, board_name):
     if b_idx == 0:
         return [w["Kaiser B1"], w.get("Board 2", "Offen") if boards_count > 1 else w["Kaiser B1"]]
     
-    # Dynamische Up & Down Weiterleitung je nach Anzahl der Boards
     if b_idx > 0:
         prev_board = boards[b_idx - 1]
         next_board = boards[b_idx + 1] if b_idx + 1 < boards_count else None
@@ -80,8 +86,8 @@ def get_board_players(session, round_num, board_name):
     return ["Offen", "Offen"]
 
 def is_session_completed(sess):
-    boards_count = sess.get("boards_count", 4)
-    boards_list = ["Kaiser B1", "Board 2", "Board 3", "Board 4"][:boards_count]
+    boards_count = sess.get("boards_count", 6)
+    boards_list = get_boards_list(boards_count)
     res = sess.get("results", {})
     for b_name in boards_list:
         completed = [r for (r, b) in res.keys() if b == b_name]
@@ -156,7 +162,7 @@ elif menu == "Kader":
 
 elif menu == "Session":
     st.subheader("Up & Down Sessions")
-    st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B4.")
+    st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B6.")
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -178,7 +184,7 @@ elif menu == "Session":
                 leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
             with col_b:
                 spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
-                anzahl_boards = st.selectbox("Anzahl der Boards", ["4 Boards", "3 Boards", "2 Boards", "1 Board"])
+                anzahl_boards = st.selectbox("Anzahl der Boards", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
             
             st.write("### Anwesende Spieler")
             anwesende = []
@@ -219,7 +225,6 @@ elif menu == "Session":
                     "gaeste": gaeste,
                     "results": {}
                 }
-                # Neueste Session ganz oben einfügen
                 st.session_state.sessions_list.insert(0, new_session)
                 st.session_state.show_new_session = False
                 st.success("Session erfolgreich gestartet!")
@@ -228,7 +233,6 @@ elif menu == "Session":
                 st.session_state.show_new_session = False
                 st.rerun()
 
-    # Eingabebereich für das aktive Board
     if st.session_state.active_board_input:
         board_name, session_idx = st.session_state.active_board_input
         sess = st.session_state.sessions_list[session_idx]
@@ -286,22 +290,14 @@ elif menu == "Session":
 
     st.write("### Bisherige Sessions & Board-Endstände")
     
-    all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4"]
-    
     for idx, sess in enumerate(st.session_state.sessions_list):
         with st.container():
-            col_info, col_del = st.columns([0.85, 0.15])
-            with col_info:
-                gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
-                status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
-                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}{gaeste_text}*{status_text}")
-            with col_del:
-                if st.button("🗑️ Löschen", key=f"del_sess_{idx}"):
-                    st.session_state.sessions_list.pop(idx)
-                    st.rerun()
+            gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
+            status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
+            st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}{gaeste_text}*{status_text}")
             
-            boards_count = sess.get("boards_count", 4)
-            active_boards_list = all_boards[:boards_count]
+            boards_count = sess.get("boards_count", 6)
+            active_boards_list = get_boards_list(boards_count)
             
             b_cols = st.columns(boards_count)
             for b_i, b_name in enumerate(active_boards_list):
@@ -320,30 +316,34 @@ elif menu == "Session":
             st.divider()
 
 elif menu == "Match-Archiv":
-    st.subheader("Trainingsmatches")
-    st.write("Board-Matches nach Runde, Ergebnis und Gewinner durchsuchen.")
+    st.subheader("Match-Archiv & Session-Verwaltung")
+    st.write("Hier kannst du gespeicherte Sessions verwalten und bei Bedarf sicher löschen.")
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="Erfasste Matches", value="2", delta="im gewählten Zeitraum")
-    with col2:
-        st.metric(label="Spieler beteiligt", value="2", delta="in der aktuellen Liste")
-    with col3:
-        st.metric(label="Sieger eingetragen", value="1", delta="für die Kaderstatistik")
-        
-    st.write("### Match-Archiv")
-    match_data = {
-        "Session-ID": ["S-1", "S-1"],
-        "Datum": ["01.09.2026", "01.09.2026"],
-        "Leg-Modus": ["Best of 5", "Best of 5"],
-        "Runde": [1, 1],
-        "Board": ["B1", "B1"],
-        "180er": ["Ja", "Nein"],
-        "High Finish": ["–", "–"],
-        "Spieler 1": ["Andrino Czombera", "Andrino Czombera"],
-        "Spieler 2": ["Marco Eser", "Marco Eser"],
-        "Ergebnis": ["3:1", "–"],
-        "Gewinner": ["Andrino Czombera", "Offen"]
-    }
-    df_matches = pd.DataFrame(match_data)
-    st.dataframe(df_matches, use_container_width=True, hide_index=True)
+    if not st.session_state.sessions_list:
+        st.info("Keine Sessions vorhanden.")
+    else:
+        for idx, sess in enumerate(st.session_state.sessions_list):
+            with st.container():
+                col_info, col_del = st.columns([0.8, 0.2])
+                with col_info:
+                    gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
+                    st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']}*{gaeste_text})")
+                with col_del:
+                    if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
+                        st.session_state.confirm_delete_idx = idx
+                
+                # Sicherheitsabfrage für genau diese Session
+                if st.session_state.confirm_delete_idx == idx:
+                    st.warning(f"Soll die Session **{sess['id']}** vom **{sess['datum']}** wirklich unwiderruflich gelöscht werden?")
+                    c_yes, c_no = st.columns(2)
+                    with c_yes:
+                        if st.button("Ja, wirklich löschen", key=f"confirm_yes_{idx}", type="primary"):
+                            st.session_state.sessions_list.pop(idx)
+                            st.session_state.confirm_delete_idx = None
+                            st.success("Session erfolgreich gelöscht.")
+                            st.rerun()
+                    with c_no:
+                        if st.button("Abbrechen", key=f"confirm_no_{idx}"):
+                            st.session_state.confirm_delete_idx = None
+                            st.rerun()
+                st.divider()
