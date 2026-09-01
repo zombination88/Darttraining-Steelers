@@ -7,9 +7,9 @@ st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
 st.title("🎯 Wehringer Steelers - Teamcoach")
 
 kader = [
-    "Andreas Böhm", "Andrino Czombera", "Dennis Güttner", "Marco Eser", 
-    "Maximilian Zientner", "Michael Kummer", "Michael Mak", 
-    "Michael Neumeier", "Thomas Schaudt", "Wolfgang Schneider"
+    "Andrino Czombera", "Andreas Böhm", "Maximilian Zientner", "Michael Mak", 
+    "Thomas Schaudt", "Marco Eser", "Dennis Güttner", "Michael Kummer", 
+    "Michael Neumeier", "Wolfgang Schneider"
 ]
 
 if "board_rounds" not in st.session_state:
@@ -24,18 +24,49 @@ menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-A
 
 @st.dialog("Neue Session starten")
 def open_new_session_dialog():
-    st.write("### Up & Down Session einrichten")
-    session_datum = st.date_input("Datum", date.today())
-    st.write("Gastspieler hinzufügen (optional, fließen nicht in die Statistik ein):")
-    g1 = st.text_input("Gastspieler 1")
-    g2 = st.text_input("Gastspieler 2")
-    g3 = st.text_input("Gastspieler 3")
-    g4 = st.text_input("Gastspieler 4")
+    st.write("Einmalig die Rahmenbedingungen festlegen. Die Match-Eingaben nutzen diese Angaben automatisch.")
     
-    if st.button("Session jetzt anlegen"):
-        gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
-        st.success(f"Session für den {session_datum} erfolgreich erstellt! Gäste: {', '.join(gaeste) if gaeste else 'Keine'}")
-        st.rerun()
+    st.write("### Grunddaten")
+    col1, col2 = st.columns(2)
+    with col1:
+        session_datum = st.date_input("Datum", date.today())
+        leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
+    with col2:
+        spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
+        anzahl_boards = st.selectbox("Anzahl der Boards", ["4 Boards", "2 Boards", "3 Boards", "1 Board"])
+        
+    anzahl_spieler = st.selectbox("Anzahl der Spieler", ["8 Spieler", "10 Spieler", "6 Spieler"])
+    
+    st.write("### Anwesende Spieler")
+    st.caption("Mehrfachauswahl aus dem Kader.")
+    
+    anwesende = []
+    col_a, col_b = st.columns(2)
+    half = len(kader) // 2
+    with col_a:
+        for spieler in kader[:half]:
+            if st.checkbox(spieler, value=True, key=f"kader_{spieler}"):
+                anwesende.append(spieler)
+    with col_b:
+        for spieler in kader[half:]:
+            if st.checkbox(spieler, value=True, key=f"kader_{spieler}"):
+                anwesende.append(spieler)
+                
+    st.write("### Gastspieler (optional, max. 4)")
+    g1 = st.text_input("Gastspieler 1", key="gast_1")
+    g2 = st.text_input("Gastspieler 2", key="gast_2")
+    g3 = st.text_input("Gastspieler 3", key="gast_3")
+    g4 = st.text_input("Gastspieler 4", key="gast_4")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col_btn2:
+        if st.button("Neue Session starten", type="primary", use_container_width=True):
+            gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            st.success(f"Session für den {session_datum} gestartet! Anwesend: {len(anwesende)} Kader-Spieler, {len(gaeste)} Gäste.")
+            st.rerun()
 
 @st.dialog("Board-Eingabe (Runde für Runde)")
 def open_board_dialog(board_name):
@@ -68,6 +99,37 @@ if menu == "Übersicht":
         st.metric(label="Aktive Spieler", value="10", delta="im Kader")
     with col4:
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
+        
+    st.write("")
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.markdown("### Letzte Session")
+        st.caption("Die zuletzt gespeicherten Highlights")
+        st.info("**Datum:** 01.09.2026\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
+    with col_r:
+        st.markdown("### Spitzenreiter & Formkurve")
+        st.caption("Sortiert nach Siegquote und absolvierten Matches")
+        st.write("**Andrino Czombera** (50%)")
+        st.progress(0.5)
+        st.caption("1 Siege · 2 Matches")
+        st.write("**Marco Eser** (0%)")
+        st.progress(0.0)
+        st.caption("0 Siege · 2 Matches")
+        st.write("**Andreas Böhm** (0%)")
+        st.progress(0.0)
+        st.caption("0 Siege · 0 Matches")
+
+    st.write("### Zuletzt ausgetragene Board-Matches")
+    st.caption("Best of 5 und Gewinner für die Statistik")
+    match_preview = {
+        "Datum": ["01.09.2026"],
+        "Runde": [1],
+        "Board": ["B1"],
+        "Spieler": ["Andrino Czombera vs Marco Eser"],
+        "Ergebnis": ["3:1"],
+        "Sieger": ["Andrino Czombera"]
+    }
+    st.dataframe(pd.DataFrame(match_preview), use_container_width=True, hide_index=True)
 
 elif menu == "Kader":
     st.subheader("Kader & Spielerbilanz")
