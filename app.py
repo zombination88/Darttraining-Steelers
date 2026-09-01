@@ -68,13 +68,10 @@ kader = [
     "Wolfgang Schneider"
 ]
 
-if "sessions_list" not in st.session_state:
-    st.session_state.sessions_list = load_data()
+# ZWINGT DAS SYSTEM, BEI JEDEM REFRESH DIE DATEI NEU ZU LADEN
+st.session_state.sessions_list = load_data()
 
-if "confirm_delete_idx" not in st.session_state:
-    st.session_state.confirm_delete_idx = None
-
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -136,7 +133,6 @@ def is_board_ready(session, board_name, next_r):
     res = session.get("results", {})
     prev_r = next_r - 1
     
-    # Welche Boards müssen in der Vorrunde fertig sein, damit dieses Board starten kann?
     req_boards = []
     if b_idx == 0:
         req_boards.append(boards[0])
@@ -149,7 +145,6 @@ def is_board_ready(session, board_name, next_r):
         else:
             req_boards.append(boards[b_idx])
             
-    # Prüfen, ob für alle benötigten Boards ein Ergebnis in der Vorrunde vorliegt
     for rb in req_boards:
         found = False
         for (r, b) in res.keys():
@@ -293,6 +288,31 @@ def open_board_dialog(board_name, session_idx):
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
             st.rerun()
 
+@st.dialog("🗑️ Session löschen (Passwortgeschützt)")
+def open_delete_dialog(session_idx):
+    if session_idx >= len(st.session_state.sessions_list):
+        st.rerun()
+        return
+        
+    sess = st.session_state.sessions_list[session_idx]
+    st.warning(f"Soll die Session **{sess['id']}** vom **{sess['datum']}** wirklich unwiderruflich gelöscht werden?")
+    
+    pwd = st.text_input("Passwort zur Bestätigung", type="password", key=f"del_pwd_input_{session_idx}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col2:
+        if st.button("Unwiderruflich löschen", type="primary", use_container_width=True):
+            if pwd == "1521":
+                st.session_state.sessions_list.pop(session_idx)
+                save_data(st.session_state.sessions_list)
+                st.success("Session erfolgreich gelöscht!")
+                st.rerun()
+            elif pwd != "":
+                st.error("Falsches Passwort!")
+
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
@@ -357,7 +377,6 @@ with tab_übersicht:
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
                             
                             if next_r <= total_rounds:
-                                # Ampel-Logik anzeigen
                                 ready = is_board_ready(curr_sess, b_name, next_r)
                                 ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
                                 st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
@@ -378,7 +397,6 @@ with tab_übersicht:
                                 st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.1em;'>{p2}</div>", unsafe_allow_html=True)
                                 st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em; margin-bottom: 15px;'>{p2_stat}</div>", unsafe_allow_html=True)
                                 
-                                # Button ist deaktiviert (disabled=True), solange das Board noch wartet
                                 if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
                                     open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
                             else:
@@ -533,20 +551,48 @@ with tab_archiv:
                     st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden*{gaeste_text})")
                 with col_del:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
-                        st.session_state.confirm_delete_idx = idx
-                
-                if st.session_state.confirm_delete_idx == idx:
-                    st.warning(f"Soll die Session **{sess['id']}** vom **{sess['datum']}** wirklich unwiderruflich gelöscht werden?")
-                    c_yes, c_no = st.columns(2)
-                    with c_yes:
-                        if st.button("Ja, wirklich löschen", key=f"confirm_yes_{idx}", type="primary"):
-                            st.session_state.sessions_list.pop(idx)
-                            save_data(st.session_state.sessions_list)
-                            st.session_state.confirm_delete_idx = None
-                            st.success("Session erfolgreich gelöscht.")
-                            st.rerun()
-                    with c_no:
-                        if st.button("Abbrechen", key=f"confirm_no_{idx}"):
-                            st.session_state.confirm_delete_idx = None
-                            st.rerun()
+                        open_delete_dialog(idx)
                 st.divider()
+
+with tab_bdv:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    
+    st.markdown("### 1. Mannschaft & Meldung")
+    st.markdown("* **Mannschaftsmeldung:** Erledigt[cite: 1].")
+    st.markdown("* **Spielerkader:** Besteht aus 10 Spielern[cite: 1]. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga)[cite: 1].")
+
+    st.markdown("### 2. Spielmodus & Ablauf (Liga und Pokal)")
+    st.markdown("* **Heimspieltag:** Dienstag[cite: 1].")
+    st.markdown("* **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out)[cite: 1].")
+    st.markdown("* **Aufstellung (3 Blöcke):**")
+    st.markdown("    * **Block 1:** 4 Einzelspieler[cite: 1].")
+    st.markdown("    * **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich)[cite: 1].")
+    st.markdown("    * **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden)[cite: 1].")
+    st.markdown("* **Rahmenbedingungen:**")
+    st.markdown("    * **Spielzeit:** Mo–Do ab 20:00 Uhr[cite: 1].")
+    st.markdown("    * **Austragung:** Parallel auf zwei Boards[cite: 1].")
+    st.markdown("    * **Einwerfzeit:** 30 Minuten für Gäste[cite: 1].")
+    st.markdown("* **Board-Zuordnung & Schreiber:**")
+    st.markdown("    * Die Heimmannschaft schreibt und beginnt auf Board 1[cite: 1].")
+    st.markdown("    * Die Gastmannschaft schreibt und beginnt auf Board 2[cite: 1].")
+    st.markdown("* **Schwabenpokal:**")
+    st.markdown("    * Nur K.O. Runden[cite: 1].")
+    st.markdown("    * Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)[cite: 1].")
+
+    st.markdown("### 3. Spielbericht & Online-Meldung")
+    st.markdown("* **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben[cite: 1].")
+    st.markdown("* **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden[cite: 1].")
+    st.markdown("* **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden[cite: 1].")
+    st.markdown("* **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden[cite: 1].")
+    
+    st.markdown("### 4. Mannschaftsvorstellung (Kader)")
+    st.markdown("* Andreas Böhm[cite: 1]")
+    st.markdown("* Andrino Czombera (Teamcaptain)[cite: 1]")
+    st.markdown("* Dennis Güttner[cite: 1]")
+    st.markdown("* Marco Eser[cite: 1]")
+    st.markdown("* Maximilian Zientner[cite: 1]")
+    st.markdown("* Michael Kummer[cite: 1]")
+    st.markdown("* Michael Mak[cite: 1]")
+    st.markdown("* Michael Neumeier[cite: 1]")
+    st.markdown("* Thomas Schaudt[cite: 1]")
+    st.markdown("* Wolfgang Schneider[cite: 1]")
