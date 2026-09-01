@@ -149,33 +149,29 @@ def open_board_dialog(board_name, session_idx):
     with col1:
         default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
         s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}_{current_round}")
+        score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}_{current_round}")
     with col2:
         remaining = [p for p in verfügbare_spieler if p != s1]
         default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
         s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}_{current_round}")
+        score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}_{current_round}")
         
-    ergebnis = st.text_input("Ergebnis (z. B. 3:1)", key=f"d_res_{board_name}_{session_idx}_{current_round}")
+    ergebnis = f"{score1}:{score2}"
     
     winner = None
     loser = None
-    if ergebnis and ":" in ergebnis:
-        try:
-            parts = ergebnis.split(":")
-            score1 = int(parts[0].strip())
-            score2 = int(parts[1].strip())
-            if score1 > score2:
-                winner = s1
-                loser = s2
-            elif score2 > score1:
-                winner = s2
-                loser = s1
-            st.info(f"🏆 Automatischer Sieger: **{winner}**")
-        except ValueError:
-            st.warning("Ungültiges Format. Bitte z. B. 3:1 eingeben.")
+    if score1 > score2:
+        winner = s1
+        loser = s2
+    elif score2 > score1:
+        winner = s2
+        loser = s1
+        
+    st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Automatischer Sieger: **{winner if winner else 'Unentschieden'}**")
     
     if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}_{current_round}"):
-        if not winner:
-            st.error("Bitte ein gültiges Ergebnis eingeben.")
+        if score1 == score2:
+            st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
         else:
             if "results" not in sess:
                 sess["results"] = {}
