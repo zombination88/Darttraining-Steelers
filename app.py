@@ -1,8 +1,48 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+import json
+import os
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
+
+DATA_FILE = "sessions.json"
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+                sessions = []
+                for sess in raw_data:
+                    # JSON wandelt Tupel-Schlüssel in Strings um, wir konvertieren sie zurück
+                    fixed_results = {}
+                    for k, v in sess.get("results", {}).items():
+                        # k hat das Format "runde_boardname"
+                        parts = k.split("_", 1)
+                        if len(parts) == 2:
+                            r_num = int(parts[0])
+                            b_name = parts[1]
+                            fixed_results[(r_num, b_name)] = v
+                    sess["results"] = fixed_results
+                    sessions.append(sess)
+                return sessions
+        except Exception:
+            return []
+    return []
+
+def save_data(sessions):
+    serializable_sessions = []
+    for sess in sessions:
+        sess_copy = sess.copy()
+        fixed_results = {}
+        for (r_num, b_name), v in sess.get("results", {}).items():
+            fixed_results[f"{r_num}_{b_name}"] = v
+        sess_copy["results"] = fixed_results
+        serializable_sessions.append(sess_copy)
+    
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(serializable_sessions, f, ensure_ascii=False, indent=4)
 
 col1, col2 = st.columns([1, 6])
 with col1:
@@ -27,7 +67,7 @@ kader = [
 ]
 
 if "sessions_list" not in st.session_state:
-    st.session_state.sessions_list = []
+    st.session_state.sessions_list = load_data()
 
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
@@ -95,7 +135,7 @@ def is_session_completed(sess):
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
-    pwd = st.text_input("Passwort eingeben (1521)", type="password", key="dialog_pwd_input")
+    pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
     if pwd != "1521":
         if pwd != "":
             st.error("Falsches Passwort!")
@@ -150,6 +190,7 @@ def open_new_session_dialog():
                 "results": {}
             }
             st.session_state.sessions_list.insert(0, new_session)
+            save_data(st.session_state.sessions_list)
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
@@ -205,6 +246,7 @@ def open_board_dialog(board_name, session_idx):
                     "winner": winner,
                     "loser": loser
                 }
+                save_data(st.session_state.sessions_list)
                 st.success("Ergebnis gespeichert!")
                 st.rerun()
     with col_btn2:
@@ -214,7 +256,6 @@ def open_board_dialog(board_name, session_idx):
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
-    # Schnellstart-Button in der Übersicht
     if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="quick_start_btn"):
         open_new_session_dialog()
         
@@ -231,7 +272,6 @@ with tab_übersicht:
         
     st.write("")
     
-    # Liveübersicht des aktuellen Spiels
     st.markdown("### 🔴 Live-Übersicht (Aktive Session)")
     active_sessions = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
     if not active_sessions:
@@ -415,6 +455,7 @@ with tab_archiv:
                     with c_yes:
                         if st.button("Ja, wirklich löschen", key=f"confirm_yes_{idx}", type="primary"):
                             st.session_state.sessions_list.pop(idx)
+                            save_data(st.session_state.sessions_list)
                             st.session_state.confirm_delete_idx = None
                             st.success("Session erfolgreich gelöscht.")
                             st.rerun()
