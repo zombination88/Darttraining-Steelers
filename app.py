@@ -226,8 +226,30 @@ with tab_übersicht:
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
         st.caption("Sortiert nach Siegquote und absolvierten Matches")
-        st.write("**Andrino Czombera** (Teamcaptain)")
+        st.write("**Andrino Czombera**")
         st.progress(0.0)
+
+    st.write("### Zuletzt ausgetragene Board-Matches")
+    st.caption("Best of 5 und Gewinner für die Statistik")
+    
+    all_matches = []
+    for sess in st.session_state.sessions_list:
+        sess_date = sess.get("datum", "")
+        for (round_num, board_name), m_info in sess.get("results", {}).items():
+            all_matches.append({
+                "Datum": sess_date,
+                "Runde": round_num,
+                "Board": board_name,
+                "Spieler": f"{m_info['s1']}\n{m_info['s2']}",
+                "Ergebnis": m_info['ergebnis'],
+                "Sieger": m_info['winner'] if m_info['winner'] else "Offen"
+            })
+            
+    if all_matches:
+        df_matches = pd.DataFrame(all_matches)
+        st.dataframe(df_matches, use_container_width=True, hide_index=True)
+    else:
+        st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
