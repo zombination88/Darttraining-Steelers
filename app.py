@@ -15,10 +15,8 @@ def load_data():
                 raw_data = json.load(f)
                 sessions = []
                 for sess in raw_data:
-                    # JSON wandelt Tupel-Schlüssel in Strings um, wir konvertieren sie zurück
                     fixed_results = {}
                     for k, v in sess.get("results", {}).items():
-                        # k hat das Format "runde_boardname"
                         parts = k.split("_", 1)
                         if len(parts) == 2:
                             r_num = int(parts[0])
@@ -72,7 +70,7 @@ if "sessions_list" not in st.session_state:
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -464,3 +462,35 @@ with tab_archiv:
                             st.session_state.confirm_delete_idx = None
                             st.rerun()
                 st.divider()
+
+with tab_bdv:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    st.markdown("""
+    ### 1. Mannschaft & Meldung
+    * **Mannschaftsmeldung:** Erledigt[cite: 1].
+    * **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga)[cite: 1].
+
+    ### 2. Spielmodus & Ablauf (Liga und Pokal)
+    * **Heimspieltag:** Dienstag[cite: 1].
+    * **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out)[cite: 1].
+    * **Aufstellung (3 Blöcke):**
+        * **Block 1:** 4 Einzelspieler[cite: 1].
+        * **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich)[cite: 1].
+        * **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden)[cite: 1].
+    * **Rahmenbedingungen:**
+        * **Spielzeit:** Mo–Do ab 20:00 Uhr[cite: 1].
+        * **Austragung:** Parallel auf zwei Boards[cite: 1].
+        * **Einwerfzeit:** 30 Minuten für Gäste[cite: 1].
+    * **Board-Zuordnung & Schreiber:**
+        * Die Heimmannschaft schreibt und beginnt auf Board 1[cite: 1].
+        * Die Gastmannschaft schreibt und beginnt auf Board 2[cite: 1].
+    * **Schwabenpokal:**
+        * Nur K.O.-Runden[cite: 1].
+        * Es können bis zu 4–5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)[cite: 1].
+
+    ### 3. Spielbericht & Online-Meldung
+    * **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben[cite: 1].
+    * **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden[cite: 1].
+    * **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden[cite: 1].
+    * **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden[cite: 1].
+    """)
