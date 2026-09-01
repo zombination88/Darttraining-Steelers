@@ -36,7 +36,7 @@ if "show_new_session" not in st.session_state:
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
 
-menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -96,7 +96,7 @@ def is_session_completed(sess):
             return False
     return True
 
-if menu == "Übersicht":
+with tab_übersicht:
     st.subheader("Übersicht")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -133,7 +133,7 @@ if menu == "Übersicht":
     }
     st.dataframe(pd.DataFrame(match_preview), use_container_width=True, hide_index=True)
 
-elif menu == "Kader":
+with tab_kader:
     st.subheader("Kader & Spielerbilanz")
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler).")
     
@@ -160,7 +160,7 @@ elif menu == "Kader":
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-elif menu == "Session":
+with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B6.")
     
@@ -315,7 +315,7 @@ elif menu == "Session":
                         st.session_state.active_board_input = (b_name, idx)
             st.divider()
 
-elif menu == "Match-Archiv":
+with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Hier kannst du gespeicherte Sessions verwalten und bei Bedarf sicher löschen.")
     
@@ -332,7 +332,6 @@ elif menu == "Match-Archiv":
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         st.session_state.confirm_delete_idx = idx
                 
-                # Sicherheitsabfrage für genau diese Session
                 if st.session_state.confirm_delete_idx == idx:
                     st.warning(f"Soll die Session **{sess['id']}** vom **{sess['datum']}** wirklich unwiderruflich gelöscht werden?")
                     c_yes, c_no = st.columns(2)
