@@ -4,20 +4,6 @@ from datetime import date
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-    st.subheader("🔒 Passwort erforderlich")
-    pwd = st.text_input("Bitte Passwort eingeben", type="password")
-    if st.button("Anmelden"):
-        if pwd == "1521":
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Falsches Passwort!")
-    st.stop()
-
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -107,8 +93,14 @@ def is_session_completed(sess):
             return False
     return True
 
-@st.dialog("➕ Neue Session starten")
+@st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
+    pwd = st.text_input("Passwort eingeben (1521)", type="password", key="dialog_pwd_input")
+    if pwd != "1521":
+        if pwd != "":
+            st.error("Falsches Passwort!")
+        return
+
     session_datum = st.date_input("Datum", date.today())
     leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
     total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
@@ -220,7 +212,13 @@ def open_board_dialog(board_name, session_idx):
             st.rerun()
 
 with tab_übersicht:
-    st.subheader("Übersicht")
+    st.subheader("Übersicht & Live-Status")
+    
+    # Schnellstart-Button in der Übersicht
+    if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="quick_start_btn"):
+        open_new_session_dialog()
+        
+    st.write("")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="Up & Down Abende", value=str(len(st.session_state.sessions_list)), delta="Runden pro Abend")
@@ -231,6 +229,36 @@ with tab_übersicht:
     with col4:
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
+    st.write("")
+    
+    # Liveübersicht des aktuellen Spiels
+    st.markdown("### 🔴 Live-Übersicht (Aktive Session)")
+    active_sessions = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
+    if not active_sessions:
+        st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Live-Übersicht zu sehen.")
+    else:
+        curr_sess = active_sessions[0]
+        st.caption(f"Aktive Session: ID **{curr_sess['id']}** vom {curr_sess['datum']} ({curr_sess['modus']} · {curr_sess['boards']})")
+        
+        boards_count = curr_sess.get("boards_count", 6)
+        active_boards_list = get_boards_list(boards_count)
+        total_rounds = curr_sess.get("total_rounds", 4)
+        
+        live_cols = st.columns(len(active_boards_list))
+        for b_i, b_name in enumerate(active_boards_list):
+            with live_cols[b_i]:
+                res = curr_sess.get("results", {})
+                completed = [r for (r, b) in res.keys() if b == b_name]
+                next_r = max(completed) + 1 if completed else 1
+                
+                players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
+                st.markdown(f"**{b_name}**")
+                if next_r <= total_rounds:
+                    st.markdown(f"Runde {next_r}/{total_rounds}")
+                    st.text(f"• {players_now[0]}\n• {players_now[1]}")
+                else:
+                    st.success("Board beendet")
+
     st.write("")
     col_l, col_r = st.columns(2)
     with col_l:
@@ -329,7 +357,7 @@ with tab_session:
     with col3:
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
-    if st.button("➕ Neue Session starten", use_container_width=True):
+    if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new"):
         open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
