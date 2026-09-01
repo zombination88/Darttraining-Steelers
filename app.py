@@ -7,17 +7,40 @@ st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
 st.title("🎯 Wehringer Steelers - Teamcoach")
 
 kader = [
-    "Andreas Böhm", "Andrino Czombera (Captain)", "Dennis Güttner", "Marco Eser", 
+    "Andreas Böhm", "Andrino Czombera", "Dennis Güttner", "Marco Eser", 
     "Maximilian Zientner", "Michael Kummer", "Michael Mak", 
     "Michael Neumeier", "Thomas Schaudt", "Wolfgang Schneider"
 ]
 
+if "board_rounds" not in st.session_state:
+    st.session_state.board_rounds = {
+        "Kaiser B1": 1,
+        "Board 2": 1,
+        "Board 3": 1,
+        "Board 4": 1
+    }
+
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
+
+@st.dialog("Neue Session starten")
+def open_new_session_dialog():
+    st.write("### Up & Down Session einrichten")
+    session_datum = st.date_input("Datum", date.today())
+    st.write("Gastspieler hinzufügen (optional, fließen nicht in die Statistik ein):")
+    g1 = st.text_input("Gastspieler 1")
+    g2 = st.text_input("Gastspieler 2")
+    g3 = st.text_input("Gastspieler 3")
+    g4 = st.text_input("Gastspieler 4")
+    
+    if st.button("Session jetzt anlegen"):
+        gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+        st.success(f"Session für den {session_datum} erfolgreich erstellt! Gäste: {', '.join(gaeste) if gaeste else 'Keine'}")
+        st.rerun()
 
 @st.dialog("Board-Eingabe (Runde für Runde)")
 def open_board_dialog(board_name):
-    st.write(f"### Erfassung für {board_name}")
-    runde = st.selectbox("Runde auswählen", ["Runde 1", "Runde 2", "Runde 3", "Runde 4"])
+    current_round = st.session_state.board_rounds[board_name]
+    st.write(f"### Erfassung für {board_name} — Runde {current_round} von 4")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -29,7 +52,9 @@ def open_board_dialog(board_name):
     highlight_180 = st.selectbox("180er erzielt von:", ["Keiner", s1, s2], key=f"180_{board_name}")
     
     if st.button("Ergebnis speichern", key=f"save_{board_name}"):
-        st.success(f"{board_name} ({runde}): {s1} vs {s2} [{ergebnis}] erfolgreich gespeichert!")
+        st.success(f"{board_name} (Runde {current_round}): {s1} vs {s2} [{ergebnis}] gespeichert!")
+        if st.session_state.board_rounds[board_name] < 4:
+            st.session_state.board_rounds[board_name] += 1
         st.rerun()
 
 if menu == "Übersicht":
@@ -83,15 +108,8 @@ elif menu == "Session":
     with col3:
         st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
         
-    with st.expander("➕ Neue Session starten (inkl. Gastspieler)"):
-        with st.form("new_session"):
-            session_datum = st.date_input("Datum", date.today())
-            g1 = st.text_input("Gastspieler 1 (optional)")
-            g2 = st.text_input("Gastspieler 2 (optional)")
-            g3 = st.text_input("Gastspieler 3 (optional)")
-            g4 = st.text_input("Gastspieler 4 (optional)")
-            if st.form_submit_button("Session anlegen"):
-                st.success("Neue Session erfolgreich angelegt!")
+    if st.button("➕ Neue Session starten", use_container_width=True):
+        open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
     with st.container():
@@ -99,16 +117,24 @@ elif menu == "Session":
         
         b1, b2, b3, b4 = st.columns(4)
         with b1:
-            if st.button("🏆 Kaiser B1\n\nOffen", use_container_width=True):
+            r_b1 = st.session_state.board_rounds["Kaiser B1"]
+            label_b1 = f"🏆 Kaiser B1\nRunde {r_b1}/4" if r_b1 <= 4 else "🏆 Kaiser B1\nBeendet"
+            if st.button(label_b1, use_container_width=True, key="btn_b1"):
                 open_board_dialog("Kaiser B1")
         with b2:
-            if st.button("🎯 Board 2\n\nOffen", use_container_width=True):
+            r_b2 = st.session_state.board_rounds["Board 2"]
+            label_b2 = f"🎯 Board 2\nRunde {r_b2}/4" if r_b2 <= 4 else "🎯 Board 2\nBeendet"
+            if st.button(label_b2, use_container_width=True, key="btn_b2"):
                 open_board_dialog("Board 2")
         with b3:
-            if st.button("🎯 Board 3\n\nOffen", use_container_width=True):
+            r_b3 = st.session_state.board_rounds["Board 3"]
+            label_b3 = f"🎯 Board 3\nRunde {r_b3}/4" if r_b3 <= 4 else "🎯 Board 3\nBeendet"
+            if st.button(label_b3, use_container_width=True, key="btn_b3"):
                 open_board_dialog("Board 3")
         with b4:
-            if st.button("🎯 Board 4\n\nOffen", use_container_width=True):
+            r_b4 = st.session_state.board_rounds["Board 4"]
+            label_b4 = f"🎯 Board 4\nRunde {r_b4}/4" if r_b4 <= 4 else "🎯 Board 4\nBeendet"
+            if st.button(label_b4, use_container_width=True, key="btn_b4"):
                 open_board_dialog("Board 4")
 
 elif menu == "Match-Archiv":
