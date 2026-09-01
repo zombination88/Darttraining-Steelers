@@ -24,7 +24,6 @@ if "show_new_session" not in st.session_state:
 if "confirm_delete_idx" not in st.session_state:
     st.session_state.confirm_delete_idx = None
 
-# Wichtig: Die Tabs müssen definiert werden, BEVOR sie mit 'with' angesprochen werden!
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
@@ -76,12 +75,13 @@ def get_board_players(session, round_num, board_name):
 
 def is_session_completed(sess):
     boards_count = sess.get("boards_count", 6)
+    total_rounds = sess.get("total_rounds", 4)
     boards_list = get_boards_list(boards_count)
     res = sess.get("results", {})
     for b_name in boards_list:
         completed = [r for (r, b) in res.keys() if b == b_name]
         max_r = max(completed) if completed else 0
-        if max_r < 4:
+        if max_r < total_rounds:
             return False
     return True
 
@@ -89,7 +89,7 @@ with tab_übersicht:
     st.subheader("Übersicht")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(label="Up & Down Abende", value=str(len(st.session_state.sessions_list)), delta="4 Runden pro Abend")
+        st.metric(label="Up & Down Abende", value=str(len(st.session_state.sessions_list)), delta="Runden pro Abend")
     with col2:
         st.metric(label="Gespielte Matches", value="Dynamisch", delta="siehe Kader")
     with col3:
@@ -102,7 +102,8 @@ with tab_übersicht:
     with col_l:
         st.markdown("### Letzte Session")
         last_s = st.session_state.sessions_list[0] if st.session_state.sessions_list else {"datum": "–"}
-        st.info(f"**Datum:** {last_s['datum']}\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
+        total_r_last = last_s.get('total_rounds', 4) if last_s != "–" else 4
+        st.info(f"**Datum:** {last_s.get('datum', '–')}\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
         st.caption("Sortiert nach Siegquote und absolvierten Matches")
@@ -163,7 +164,7 @@ with tab_kader:
 
 with tab_session:
     st.subheader("Up & Down Sessions")
-    st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B6.")
+    st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -183,6 +184,7 @@ with tab_session:
             with col_a:
                 session_datum = st.date_input("Datum", date.today())
                 leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
+                total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3) # Standard 4 Runden
             with col_b:
                 spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
                 anzahl_boards = st.selectbox("Anzahl der Boards", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
@@ -220,6 +222,7 @@ with tab_session:
                     "datum": session_datum.strftime("%d.%m.%Y"),
                     "modus": spielmodus,
                     "boards_count": boards_cnt,
+                    "total_rounds": total_rounds,
                     "boards": anzahl_boards,
                     "modus_leg": leg_modus,
                     "spieler": aktive_spieler,
@@ -237,84 +240,95 @@ with tab_session:
     if st.session_state.active_board_input:
         board_name, session_idx = st.session_state.active_board_input
         sess = st.session_state.sessions_list[session_idx]
+        total_rounds = sess.get("total_rounds", 4)
         
         res = sess.get("results", {})
         completed_rounds = [r for (r, b) in res.keys() if b == board_name]
         current_round = max(completed_rounds) + 1 if completed_rounds else 1
         
         st.markdown("---")
-        st.write(f"### 📋 Erfassung für {board_name} (Session {sess['id']}) — Runde {current_round} von 4")
-        
-        auto_players = get_board_players(sess, current_round, board_name)
-        verfügbare_spieler = sess.get("spieler", kader)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-            s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-            score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
-        with col2:
-            remaining = [p for p in verfügbare_spieler if p != s1]
-            default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-            s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-            score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
-            
-        ergebnis = f"{score1}:{score2}"
-        winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
-        loser = s2 if winner == s1 else (s1 if winner == s2 else None)
-        
-        st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Automatischer Sieger: **{winner if winner else 'Unentschieden'}**")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}"):
-                if score1 == score2:
-                    st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
-                else:
-                    if "results" not in sess:
-                        sess["results"] = {}
-                    sess["results"][(current_round, board_name)] = {
-                        "s1": s1,
-                        "s2": s2,
-                        "ergebnis": ergebnis,
-                        "winner": winner,
-                        "loser": loser
-                    }
-                    st.success(f"Ergebnis gespeichert! Sieger: {winner}")
-                    st.session_state.active_board_input = None
-                    st.rerun()
-        with col_btn2:
-            if st.button("Schließen", key=f"d_close_{board_name}_{session_idx}"):
+        if current_round > total_rounds:
+            st.warning(f"### 🛑 {board_name} hat alle {total_rounds} Runden bereits beendet!")
+            if st.button("Schließen", key=f"d_close_finished_{board_name}_{session_idx}"):
                 st.session_state.active_board_input = None
                 st.rerun()
+        else:
+            st.write(f"### 📋 Erfassung für {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
+            
+            auto_players = get_board_players(sess, current_round, board_name)
+            verfügbare_spieler = sess.get("spieler", kader)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
+                s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
+                score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+            with col2:
+                remaining = [p for p in verfügbare_spieler if p != s1]
+                default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
+                s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
+                score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
+                
+            ergebnis = f"{score1}:{score2}"
+            winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
+            loser = s2 if winner == s1 else (s1 if winner == s2 else None)
+            
+            st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Automatischer Sieger: **{winner if winner else 'Unentschieden'}**")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("Ergebnis speichern", key=f"d_save_{board_name}_{session_idx}"):
+                    if score1 == score2:
+                        st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
+                    else:
+                        if "results" not in sess:
+                            sess["results"] = {}
+                        sess["results"][(current_round, board_name)] = {
+                            "s1": s1,
+                            "s2": s2,
+                            "ergebnis": ergebnis,
+                            "winner": winner,
+                            "loser": loser
+                        }
+                        st.success(f"Ergebnis gespeichert! Sieger: {winner}")
+                        st.session_state.active_board_input = None
+                        st.rerun()
+            with col_btn2:
+                if st.button("Schließen", key=f"d_close_{board_name}_{session_idx}"):
+                    st.session_state.active_board_input = None
+                    st.rerun()
         st.markdown("---")
 
     st.write("### Bisherige Sessions & Board-Endstände")
     
-    for idx, sess in enumerate(st.session_state.sessions_list):
-        with st.container():
-            gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
-            status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
-            st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}{gaeste_text}*{status_text}")
-            
-            boards_count = sess.get("boards_count", 6)
-            active_boards_list = get_boards_list(boards_count)
-            
-            b_cols = st.columns(boards_count)
-            for b_i, b_name in enumerate(active_boards_list):
-                with b_cols[b_i]:
-                    res = sess.get("results", {})
-                    completed = [r for (r, b) in res.keys() if b == b_name]
-                    next_r = max(completed) + 1 if completed else 1
-                    
-                    if next_r <= 4:
-                        label_btn = f"🎯 {b_name}\nRunde {next_r}/4"
-                    else:
-                        label_btn = f"🏆 {b_name}\nBeendet"
+    if not st.session_state.sessions_list:
+        st.info("Keine Sessions vorhanden. Starte über den Button oben eine neue Session.")
+    else:
+        for idx, sess in enumerate(st.session_state.sessions_list):
+            with st.container():
+                gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
+                status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
+                total_rounds = sess.get("total_rounds", 4)
+                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['modus_leg']} · {sess['id']}{gaeste_text}*{status_text}")
+                
+                boards_count = sess.get("boards_count", 6)
+                active_boards_list = get_boards_list(boards_count)
+                
+                b_cols = st.columns(boards_count)
+                for b_i, b_name in enumerate(active_boards_list):
+                    with b_cols[b_i]:
+                        res = sess.get("results", {})
+                        completed = [r for (r, b) in res.keys() if b == b_name]
+                        next_r = max(completed) + 1 if completed else 1
                         
-                    if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                        st.session_state.active_board_input = (b_name, idx)
-            st.divider()
+                        if next_r <= total_rounds:
+                            label_btn = f"🎯 {b_name}\nRunde {next_r}/{total_rounds}"
+                        else:
+                            label_btn = f"🏆 {b_name}\nBeendet"
+                            
+                        if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
+                            st.session_state.active_board_input = (b_name, idx)
+                st.divider()
 
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
@@ -328,7 +342,8 @@ with tab_archiv:
                 col_info, col_del = st.columns([0.8, 0.2])
                 with col_info:
                     gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
-                    st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']}*{gaeste_text})")
+                    total_rounds = sess.get("total_rounds", 4)
+                    st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden*{gaeste_text})")
                 with col_del:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         st.session_state.confirm_delete_idx = idx
