@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-import uuid
 
 st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
 
@@ -56,46 +55,44 @@ elif menu == "Kader":
 
 elif menu == "Session":
     st.subheader("Up & Down Sessions")
-    st.write("Exakt 4 Runden, Aufstieg Richtung B1 und Abstieg Richtung B4.")
     
-    with st.expander("➕ Gastspieler für diesen Abend hinzufügen (fließen nicht in die Statistik ein)"):
-        gast_1 = st.text_input("Gastspieler 1", "")
-        gast_2 = st.text_input("Gastspieler 2", "")
-        gast_3 = st.text_input("Gastspieler 3", "")
-        gast_4 = st.text_input("Gastspieler 4", "")
-        
-        aktuelle_gaeste = [g for g in [gast_1, gast_2, gast_3, gast_4] if g.strip() != ""]
-        if aktuelle_gaeste:
-            st.success(f"Aktive Gastspieler heute: {', '.join(aktuelle_gaeste)}")
+    with st.expander("➕ Neue Session starten (inkl. Gastspieler-Erfassung)"):
+        with st.form("new_session_form"):
+            session_datum = st.date_input("Datum des Abends", date.today())
+            anzahl_boards = st.slider("Anzahl Boards", 1, 6, 4)
+            
+            st.write("### Gastspieler hinzufügen (fließen nicht in die Statistik ein)")
+            g1 = st.text_input("Gastspieler 1")
+            g2 = st.text_input("Gastspieler 2")
+            g3 = st.text_input("Gastspieler 3")
+            g4 = st.text_input("Gastspieler 4")
+            
+            submit_session = st.form_submit_button("Session anlegen")
+            if submit_session:
+                gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+                st.success(f"Session für den {session_datum} mit {anzahl_boards} Boards erstellt! Gäste: {', '.join(gaeste) if gaeste else 'Keine'}")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="Gespielte Abende", value="1", delta="gefilterte Sessions")
-    with col2:
-        st.metric(label="Ø Teilnehmer je Session", value=f"{8 + len(aktuelle_gaeste)}", delta="inkl. Gäste")
-    with col3:
-        st.metric(label="Aktueller Kaiser", value="Noch offen", delta="01.09.2026")
-        
-    if st.button("➕ Neue Session starten"):
-        st.success("Session-Dialog geöffnet.")
+    st.write("### Laufende Session & Board-Erfassung (Runde für Runde)")
+    st.info("Wähle ein Board aus, um die Ergebnisse für die jeweiligen Runden (1 bis 4) einzutragen.")
 
-    st.write("### Bisherige Sessions & Board-Endstände")
-    with st.container():
-        st.markdown("**01.09.2026** — *Up & Down · 4 Boards · Best of 5*")
+    selected_board = st.selectbox("Board auswählen für Eingabe:", [f"Board {i}" for i in range(1, 5)])
+    selected_runde = st.selectbox("Runde auswählen:", ["Runde 1", "Runde 2", "Runde 3", "Runde 4"])
+
+    with st.form(key="board_input_form"):
+        st.write(f"### Eingabe für {selected_board} - {selected_runde}")
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            spieler_a = st.selectbox("Spieler 1", kader, key="s_a")
+        with col_s2:
+            spieler_b = st.selectbox("Spieler 2", kader, key="s_b")
+            
+        ergebnis = st.text_input("Ergebnis (z.B. 3:1)", "")
+        highlight_180 = st.checkbox("180er erzielt?")
+        high_finish = st.text_input("High Finish (optional)", "")
         
-        b1, b2, b3, b4 = st.columns(4)
-        with b1:
-            st.info("**Kaiser B1**")
-            st.text_input("Ergebnis B1", key="res_b1")
-        with b2:
-            st.info("**Board 2**")
-            st.text_input("Ergebnis B2", key="res_b2")
-        with b3:
-            st.info("**Board 3**")
-            st.text_input("Ergebnis B3", key="res_b3")
-        with b4:
-            st.info("**Board 4**")
-            st.text_input("Ergebnis B4", key="res_b4")
+        save_match = st.form_submit_button("Ergebnis für diese Runde speichern")
+        if save_match:
+            st.success(f"Ergebnis für {selected_board} ({selected_runde}): {spieler_a} vs {spieler_b} [{ergebnis}] gespeichert!")
 
 elif menu == "Match-Archiv":
     st.subheader("Trainingsmatches")
