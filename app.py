@@ -4,6 +4,20 @@ from datetime import date
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.subheader("🔒 Passwort erforderlich")
+    pwd = st.text_input("Bitte Passwort eingeben", type="password")
+    if st.button("Anmelden"):
+        if pwd == "1521":
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Falsches Passwort!")
+    st.stop()
+
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
