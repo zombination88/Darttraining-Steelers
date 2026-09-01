@@ -3,12 +3,8 @@ import pandas as pd
 from datetime import date
 import json
 import os
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
-
-# Automatischer Refresh alle 15 Sekunden (15000 Millisekunden)
-st_autorefresh(interval=15000, limit=None, key="data_refresh")
 
 DATA_FILE = "sessions.json"
 
@@ -68,7 +64,6 @@ kader = [
     "Wolfgang Schneider"
 ]
 
-# ZWINGT DAS SYSTEM, BEI JEDEM REFRESH DIE DATEI NEU ZU LADEN
 st.session_state.sessions_list = load_data()
 
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
