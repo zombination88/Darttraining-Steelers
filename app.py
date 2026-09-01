@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-st.set_page_config(page_title="Wehringer Steelers", layout="centered")
+st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
 col1, col2 = st.columns([1, 6])
 with col1:
@@ -11,7 +11,7 @@ with col1:
     except Exception:
         pass
 with col2:
-    st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
 
 kader = [
     "Andreas Böhm",
