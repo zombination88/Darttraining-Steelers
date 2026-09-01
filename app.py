@@ -25,6 +25,9 @@ if "sessions_list" not in st.session_state:
         {"id": "S-1", "datum": "01.09.2026", "modus": "Up & Down", "boards": "4 Boards", "modus_leg": "Best of 5", "gaeste": []}
     ]
 
+if "current_gaeste" not in st.session_state:
+    st.session_state.current_gaeste = []
+
 menu = st.sidebar.selectbox("Menü", ["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 @st.dialog("Neue Session starten")
@@ -70,6 +73,7 @@ def open_new_session_dialog():
     with col_btn2:
         if st.button("Neue Session starten", type="primary", use_container_width=True):
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            st.session_state.current_gaeste = gaeste
             new_id = f"S-{len(st.session_state.sessions_list) + 1}"
             st.session_state.sessions_list.append({
                 "id": new_id,
@@ -87,11 +91,13 @@ def open_board_dialog(board_name):
     current_round = st.session_state.board_rounds[board_name]
     st.write(f"### Erfassung für {board_name} — Runde {current_round} von 4")
     
+    verfügbare_spieler = kader + st.session_state.current_gaeste
+    
     col1, col2 = st.columns(2)
     with col1:
-        s1 = st.selectbox("Spieler 1", kader, key=f"s1_{board_name}")
+        s1 = st.selectbox("Spieler 1", verfügbare_spieler, key=f"s1_{board_name}")
     with col2:
-        s2 = st.selectbox("Spieler 2", [p for p in kader if p != s1], key=f"s2_{board_name}")
+        s2 = st.selectbox("Spieler 2", [p for p in verfügbare_spieler if p != s1], key=f"s2_{board_name}")
         
     ergebnis = st.text_input("Ergebnis (z. B. 3:1)", key=f"res_{board_name}")
     highlight_180 = st.selectbox("180er erzielt von:", ["Keiner", s1, s2], key=f"180_{board_name}")
@@ -194,7 +200,8 @@ elif menu == "Session":
         with st.container():
             col_info, col_del = st.columns([0.85, 0.15])
             with col_info:
-                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}*")
+                gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess['gaeste'] else ""
+                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {sess['modus_leg']} · {sess['id']}{gaeste_text}*")
             with col_del:
                 if st.button("🗑️ Löschen", key=f"del_sess_{idx}"):
                     st.session_state.sessions_list.pop(idx)
