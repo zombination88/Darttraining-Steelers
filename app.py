@@ -4,7 +4,14 @@ from datetime import date
 
 st.set_page_config(page_title="Wehringer Steelers Teamcoach", layout="centered")
 
-st.title("🎯 Wehringer Steelers - Teamcoach")
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    try:
+        st.image("logo.png.png", width=100)
+    except Exception:
+        pass
+with col_title:
+    st.title("🎯 Wehringer Steelers - Teamcoach")
 
 kader = [
     "Andreas Böhm",
