@@ -92,21 +92,19 @@ def smart_sync_and_save(updated_sessions):
         save_data(updated_sessions)
         st.session_state.sessions_list = updated_sessions
 
-col_title, col_btns = st.columns([5, 2])
-with col_title:
-    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
-with col_btns:
-    c_music, c_sync = st.columns(2)
-    with c_music:
-        try:
-            with st.popover("🎵"):
-                st.audio("vereinssong.mp3")
-        except Exception:
-            pass
-    with c_sync:
-        if st.button("🔄", help="Manuell aktualisieren"):
-            st.session_state.sessions_list = load_data()
-            st.rerun()
+st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
+
+c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
+with c_mus:
+    try:
+        with st.popover("🎵"):
+            st.audio("vereinssong.mp3")
+    except Exception:
+        pass
+with c_sync:
+    if st.button("🔄", help="Manuell aktualisieren"):
+        st.session_state.sessions_list = load_data()
+        st.rerun()
 
 kader = [
     "Andreas Böhm",
@@ -262,7 +260,7 @@ def get_board_players(session, round_num, board_name):
         if b_idx == 0:
             top_w = w.get("Kaiser B1", "-")
             next_w = w.get("Board 2", "-") if len(boards) > 1 else top_w
-            return [top_w, next_w]
+            return [top_w, next_w if next_w != "-" else "-"]
         
         if b_idx > 0:
             prev_board = boards[b_idx - 1]
@@ -270,7 +268,7 @@ def get_board_players(session, round_num, board_name):
             
             loser_from_above = l.get(prev_board, "-")
             winner_from_below = w.get(next_board, "-") if next_board else l.get(boards[b_idx], "-")
-            return [loser_from_above, winner_from_below]
+            return [loser_from_above if loser_from_above != "-" else "-", winner_from_below if winner_from_below != "-" else "-"]
             
     return ["-", "-"]
 
@@ -1113,7 +1111,7 @@ with tab_archiv:
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Brett-Verteilung.")
+    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
         st.markdown("### 👑 Das Prinzip: 'Up & Down'")
