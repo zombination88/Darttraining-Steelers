@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -984,21 +984,25 @@ with tab_übersicht:
                                         
                                     st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{round_sub_str}</p>", unsafe_allow_html=True)
                                     
-                                    sc1, sc2 = st.columns([5, 2])
-                                    sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
-                                    with sc2:
-                                        if ready and p1 != "-":
+                                    if ready and p1 != "-" and p1 != "Offen":
+                                        sc1, sc2 = st.columns([5, 2])
+                                        sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
+                                        with sc2:
                                             if st.button("🔄 Ändern", key=f"sub_btn1_{b_name}_{next_r}", help="Spieler 1 auswechseln"):
                                                 open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 1, p1)
+                                    else:
+                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 8px 0;'>{p1}</div>", unsafe_allow_html=True)
                                     
                                     st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                     
-                                    sc3, sc4 = st.columns([5, 2])
-                                    sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
-                                    with sc4:
-                                        if ready and p2 != "-":
+                                    if ready and p2 != "-" and p2 != "Offen":
+                                        sc3, sc4 = st.columns([5, 2])
+                                        sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
+                                        with sc4:
                                             if st.button("🔄 Ändern", key=f"sub_btn2_{b_name}_{next_r}", help="Spieler 2 auswechseln"):
                                                 open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 2, p2)
+                                    else:
+                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 8px 0;'>{p2}</div>", unsafe_allow_html=True)
                                     
                                     st.write("")
                                     if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
