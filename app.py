@@ -410,6 +410,97 @@ def open_session_archive_dialog(session_idx):
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
+@st.dialog("⚡ Schnelldurchlauf Ergebnisse")
+def open_quick_entry_dialog(session_idx):
+    sess = st.session_state.sessions_list[session_idx]
+    total_rounds = sess.get("total_rounds", 4)
+    modus = sess.get("modus", "Up & Down")
+    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+    
+    st.write(f"### Session {sess['id']} vom {sess['datum']}")
+    st.caption("Trage hier rundenweise die Ergebnisse im Schnelldurchlauf ein.")
+    
+    round_options = []
+    for r in range(1, total_rounds + 1):
+        if is_standard_training:
+            if r <= singles_rounds:
+                round_options.append((r, f"Runde {r} / {singles_rounds} (Einzel)"))
+            else:
+                round_options.append((r, f"Doppelrunde {r - singles_rounds} / {total_rounds - singles_rounds} (Coop)"))
+        else:
+            round_options.append((r, f"Runde {r} / {total_rounds}"))
+            
+    selected_r_tuple = st.selectbox("Wähle Runde aus:", round_options, format_func=lambda x: x[1], key=f"qe_round_sel_{session_idx}")
+    current_round = selected_r_tuple[0]
+    
+    boards_in_round = get_boards_list(sess, current_round)
+    res = sess.get("results", {})
+    
+    st.markdown(f"#### 🎯 Partien für {selected_r_tuple[1]}")
+    
+    if "results" not in sess:
+        sess["results"] = {}
+        
+    for b_name in boards_in_round:
+        st.markdown(f"**{b_name}**")
+        auto_p = get_board_players(sess, current_round, b_name)
+        match_key = (current_round, b_name)
+        existing_match = res.get(match_key, {})
+        
+        p1 = existing_match.get("s1", auto_p[0])
+        p2 = existing_match.get("s2", auto_p[1])
+        if p1 == "-" or not p1: p1 = auto_p[0]
+        if p2 == "-" or not p2: p2 = auto_p[1]
+        
+        try:
+            default_score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
+            default_score2 = int(existing_match.get("ergebnis", "0:0").split(":")[1])
+        except:
+            default_score1, default_score2 = 0, 0
+            
+        def_180_1 = int(existing_match.get("180_s1", 0))
+        def_180_2 = int(existing_match.get("180_s2", 0))
+        def_avg_1 = float(existing_match.get("avg_s1", 0.0))
+        def_avg_2 = float(existing_match.get("avg_s2", 0.0))
+        
+        c1, c2, c3 = st.columns([3, 2, 2])
+        with c1:
+            st.text(f"{p1} vs {p2}")
+        with c2:
+            sc1 = st.number_input(f"Legs {p1}", min_value=0, max_value=5, value=default_score1, key=f"qe_sc1_{session_idx}_{current_round}_{b_name}")
+            sc2 = st.number_input(f"Legs {p2}", min_value=0, max_value=5, value=default_score2, key=f"qe_sc2_{session_idx}_{current_round}_{b_name}")
+        with c3:
+            t180_1 = st.number_input(f"180er ({p1})", min_value=0, max_value=10, value=def_180_1, key=f"qe_180_1_{session_idx}_{current_round}_{b_name}")
+            t180_2 = st.number_input(f"180er ({p2})", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
+            
+        ergebnis_str = f"{sc1}:{sc2}"
+        winner = p1 if sc1 > sc2 else (p2 if sc2 > sc1 else "")
+        loser = p2 if winner == p1 else (p1 if winner == p2 else "")
+        
+        sess["results"][match_key] = {
+            "s1": p1,
+            "s2": p2,
+            "ergebnis": ergebnis_str,
+            "winner": winner,
+            "loser": loser,
+            "180_s1": t180_1,
+            "180_s2": t180_2,
+            "avg_s1": def_avg_1,
+            "avg_s2": def_avg_2
+        }
+        st.divider()
+        
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("Schließen", use_container_width=True, key=f"qe_close_{session_idx}"):
+            st.rerun()
+    with col_b2:
+        if st.button("💾 Ergebnisse speichern", type="primary", use_container_width=True, key=f"qe_save_{session_idx}"):
+            save_data(st.session_state.sessions_list)
+            st.success("Ergebnisse erfolgreich gespeichert!")
+            st.rerun()
+
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -553,7 +644,7 @@ def open_retroactive_session_dialog():
             }
             st.session_state.sessions_list.insert(0, new_session)
             save_data(st.session_state.sessions_list)
-            st.success("Session erfolgreich nachträglich angelegt! Du kannst nun die Ergebnisse eintragen.")
+            st.success("Session erfolgreich nachträglich angelegt! Du kannst nun die Ergebnisse im Schnelldurchlauf eintragen.")
             st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
@@ -1300,11 +1391,14 @@ with tab_archiv:
                 total_rounds = sess.get("total_rounds", 4)
                 st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden*{gaeste_text})")
                 
-                col_btn1, col_btn2 = st.columns(2)
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
                     if st.button("📊 Spielablauf ansehen", key=f"arch_view_btn_{idx}", use_container_width=True):
                         open_session_archive_dialog(idx)
                 with col_btn2:
+                    if st.button("⚡ Schnelldurchlauf", key=f"arch_quick_btn_{idx}", use_container_width=True):
+                        open_quick_entry_dialog(idx)
+                with col_btn3:
                     if st.button("🗑️ Session löschen", key=f"arch_del_btn_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
                 st.divider()
