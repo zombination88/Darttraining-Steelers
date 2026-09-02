@@ -4,6 +4,7 @@ from datetime import date
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+import textwrap
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
@@ -12,37 +13,53 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" 
 
 # --- DATENBANKVERBINDUNG (Natives Google gspread) ---
-try:
-    # 1. Lade den kopierten Text aus den Secrets
-    creds_dict = json.loads(st.secrets["google_json"])
+def get_credentials():
+    creds_dict = None
     
-    # --- BULLETPROOF FIX FÜR DEN PEM-FEHLER (MalformedFraming) ---
-    # Baut den Schlüsselknoten komplett neu auf, egal wie stark Streamlit ihn deformiert hat!
-    private_key = creds_dict.get("private_key", "")
-    if private_key:
-        header = "-----BEGIN PRIVATE KEY-----"
-        footer = "-----END PRIVATE KEY-----"
-        if header in private_key and footer in private_key:
-            import textwrap
-            # Extrahiere reinen Schlüssel
-            body = private_key.split(header)[1].split(footer)[0]
-            # Lösche alle Leerzeichen und kaputte Umbrüche
-            body = body.replace(" ", "").replace("\\n", "").replace("\n", "")
-            # Setze exakte 64-Zeichen Zeilenumbrüche (PEM Standard)
-            formatted_body = "\n".join(textwrap.wrap(body, 64))
-            creds_dict["private_key"] = f"{header}\n{formatted_body}\n{footer}\n"
-            
-    # 2. Definiere die nötigen Google-Rechte
+    # 1. Sucht überall in den Secrets nach den Daten (egal wo du sie eingefügt hast)
+    if "google_json" in st.secrets:
+        val = st.secrets["google_json"]
+        try:
+            creds_dict = json.loads(val) if isinstance(val, str) else dict(val)
+        except Exception:
+            pass
+    if not creds_dict and "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+        creds_dict = dict(st.secrets["connections"]["gsheets"])
+    if not creds_dict and "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        
+    if not creds_dict:
+        st.error("🚨 Keine Google-Zugangsdaten in den Secrets gefunden.")
+        st.stop()
+        
+    # 2. Schlüssel extrem aggressiv reparieren (Bulletproof PEM Format)
+    pk = creds_dict.get("private_key", "")
+    if not pk or len(pk) < 100:
+        st.error("🚨 Der 'private_key' fehlt oder ist zu kurz. Bitte Secrets prüfen.")
+        st.stop()
+        
+    pk = pk.replace("\\n", "\n")
+    if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
+        body = pk.split("-----BEGIN PRIVATE KEY-----")[1].split("-----END PRIVATE KEY-----")[0]
+        body = "".join(body.split()) # Entfernt gnadenlos alle falschen Leerzeichen und Umbrüche
+        wrapped = "\n".join(textwrap.wrap(body, 64))
+        creds_dict["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{wrapped}\n-----END PRIVATE KEY-----\n"
+    else:
+        st.error("🚨 Der 'private_key' ist fehlerhaft. BEGIN/END PRIVATE KEY fehlt.")
+        st.stop()
+        
+    return creds_dict
+
+try:
+    creds_dict = get_credentials()
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # 3. Erstelle die Zugangsdaten
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    # 4. Autorisiere den Google Client
     gc = gspread.authorize(creds)
 except Exception as e:
-    st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
+    st.error(f"🚨 Fehler bei der Datenbankverbindung: {e}")
     st.stop()
 
 def load_data():
