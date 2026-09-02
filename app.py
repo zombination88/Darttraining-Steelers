@@ -2,95 +2,47 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import gspread
-from google.oauth2.service_account import Credentials
-import textwrap
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
-# WICHTIG: Füge hier den Link zu deiner eigenen Google Tabelle ein!
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0" 
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# --- DATENBANKVERBINDUNG (Natives Google gspread) ---
-def get_credentials():
-    creds_dict = None
-    
-    # 1. Sucht überall in den Secrets nach den Daten (egal wo du sie eingefügt hast)
-    if "google_json" in st.secrets:
-        val = st.secrets["google_json"]
-        try:
-            creds_dict = json.loads(val) if isinstance(val, str) else dict(val)
-        except Exception:
-            pass
-    if not creds_dict and "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-        creds_dict = dict(st.secrets["connections"]["gsheets"])
-    if not creds_dict and "gcp_service_account" in st.secrets:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        
-    if not creds_dict:
-        st.error("🚨 Keine Google-Zugangsdaten in den Secrets gefunden.")
-        st.stop()
-        
-    # 2. Schlüssel extrem aggressiv reparieren (Bulletproof PEM Format)
-    pk = creds_dict.get("private_key", "")
-    if not pk or len(pk) < 100:
-        st.error("🚨 Der 'private_key' fehlt oder ist zu kurz. Bitte Secrets prüfen.")
-        st.stop()
-        
-    pk = pk.replace("\\n", "\n")
-    if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
-        body = pk.split("-----BEGIN PRIVATE KEY-----")[1].split("-----END PRIVATE KEY-----")[0]
-        body = "".join(body.split()) # Entfernt gnadenlos alle falschen Leerzeichen und Umbrüche
-        wrapped = "\n".join(textwrap.wrap(body, 64))
-        creds_dict["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{wrapped}\n-----END PRIVATE KEY-----\n"
-    else:
-        st.error("🚨 Der 'private_key' ist fehlerhaft. BEGIN/END PRIVATE KEY fehlt.")
-        st.stop()
-        
-    return creds_dict
-
+# Verbindung zu Google Sheets herstellen
 try:
-    creds_dict = get_credentials()
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    gc = gspread.authorize(creds)
+    creds_dict = json.loads(st.secrets["google_json"])
+    # Formatierungsprobleme des private_key beheben
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
+    conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
 except Exception as e:
-    st.error(f"🚨 Fehler bei der Datenbankverbindung: {e}")
+    st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
 def load_data():
-    if SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" or SHEET_URL == "":
-        st.warning("Bitte trage in Zeile 11 in der app.py noch deinen Google Sheets Link (die komplette https:// URL) ein!")
+    if SHEET_URL == "" or SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
+        st.warning("Bitte trage den Google Sheets Link ein!")
         return []
         
     try:
-        # Öffne die Tabelle und lese alle Werte aus
-        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
-        values = sheet.get_all_values()
-        
-        # Prüfe, ob Daten vorhanden sind und ob die Spalte 'json_data' existiert
-        if len(values) > 1 and "json_data" in values[0]:
-            idx = values[0].index("json_data")
-            raw_str = values[1][idx]
-            
-            if raw_str:
-                raw_data = json.loads(raw_str)
-                sessions = []
-                for sess in raw_data:
-                    fixed_results = {}
-                    for k, v in sess.get("results", {}).items():
-                        parts = k.split("_", 1)
-                        if len(parts) == 2:
-                            r_num = int(parts[0])
-                            b_name = parts[1]
-                            fixed_results[(r_num, b_name)] = v
-                    sess["results"] = fixed_results
-                    sessions.append(sess)
-                return sessions
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
+        if df is not None and not df.empty and "json_data" in df.columns:
+            raw_str = df["json_data"].dropna().iloc[0]
+            raw_data = json.loads(raw_str)
+            sessions = []
+            for sess in raw_data:
+                fixed_results = {}
+                for k, v in sess.get("results", {}).items():
+                    parts = k.split("_", 1)
+                    if len(parts) == 2:
+                        r_num = int(parts[0])
+                        b_name = parts[1]
+                        fixed_results[(r_num, b_name)] = v
+                sess["results"] = fixed_results
+                sessions.append(sess)
+            return sessions
     except Exception as e:
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
@@ -106,17 +58,13 @@ def save_data(sessions):
         serializable_sessions.append(sess_copy)
     
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
+    df_to_save = pd.DataFrame({"json_data": [json_str]})
     
     try:
-        # Öffne die Tabelle, leere sie und schreibe die neuen Daten extrem sicher Zelle für Zelle
-        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
-        sheet.clear()
-        sheet.update_cell(1, 1, "json_data")
-        sheet.update_cell(2, 1, json_str)
+        conn.update(spreadsheet=SHEET_URL, worksheet="sessions", data=df_to_save)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-# --- UI SETUP ---
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -144,7 +92,6 @@ if "sessions_list" not in st.session_state:
 
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
-# --- HILFSFUNKTIONEN ---
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
@@ -258,7 +205,6 @@ def is_session_completed(sess):
             return False
     return True
 
-# --- DIALOGE ---
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -432,13 +378,17 @@ def open_board_dialog(board_name, session_idx):
     col1, col2 = st.columns(2)
     with col1:
         default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-        s1 = st.selectbox("Team / Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-        score1 = st.number_input(f"Legs für Heim", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+        s1_dropdown = st.selectbox("Team / Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
+        s1_ersatz = st.text_input("Spontaner Ersatz?", key=f"ersatz1_{board_name}_{session_idx}", placeholder="Nur eintragen, falls neu")
+        s1 = s1_ersatz if s1_ersatz.strip() != "" else s1_dropdown
+        score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
     with col2:
-        remaining = [p for p in verfügbare_spieler if p != s1]
+        remaining = [p for p in verfügbare_spieler if p != s1_dropdown]
         default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-        s2 = st.selectbox("Team / Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-        score2 = st.number_input(f"Legs für Gast", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
+        s2_dropdown = st.selectbox("Team / Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
+        s2_ersatz = st.text_input("Spontaner Ersatz?", key=f"ersatz2_{board_name}_{session_idx}", placeholder="Nur eintragen, falls neu")
+        s2 = s2_ersatz if s2_ersatz.strip() != "" else s2_dropdown
+        score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
         
     ergebnis = f"{score1}:{score2}"
     winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
@@ -493,7 +443,6 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
-# --- TABS INHALTE ---
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
