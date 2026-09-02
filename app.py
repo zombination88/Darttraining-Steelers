@@ -75,19 +75,15 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-st.markdown("<h1 style='margin: 0; padding-top: 5px; padding-bottom: 15px; font-size: 1.8rem; text-align: center;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='margin: 0; padding-top: 12px; padding-bottom: 10px; font-size: 2.0rem; text-align: center;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
 
-top_c1, top_c2 = st.columns(2)
-with top_c1:
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
     try:
         with st.popover("🎵", use_container_width=True):
             st.audio("vereinssong.mp3")
     except Exception:
         pass
-with top_c2:
-    if st.button("🔄", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
-        st.session_state.sessions_list = load_data()
-        st.rerun()
 
 kader = [
     "Andreas Böhm",
@@ -329,12 +325,17 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
     with col2:
         if st.button("Änderung speichern", type="primary", use_container_width=True, key=f"sub_save_{board_name}_{round_num}_{slot_num}"):
             final_name = new_txt.strip() if new_txt.strip() else new_sel
-            if "results" not in sess:
-                sess["results"] = {}
             
-            if (round_num, board_name) not in sess["results"]:
-                auto_p = get_board_players(sess, round_num, board_name)
-                sess["results"][(round_num, board_name)] = {
+            # SMART-SYNC: Hole aktuellste Daten vor dem Speichern!
+            frische_daten = load_data()
+            target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
+            
+            if "results" not in frische_daten[target_idx]:
+                frische_daten[target_idx]["results"] = {}
+            
+            if (round_num, board_name) not in frische_daten[target_idx]["results"]:
+                auto_p = get_board_players(frische_daten[target_idx], round_num, board_name)
+                frische_daten[target_idx]["results"][(round_num, board_name)] = {
                     "s1": auto_p[0],
                     "s2": auto_p[1],
                     "ergebnis": "0:0",
@@ -347,12 +348,13 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
                 }
             
             if slot_num == 1:
-                sess["results"][(round_num, board_name)]["s1"] = final_name
+                frische_daten[target_idx]["results"][(round_num, board_name)]["s1"] = final_name
             else:
-                sess["results"][(round_num, board_name)]["s2"] = final_name
+                frische_daten[target_idx]["results"][(round_num, board_name)]["s2"] = final_name
                 
-            save_data(st.session_state.sessions_list)
-            st.success("Spieler erfolgreich gewechselt!")
+            save_data(frische_daten)
+            st.session_state.sessions_list = frische_daten
+            st.success("Spieler synchronisiert und gewechselt!")
             st.rerun()
 
 @st.dialog("📊 Spielablauf & Rundenübersicht")
@@ -378,37 +380,21 @@ def open_session_archive_dialog(session_idx):
                 
             st.markdown(f"#### 🎯 {r_display}")
             boards_in_r = get_boards_list(sess, r)
-            r_matches = []
+            
             for b_name in boards_in_r:
                 match_info = res.get((r, b_name))
                 if match_info:
-                    r_matches.append({
-                        "Board": b_name,
-                        "Heim": match_info.get("s1", "–"),
-                        "Gast": match_info.get("s2", "–"),
-                        "Ergebnis": match_info.get("ergebnis", "–"),
-                        "Sieger": match_info.get("winner", "-"),
-                        "180er (H/G)": f"{match_info.get('180_s1', 0)} / {match_info.get('180_s2', 0)}",
-                        "Average (H/G)": f"{match_info.get('avg_s1', 0.0)} / {match_info.get('avg_s2', 0.0)}"
-                    })
+                    with st.container(border=True):
+                        st.markdown(f"**{b_name}**")
+                        st.markdown(f"{match_info.get('s1', '-')} **vs** {match_info.get('s2', '-')}")
+                        st.caption(f"Ergebnis: {match_info.get('ergebnis', '-')} | Sieger: {match_info.get('winner', '-')}")
+                        st.caption(f"180er: {match_info.get('180_s1', 0)}/{match_info.get('180_s2', 0)} | Avg: {match_info.get('avg_s1', 0.0)}/{match_info.get('avg_s2', 0.0)}")
                 else:
                     auto_p = get_board_players(sess, r, b_name)
-                    r_matches.append({
-                        "Board": b_name,
-                        "Heim": auto_p[0],
-                        "Gast": auto_p[1],
-                        "Ergebnis": "Ausstehend",
-                        "Sieger": "–",
-                        "180er (H/G)": "–",
-                        "Average (H/G)": "–"
-                    })
-            
-            if r_matches:
-                for m in r_matches:
                     with st.container(border=True):
-                        st.markdown(f"**{m['Board']}** | {m['Ergebnis']}")
-                        st.markdown(f"{m['Heim']} **vs** {m['Gast']}")
-                        st.caption(f"🏆 Sieger: {m['Sieger']} | 🎯 180er: {m['180er (H/G)']} | 📊 Avg: {m['Average (H/G)']}")
+                        st.markdown(f"**{b_name}**")
+                        st.markdown(f"{auto_p[0]} **vs** {auto_p[1]}")
+                        st.caption("Noch ausstehend")
             
             if is_standard_training and r == singles_rounds:
                 st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
@@ -419,8 +405,7 @@ def open_session_archive_dialog(session_idx):
                     winner_str = m_inf.get("winner", "–") if m_inf else "–"
                     with st.container(border=True):
                         st.markdown(f"**{b_name}**")
-                        st.markdown(f"{p_list[0]} **vs** {p_list[1]}")
-                        st.caption(f"🏆 Sieger des Matches: **{winner_str}**")
+                        st.caption(f"{p_list[0]} vs {p_list[1]} ➔ **Sieger: {winner_str}**")
                 st.divider()
                 
     if st.button("Schließen", use_container_width=True):
@@ -494,9 +479,12 @@ def open_new_session_dialog():
                 "gaeste": gaeste,
                 "results": {}
             }
-            st.session_state.sessions_list.insert(0, new_session)
-            save_data(st.session_state.sessions_list)
-            st.success("Session erfolgreich gestartet!")
+            # SMART-SYNC
+            frische_daten = load_data()
+            frische_daten.insert(0, new_session)
+            save_data(frische_daten)
+            st.session_state.sessions_list = frische_daten
+            st.success("Session synchronisiert und gestartet!")
             st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten")
@@ -573,19 +561,23 @@ def open_edit_session_dialog(session_idx):
             aktive_spieler = anwesende + gaeste
             boards_cnt = int(anzahl_boards.split()[0])
             
-            sess["datum"] = session_datum.strftime("%d.%m.%Y")
-            sess["modus"] = spielmodus
-            sess["boards_count"] = boards_cnt
-            sess["singles_rounds"] = singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds
-            sess["total_rounds"] = total_rounds
-            sess["boards"] = anzahl_boards
-            sess["modus_leg"] = leg_modus
-            sess["spieler"] = aktive_spieler
-            sess["gaeste"] = gaeste
+            # SMART-SYNC
+            frische_daten = load_data()
+            target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
             
-            st.session_state.sessions_list[session_idx] = sess
-            save_data(st.session_state.sessions_list)
-            st.success("Session erfolgreich aktualisiert!")
+            frische_daten[target_idx]["datum"] = session_datum.strftime("%d.%m.%Y")
+            frische_daten[target_idx]["modus"] = spielmodus
+            frische_daten[target_idx]["boards_count"] = boards_cnt
+            frische_daten[target_idx]["singles_rounds"] = singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds
+            frische_daten[target_idx]["total_rounds"] = total_rounds
+            frische_daten[target_idx]["boards"] = anzahl_boards
+            frische_daten[target_idx]["modus_leg"] = leg_modus
+            frische_daten[target_idx]["spieler"] = aktive_spieler
+            frische_daten[target_idx]["gaeste"] = gaeste
+            
+            save_data(frische_daten)
+            st.session_state.sessions_list = frische_daten
+            st.success("Session synchronisiert und aktualisiert!")
             st.rerun()
 
 @st.dialog("📋 Board-Erfassung & Tracking")
@@ -661,9 +653,13 @@ def open_board_dialog(board_name, session_idx):
             if in_score1 == in_score2:
                 st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
             else:
-                if "results" not in sess:
-                    sess["results"] = {}
-                sess["results"][(current_round, board_name)] = {
+                # SMART-SYNC
+                frische_daten = load_data()
+                target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
+                
+                if "results" not in frische_daten[target_idx]:
+                    frische_daten[target_idx]["results"] = {}
+                frische_daten[target_idx]["results"][(current_round, board_name)] = {
                     "s1": current_p1,
                     "s2": current_p2,
                     "ergebnis": ergebnis,
@@ -674,8 +670,9 @@ def open_board_dialog(board_name, session_idx):
                     "avg_s1": in_avg_1,
                     "avg_s2": in_avg_2
                 }
-                save_data(st.session_state.sessions_list)
-                st.success("Ergebnis und Statistiken erfolgreich gespeichert!")
+                save_data(frische_daten)
+                st.session_state.sessions_list = frische_daten
+                st.success("Ergebnis synchronisiert und gespeichert!")
                 st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
@@ -784,23 +781,30 @@ def open_quick_entry_dialog(session_idx):
                 elif n_s1 == 0 and n_s2 == 0:
                     pass
                 else:
-                    if "results" not in sess: sess["results"] = {}
                     winner = p1_val if n_s1 > n_s2 else p2_val
                     loser = p2_val if winner == p1_val else p1_val
-                    sess["results"][(selected_r, b_name)] = {
+                    
+                    # SMART-SYNC
+                    frische_daten = load_data()
+                    target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
+                    
+                    if "results" not in frische_daten[target_idx]: 
+                        frische_daten[target_idx]["results"] = {}
+                    frische_daten[target_idx]["results"][(selected_r, b_name)] = {
                         "s1": p1_val, "s2": p2_val,
                         "ergebnis": f"{n_s1}:{n_s2}",
                         "winner": winner, "loser": loser,
                         "180_s1": n_h1, "180_s2": n_h2,
                         "avg_s1": a1, "avg_s2": a2
                     }
-                    save_data(st.session_state.sessions_list)
-                    st.success("Gespeichert!")
+                    save_data(frische_daten)
+                    st.session_state.sessions_list = frische_daten
+                    st.success("Gespeichert & Synchronisiert!")
 
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
-@st.dialog("🗑️ Session löschen")
+@st.dialog("🗑️ Session löschen (Passwortgeschützt)")
 def open_delete_dialog(session_idx):
     if session_idx >= len(st.session_state.sessions_list):
         st.rerun()
@@ -818,10 +822,17 @@ def open_delete_dialog(session_idx):
     with col2:
         if st.button("Unwiderruflich löschen", type="primary", use_container_width=True):
             if pwd == "1521":
-                st.session_state.sessions_list.pop(session_idx)
-                save_data(st.session_state.sessions_list)
-                st.success("Session erfolgreich gelöscht!")
-                st.rerun()
+                # SMART-SYNC
+                frische_daten = load_data()
+                target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), -1)
+                if target_idx != -1:
+                    frische_daten.pop(target_idx)
+                    save_data(frische_daten)
+                    st.session_state.sessions_list = frische_daten
+                    st.success("Session gelöscht und synchronisiert!")
+                    st.rerun()
+                else:
+                    st.error("Session wurde bereits gelöscht!")
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
@@ -839,45 +850,6 @@ with tab_übersicht:
                 open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_btn[0]))
         else:
             st.button("⚙️ Bearbeiten", use_container_width=True, disabled=True)
-        
-    st.write("")
-    
-    total_180s = 0
-    kaiser_winner_text = "Noch offen"
-    anwesende_count = 0
-    
-    display_sess = None
-    for s in st.session_state.sessions_list:
-        if is_session_completed(s) or s.get("results"):
-            display_sess = s
-            break
-    if not display_sess and st.session_state.sessions_list:
-        display_sess = st.session_state.sessions_list[0]
-
-    for sess in st.session_state.sessions_list:
-        for match in sess.get("results", {}).values():
-            s1_name = match.get("s1", "")
-            s2_name = match.get("s2", "")
-            if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
-            if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
-
-    if display_sess:
-        l_results = display_sess.get("results", {})
-        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
-        if kaiser_matches:
-            kaiser_matches.sort(key=lambda x: x[0], reverse=True)
-            kaiser_winner_text = kaiser_matches[0][1].get("winner")
-        
-        anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
-
-    with st.container(border=True):
-        c1, c2 = st.columns(2)
-        with c1: st.metric(label="Sessions", value=str(len(st.session_state.sessions_list)), delta="gesamt")
-        with c2: st.metric(label="180er", value=str(total_180s), delta="Team gesamt")
-        st.divider()
-        c3, c4 = st.columns(2)
-        with c3: st.metric(label="Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
-        with c4: st.metric(label="Anwesend", value=str(anwesende_count), delta="Spieler")
         
     st.write("")
     
@@ -918,7 +890,8 @@ with tab_übersicht:
             
         st.markdown(f"#### {r_head} ({len(active_boards_list)} Boards aktiv)")
         
-        cols_per_row = 1 
+        # 1 BOARD PRO REIHE (Perfekt für Handys!)
+        cols_per_row = 1
         for i in range(0, len(active_boards_list), cols_per_row):
             cols = st.columns(cols_per_row)
             for j in range(cols_per_row):
@@ -966,6 +939,46 @@ with tab_übersicht:
                                 st.success("✅ Abgeschlossen")
 
     st.write("")
+    st.markdown("### 📊 Allgemeine Statistiken")
+    
+    total_180s = 0
+    kaiser_winner_text = "Noch offen"
+    anwesende_count = 0
+    
+    display_sess = None
+    for s in st.session_state.sessions_list:
+        if is_session_completed(s) or s.get("results"):
+            display_sess = s
+            break
+    if not display_sess and st.session_state.sessions_list:
+        display_sess = st.session_state.sessions_list[0]
+
+    for sess in st.session_state.sessions_list:
+        for match in sess.get("results", {}).values():
+            s1_name = match.get("s1", "")
+            s2_name = match.get("s2", "")
+            if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
+            if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
+
+    if display_sess:
+        l_results = display_sess.get("results", {})
+        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        if kaiser_matches:
+            kaiser_matches.sort(key=lambda x: x[0], reverse=True)
+            kaiser_winner_text = kaiser_matches[0][1].get("winner")
+        
+        anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
+
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric(label="Sessions", value=str(len(st.session_state.sessions_list)), delta="gesamt")
+        with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
+        st.divider()
+        c3, c4 = st.columns(2)
+        with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
+        with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
+        
+    st.write("")
     with st.expander("Letzte Session & Spitzenreiter", expanded=False):
         col_l, col_r = st.columns(2)
         with col_l:
@@ -994,7 +1007,7 @@ with tab_übersicht:
                     top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
                     best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
                 
-                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1:** 👑 {kaiser_winner_text}\n\n**High Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
+                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
             else:
                 st.info("Keine Daten vorhanden.")
 
@@ -1046,7 +1059,7 @@ with tab_übersicht:
         if all_matches:
             for m in reversed(all_matches):
                 with st.container(border=True):
-                    st.markdown(f"**{m['Datum']} - {m['Board']}** ({m['Runde']})")
+                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
                     st.markdown(f"{m['Spieler']}")
                     st.caption(f"Ergebnis: {m['Ergebnis']} | Sieger: {m['Sieger']}")
         else:
