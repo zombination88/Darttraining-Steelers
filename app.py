@@ -90,7 +90,7 @@ with col2:
 
 kader = [
     "Andreas Böhm",
-    "Andrino Czombera (Teamcaptain)",
+    "Andrino Czombera",
     "Dennis Güttner",
     "Marco Eser",
     "Maximilian Zientner",
@@ -104,7 +104,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 # STREAMING_CHUNK:Defining helper functions for boards...
 def get_boards_list(session, round_num=None):
@@ -137,14 +137,16 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
+    # Runde 1 Rotation über Trainingstage hinweg (chronologischer Session-Index)
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
         try:
             s_idx = all_sessions.index(session)
         except:
             s_idx = 0
+        chrono_s_idx = len(all_sessions) - 1 - s_idx
         if spieler:
-            shift = s_idx % len(spieler)
+            shift = chrono_s_idx % len(spieler)
             spieler = spieler[shift:] + spieler[:shift]
 
     pairs = []
@@ -1159,54 +1161,3 @@ with tab_archiv:
                     if st.button("🗑️ Session löschen", key=f"arch_del_btn_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
                 st.divider()
-
-# STREAMING_CHUNK:Rendering bdv tab...
-with tab_bdv:
-    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
-    st.markdown("""
-# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
-1.  Mannschaft & Meldung
-2.  Spielmodus & Ablauf (Liga und Pokal)
-3.  Spielbericht & Online-Meldung
-4.  Mannschaftsvorstellung (Kader)
-
-### 1. Mannschaft & Meldung
-- **Mannschaftsmeldung:** Erledigt.
-- **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
-
-### 2. Spielmodus & Ablauf (Liga und Pokal)
-- **Heimspieltag ist Dienstag**
-- **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
-- **Aufstellung (3 Blöcke):**
-  - **Block 1:** 4 Einzelspieler.
-  - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
-  - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
-- **Rahmenbedingungen:**
-  - **Spielzeit:** Mo–Do ab 20:00 Uhr.
-  - **Austragung:** Parallel auf zwei Boards.
-  - **Einwerfzeit:** 30 Minuten für Gäste.
-- **Board-Zuordnung & Schreiber:**
-  Die Heimmannschaft schreibt und beginnt auf Board 1.  
-  Die Gastmannschaft schreibt und beginnt auf Board 2.  
-- **Schwabenpokal:**
-  - Nur K.O. Runden
-  - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
-
-### 3. Spielbericht & Online-Meldung
-- **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
-- **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
-- **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
-- **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
-
-### 4. Mannschaftsvorstellung (Kader)
-- Andreas Böhm
-- Andrino Czombera (Teamcaptain)
-- Dennis Güttner
-- Marco Eser
-- Maximilian Zientner
-- Michael Kummer
-- Michael Mak
-- Michael Neumeier
-- Thomas Schaudt
-- Wolfgang Schneider
-    """)
