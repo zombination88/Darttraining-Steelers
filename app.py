@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -481,6 +481,79 @@ def open_new_session_dialog():
             st.session_state.sessions_list.insert(0, new_session)
             save_data(st.session_state.sessions_list)
             st.success("Session erfolgreich gestartet!")
+            st.rerun()
+
+@st.dialog("➕ Vergangene Session nachtragen (Passwortgeschützt)")
+def open_retroactive_session_dialog():
+    pwd = st.text_input("Passwort eingeben", type="password", key="retro_pwd_input")
+    if pwd != "1521":
+        if pwd != "":
+            st.error("Falsches Passwort!")
+        return
+
+    yesterday = date.today() - timedelta(days=1)
+    session_datum = st.date_input("Datum der Session", yesterday, key="retro_date_input")
+    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], key="retro_leg_input")
+    spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"], key="retro_mod_input")
+    
+    if spielmodus == "Standard-Training (Einzel + Coop)":
+        st.write("### Runden-Aufteilung")
+        singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3, key="retro_singles_input")
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1, key="retro_coop_input")
+        total_rounds = singles_rounds + coop_rounds
+    else:
+        singles_rounds = 0
+        coop_rounds = 0
+        total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3, key="retro_rounds_input")
+        
+    anzahl_boards = st.selectbox("Anzahl der Boards", ["4 Boards", "6 Boards", "5 Boards", "3 Boards", "2 Boards", "1 Board"], index=0, key="retro_boards_input")
+    
+    st.write("### Anwesende Spieler")
+    anwesende = []
+    cols = st.columns(2)
+    half = len(kader) // 2
+    with cols[0]:
+        for spieler in kader[:half]:
+            if st.checkbox(spieler, value=True, key=f"retro_kader_{spieler}"):
+                anwesende.append(spieler)
+    with cols[1]:
+        for spieler in kader[half:]:
+            if st.checkbox(spieler, value=True, key=f"retro_kader_{spieler}"):
+                anwesende.append(spieler)
+                
+    st.write("### Gastspieler (optional, max. 4)")
+    g1 = st.text_input("Gastspieler 1", key="retro_gast_1")
+    g2 = st.text_input("Gastspieler 2", key="retro_gast_2")
+    g3 = st.text_input("Gastspieler 3", key="retro_gast_3")
+    g4 = st.text_input("Gastspieler 4", key="retro_gast_4")
+    
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("Abbrechen", use_container_width=True, key="retro_cancel_btn"):
+            st.rerun()
+    with col_b2:
+        if st.button("Nachtrag speichern", type="primary", use_container_width=True, key="retro_save_btn"):
+            gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            aktive_spieler = anwesende + gaeste
+            new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+            boards_cnt = int(anzahl_boards.split()[0])
+            
+            new_session = {
+                "id": new_id,
+                "datum": session_datum.strftime("%d.%m.%Y"),
+                "modus": spielmodus,
+                "boards_count": boards_cnt,
+                "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds,
+                "total_rounds": total_rounds,
+                "boards": anzahl_boards,
+                "modus_leg": leg_modus,
+                "spieler": aktive_spieler,
+                "gaeste": gaeste,
+                "results": {}
+            }
+            st.session_state.sessions_list.insert(0, new_session)
+            save_data(st.session_state.sessions_list)
+            st.success("Session erfolgreich nachträglich angelegt! Du kannst nun die Ergebnisse eintragen.")
             st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
@@ -1212,6 +1285,11 @@ with tab_session:
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Klicke auf eine Session, um den detaillierten Spielablauf aller Runden einzusehen, oder verwalte/lösche sie bei Bedarf.")
+    
+    if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_main_btn"):
+        open_retroactive_session_dialog()
+        
+    st.write("")
     
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
