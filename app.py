@@ -16,11 +16,22 @@ try:
     # 1. Lade den kopierten Text aus den Secrets
     creds_dict = json.loads(st.secrets["google_json"])
     
-    # --- FIX FÜR DEN PEM-FEHLER (MalformedFraming) ---
-    # Repariert die Zeilenumbrüche im privaten Schlüssel automatisch!
-    if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
+    # --- BULLETPROOF FIX FÜR DEN PEM-FEHLER (MalformedFraming) ---
+    # Baut den Schlüsselknoten komplett neu auf, egal wie stark Streamlit ihn deformiert hat!
+    private_key = creds_dict.get("private_key", "")
+    if private_key:
+        header = "-----BEGIN PRIVATE KEY-----"
+        footer = "-----END PRIVATE KEY-----"
+        if header in private_key and footer in private_key:
+            import textwrap
+            # Extrahiere reinen Schlüssel
+            body = private_key.split(header)[1].split(footer)[0]
+            # Lösche alle Leerzeichen und kaputte Umbrüche
+            body = body.replace(" ", "").replace("\\n", "").replace("\n", "")
+            # Setze exakte 64-Zeichen Zeilenumbrüche (PEM Standard)
+            formatted_body = "\n".join(textwrap.wrap(body, 64))
+            creds_dict["private_key"] = f"{header}\n{formatted_body}\n{footer}\n"
+            
     # 2. Definiere die nötigen Google-Rechte
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
