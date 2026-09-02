@@ -282,6 +282,7 @@ def get_board_players(session, round_num, board_name):
                 resting_p_prev = get_resting_player(session, round_num - 1)
                 return [loser_from_above, resting_p_prev if resting_p_prev else "-"]
             else:
+                loser_from_above = l.get(prev_board, "-")
                 loser_from_last = l.get(boards[b_idx], "-")
                 return [loser_from_above, loser_from_last]
             
@@ -467,8 +468,14 @@ def open_session_archive_dialog(session_idx):
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
-@st.dialog("⚡ Schnelldurchlauf Ergebnisse")
+@st.dialog("⚡ Schnelldurchlauf Ergebnisse (Passwortgeschützt)")
 def open_quick_entry_dialog(session_idx):
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"qe_pwd_input_{session_idx}")
+    if pwd != "1521":
+        if pwd != "":
+            st.error("Falsches Passwort!")
+        return
+
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
     modus = sess.get("modus", "Up & Down")
@@ -476,7 +483,7 @@ def open_quick_entry_dialog(session_idx):
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
-    st.caption("Trage hier rundenweise die Ergebnisse im Schnelldurchlauf ein.")
+    st.caption("Trage hier rundenweise die Ergebnisse ein und passe bei Bedarf Spieler an.")
     
     round_options = []
     for r in range(1, total_rounds + 1):
@@ -494,21 +501,29 @@ def open_quick_entry_dialog(session_idx):
     boards_in_round = get_boards_list(sess, current_round)
     res = sess.get("results", {})
     
-    st.markdown(f"#### 🎯 Partien für {selected_r_tuple[1]}")
+    st.markdown(f"#### 🎯 Partien & Spieler für {selected_r_tuple[1]}")
     
     if "results" not in sess:
         sess["results"] = {}
         
+    alle_mögliche_spieler = list(set(sess.get("spieler", kader)))
+    if "-" not in alle_mögliche_spieler:
+        alle_mögliche_spieler.append("-")
+    alle_mögliche_spieler.sort()
+
     for b_name in boards_in_round:
         st.markdown(f"**{b_name}**")
         auto_p = get_board_players(sess, current_round, b_name)
         match_key = (current_round, b_name)
         existing_match = res.get(match_key, {})
         
-        p1 = existing_match.get("s1", auto_p[0])
-        p2 = existing_match.get("s2", auto_p[1])
-        if p1 == "-" or not p1: p1 = auto_p[0]
-        if p2 == "-" or not p2: p2 = auto_p[1]
+        p1_default = existing_match.get("s1", auto_p[0])
+        p2_default = existing_match.get("s2", auto_p[1])
+        if not p1_default: p1_default = auto_p[0]
+        if not p2_default: p2_default = auto_p[1]
+        
+        if p1_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p1_default)
+        if p2_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p2_default)
         
         try:
             default_score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
@@ -521,28 +536,38 @@ def open_quick_entry_dialog(session_idx):
         def_avg_1 = float(existing_match.get("avg_s1", 0.0))
         def_avg_2 = float(existing_match.get("avg_s2", 0.0))
         
-        c1, c2, c3 = st.columns([3, 2, 2])
-        with c1:
-            st.text(f"{p1} vs {p2}")
-        with c2:
-            sc1 = st.number_input(f"Legs {p1}", min_value=0, max_value=5, value=default_score1, key=f"qe_sc1_{session_idx}_{current_round}_{b_name}")
-            sc2 = st.number_input(f"Legs {p2}", min_value=0, max_value=5, value=default_score2, key=f"qe_sc2_{session_idx}_{current_round}_{b_name}")
-        with c3:
-            t180_1 = st.number_input(f"180er ({p1})", min_value=0, max_value=10, value=def_180_1, key=f"qe_180_1_{session_idx}_{current_round}_{b_name}")
-            t180_2 = st.number_input(f"180er ({p2})", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
+        c_p1, c_vs, c_p2 = st.columns([3, 1, 3])
+        with c_p1:
+            idx1 = alle_mögliche_spieler.index(p1_default) if p1_default in alle_mögliche_spieler else 0
+            sel_p1 = st.selectbox(f"Heim ({b_name})", alle_mögliche_spieler, index=idx1, key=f"qe_p1_{session_idx}_{current_round}_{b_name}")
+        with c_vs:
+            st.markdown("<div style='text-align: center; color: #ff4b4b; padding-top: 30px; font-weight: bold;'>VS</div>", unsafe_allow_html=True)
+        with c_p2:
+            idx2 = alle_mögliche_spieler.index(p2_default) if p2_default in alle_mögliche_spieler else 0
+            sel_p2 = st.selectbox(f"Gast ({b_name})", alle_mögliche_spieler, index=idx2, key=f"qe_p2_{session_idx}_{current_round}_{b_name}")
+
+        sc1, sc2, t180_1, t180_2 = st.columns(4)
+        with sc1:
+            s1_val = st.number_input(f"Legs {sel_p1}", min_value=0, max_value=5, value=default_score1, key=f"qe_sc1_{session_idx}_{current_round}_{b_name}")
+        with sc2:
+            s2_val = st.number_input(f"Legs {sel_p2}", min_value=0, max_value=5, value=default_score2, key=f"qe_sc2_{session_idx}_{current_round}_{b_name}")
+        with t180_1:
+            t180_1_val = st.number_input(f"180er ({sel_p1})", min_value=0, max_value=10, value=def_180_1, key=f"qe_180_1_{session_idx}_{current_round}_{b_name}")
+        with t180_2:
+            t180_2_val = st.number_input(f"180er ({sel_p2})", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
             
-        ergebnis_str = f"{sc1}:{sc2}"
-        winner = p1 if sc1 > sc2 else (p2 if sc2 > sc1 else (p1 if sc1 >= sc2 else p2))
-        loser = p2 if winner == p1 else p1
+        ergebnis_str = f"{s1_val}:{s2_val}"
+        winner = sel_p1 if s1_val > s2_val else (sel_p2 if s2_val > s1_val else None)
+        loser = sel_p2 if winner == sel_p1 else (sel_p1 if winner == sel_p2 else None)
         
         sess["results"][match_key] = {
-            "s1": p1,
-            "s2": p2,
+            "s1": sel_p1,
+            "s2": sel_p2,
             "ergebnis": ergebnis_str,
-            "winner": winner,
-            "loser": loser,
-            "180_s1": t180_1,
-            "180_s2": t180_2,
+            "winner": winner if winner else "",
+            "loser": loser if loser else "",
+            "180_s1": t180_1_val,
+            "180_s2": t180_2_val,
             "avg_s1": def_avg_1,
             "avg_s2": def_avg_2
         }
@@ -555,7 +580,7 @@ def open_quick_entry_dialog(session_idx):
     with col_b2:
         if st.button("💾 Ergebnisse speichern", type="primary", use_container_width=True, key=f"qe_save_{session_idx}"):
             save_data(st.session_state.sessions_list)
-            st.success("Ergebnisse erfolgreich gespeichert!")
+            st.success("Ergebnisse und Spieler erfolgreich gespeichert!")
             st.rerun()
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
