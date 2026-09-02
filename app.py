@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -82,8 +82,11 @@ with col1:
     except Exception:
         pass
     
-    with st.popover("🎵 Song", use_container_width=True):
-        st.audio("vereinssong.mp3")
+    with st.popover("🎵 Vereinssong", use_container_width=True):
+        try:
+            st.audio("vereinssong.mp3")
+        except Exception:
+            st.info("vereinssong.mp3 nicht gefunden.")
 
 with col2:
     st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
@@ -157,15 +160,51 @@ def get_board_players(session, round_num, board_name):
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
-    K = session.get("boards_count", len(boards))
-    has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
     
-    waiting_p = None
-    active_spieler = list(spieler)
-    if has_resting:
-        waiting_p = get_waiting_player(session, round_num)
-        if waiting_p and waiting_p in active_spieler:
-            active_spieler.remove(waiting_p)
+    if round_num == 1 and not in_coop_phase:
+        all_sessions = st.session_state.sessions_list
+        try:
+            s_idx = all_sessions.index(session)
+        except:
+            s_idx = 0
+        
+        prev_sess = None
+        if s_idx + 1 < len(all_sessions):
+            prev_sess = all_sessions[s_idx + 1]
+            
+        if prev_sess and "results" in prev_sess:
+            prev_total = prev_sess.get("total_rounds", 4)
+            prev_modus = prev_sess.get("modus", "Up & Down")
+            prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
+            prev_singles = prev_sess.get("singles_rounds", prev_total - 2 if prev_is_std and prev_total > 2 else prev_total)
+            target_r = prev_singles if prev_is_std else prev_total
+            
+            prev_boards = get_boards_list(prev_sess, target_r)
+            prev_results = prev_sess.get("results", {})
+            
+            prev_players_bottom_to_top = []
+            for pb in reversed(prev_boards):
+                match_inf = prev_results.get((target_r, pb))
+                p1, p2 = "-", "-"
+                if match_inf:
+                    p1 = match_inf.get("s1", "-")
+                    p2 = match_inf.get("s2", "-")
+                else:
+                    p_pair = get_board_players(prev_sess, target_r, pb)
+                    p1, p2 = p_pair[0], p_pair[1]
+                if p2 != "-" and p2 not in prev_players_bottom_to_top:
+                    prev_players_bottom_to_top.append(p2)
+                if p1 != "-" and p1 not in prev_players_bottom_to_top:
+                    prev_players_bottom_to_top.append(p1)
+            
+            returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
+            new_players = [p for p in spieler if p not in prev_players_bottom_to_top]
+            
+            ordered_players = new_players + returning_players
+            for p in spieler:
+                if p not in ordered_players:
+                    ordered_players.append(p)
+            spieler = ordered_players[:len(spieler)]
 
     pairs = []
     
@@ -178,25 +217,29 @@ def get_board_players(session, round_num, board_name):
             s_idx = 0
             
         if in_coop_phase:
-            coop_shift = (s_idx + (round_num - singles_rounds)) % len(active_spieler)
-            active_spieler = active_spieler[coop_shift:] + active_spieler[:coop_shift]
+            coop_shift = (s_idx + (round_num - singles_rounds)) % len(spieler)
+            spieler = spieler[coop_shift:] + spieler[:coop_shift]
             
-        for i in range(0, len(active_spieler)-1, 2):
-            teams.append(f"{active_spieler[i]} & {active_spieler[i+1]}")
+        for i in range(0, len(spieler)-1, 2):
+            teams.append(f"{spieler[i]} & {spieler[i+1]}")
+        if len(spieler) % 2 != 0:
+            teams.append(f"{spieler[-1]} & -")
             
         coop_boards_cnt = 2
-        for i in range(0, min(coop_boards_cnt * 2, len(teams)), 2):
-            if i + 1 < len(teams):
-                pairs.append((teams[i], teams[i+1]))
+        for i in range(0, min(coop_boards_cnt * 2, len(teams) - len(teams) % 2), 2):
+            pairs.append((teams[i], teams[i+1]))
         while len(pairs) <= b_idx:
-            pairs.append(("-", "-"))
+            t1 = teams[0] if len(teams) > 0 else "-"
+            t2 = teams[1] if len(teams) > 1 else "-"
+            pairs.append((t1, t2))
         return list(pairs[b_idx])
     else:
+        boards_count = session.get("boards_count", 6)
         if round_num == 1:
-            for i in range(0, min(K * 2, len(active_spieler) - len(active_spieler) % 2), 2):
-                pairs.append((active_spieler[i], active_spieler[i+1]))
+            for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
+                pairs.append((spieler[i], spieler[i+1]))
             while len(pairs) <= b_idx:
-                pairs.append(("-", "-"))
+                pairs.append((spieler[0] if spieler else "-", spieler[1] if len(spieler) > 1 else "-"))
             return list(pairs[b_idx])
         
         prev_r = round_num - 1
@@ -209,25 +252,27 @@ def get_board_players(session, round_num, board_name):
                 w[b] = match_info["winner"]
                 l[b] = match_info["loser"]
             else:
-                w[b] = "-"
-                l[b] = "-"
+                def_players = get_board_players(session, prev_r, b)
+                w[b] = def_players[0]
+                l[b] = def_players[1]
                 
         if b_idx == 0:
             p1 = w.get(boards[0], "-")
             p2 = w.get(boards[1], "-") if len(boards) > 1 else "-"
-            return [p1 if p1 != "-" else "-", p2 if p2 != "-" else "-"]
+            return [p1, p2]
         
         if b_idx < len(boards) - 1:
             prev_board = boards[b_idx - 1]
             next_board = boards[b_idx + 1]
             loser_from_above = l.get(prev_board, "-")
             winner_from_below = w.get(next_board, "-")
-            return [loser_from_above if loser_from_above != "-" else "-", winner_from_below if winner_from_below != "-" else "-"]
+            return [loser_from_above, winner_from_below]
             
         if b_idx == len(boards) - 1:
             prev_board = boards[b_idx - 1]
             loser_from_above = l.get(prev_board, "-")
-            return [loser_from_above if loser_from_above != "-" else "-", waiting_p if waiting_p else "-"]
+            waiting_p = get_waiting_player(session, round_num)
+            return [loser_from_above, waiting_p if waiting_p else "-"]
             
     return ["-", "-"]
 
@@ -1381,9 +1426,11 @@ with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Klicke auf eine Session, um den detaillierten Spielablauf aller Runden einzusehen, oder verwalte/lösche sie bei Bedarf.")
     
-    if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_main_btn"):
-        open_retroactive_session_dialog()
-        
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_main_btn"):
+            open_retroactive_session_dialog()
+            
     st.write("")
     
     if not st.session_state.sessions_list:
@@ -1392,8 +1439,10 @@ with tab_archiv:
         for idx, sess in enumerate(st.session_state.sessions_list):
             with st.container(border=True):
                 gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
+                modus_txt = sess.get('modus', 'Up & Down')
+                boards_txt = sess.get('boards', '4 Boards')
                 total_rounds = sess.get("total_rounds", 4)
-                st.markdown(f"**{sess['id']}** — {sess['datum']} (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden*{gaeste_text})")
+                st.markdown(f"**{sess['id']}** — {sess['datum']} (*{modus_txt} · {boards_txt} · {total_rounds} Runden*{gaeste_text})")
                 
                 col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
