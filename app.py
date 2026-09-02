@@ -75,18 +75,17 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-col1, col2, col3 = st.columns([1.5, 6, 2.5])
-with col1:
+st.markdown("<h1 style='margin: 0; padding-top: 5px; padding-bottom: 15px; font-size: 1.8rem; text-align: center;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
+
+top_c1, top_c2 = st.columns(2)
+with top_c1:
     try:
-        with st.popover("🎵 ▾"):
+        with st.popover("🎵 Vereinssong", use_container_width=True):
             st.audio("vereinssong.mp3")
     except Exception:
         pass
-with col2:
-    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.5rem;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
-with col3:
-    st.markdown("<div style='padding-top: 6px;'></div>", unsafe_allow_html=True)
-    if st.button("🔄 Sync", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
+with top_c2:
+    if st.button("🔄 Cloud-Sync", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
         st.session_state.sessions_list = load_data()
         st.rerun()
 
