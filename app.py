@@ -453,22 +453,22 @@ def open_new_session_dialog():
             st.error("Falsches Passwort!")
         return
 
-    session_datum = st.date_input("Datum", date.today())
-    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
-    spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"])
+    session_datum = st.date_input("Datum", date.today(), key="new_sess_date")
+    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], key="new_sess_leg")
+    spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"], key="new_sess_modus")
     
     if spielmodus == "Standard-Training (Einzel + Coop)":
         st.write("### Runden-Aufteilung")
-        singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1)
+        singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3, key="new_sess_singles")
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1, key="new_sess_coop")
         total_rounds = singles_rounds + coop_rounds
-        st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel (auf gewählten Boards) + {coop_rounds} Runden Doppel/Koop (auf exakt 2 Boards).")
+        st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel + {coop_rounds} Runden Doppel/Koop (auf exakt 2 Boards).")
     else:
         singles_rounds = 0
         coop_rounds = 0
-        total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
+        total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3, key="new_sess_total_r")
         
-    anzahl_boards = st.selectbox("Anzahl der Boards (für Einzel)", ["4 Boards", "6 Boards", "5 Boards", "3 Boards", "2 Boards", "1 Board"], index=0)
+    anzahl_boards = st.selectbox("Anzahl der Boards (für Einzel)", ["4 Boards", "6 Boards", "5 Boards", "3 Boards", "2 Boards", "1 Board"], index=0, key="new_sess_bcount")
     
     st.write("### Anwesende Spieler")
     anwesende = []
@@ -982,30 +982,6 @@ with tab_übersicht:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle {total_rounds} Runden beendet</p>", unsafe_allow_html=True)
                                 st.success("✅ Board abgeschlossen")
 
-    st.write("### Zuletzt ausgetragene Board-Matches")
-    st.caption("Best of 5 und Gewinner für die Statistik")
-    
-    all_matches = []
-    for sess in st.session_state.sessions_list:
-        sess_date = sess.get("datum", "")
-        for (round_num, board_name), m_info in sess.get("results", {}).items():
-            if not m_info.get("winner"):
-                continue
-            all_matches.append({
-                "Datum": sess_date,
-                "Runde": round_num,
-                "Board": board_name,
-                "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                "Ergebnis": m_info['ergebnis'],
-                "Sieger": m_info['winner'] if m_info['winner'] else "Offen"
-            })
-            
-    if all_matches:
-        df_matches = pd.DataFrame(all_matches)
-        st.dataframe(df_matches, use_container_width=True, hide_index=True)
-    else:
-        st.info("Bisher wurden keine Board-Matches ausgetragen.")
-
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler) inklusive Legs, 180er, Match-Averages und Gesamtschnitt des Teams.")
@@ -1013,9 +989,6 @@ with tab_kader:
     stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0} for p in kader}
     
     player_matches_played = 0
-    total_wins = 0
-    total_losses = 0
-    
     team_session_avgs = []
     
     for sess in st.session_state.sessions_list:
@@ -1060,14 +1033,12 @@ with tab_kader:
                         stats[p]["Matches"] += 1
                         stats[p]["Siege"] += 1
                         player_matches_played += 1
-                        total_wins += 1
             if loser and " & " not in loser:
                 for p in loser.split(" & "):
                     if p in stats:
                         stats[p]["Matches"] += 1
                         stats[p]["Niederlagen"] += 1
                         player_matches_played += 1
-                        total_losses += 1
 
         if sess_avgs:
             t_avg = sum(sess_avgs) / len(sess_avgs)
@@ -1108,7 +1079,7 @@ with tab_kader:
         st.info("Noch nicht genügend Average-Daten vorhanden, um die Team-Entwicklung anzuzeigen.")
 
     st.write("### Spielerübersicht & Rangliste")
-    suche = st.text_input("Spieler suchen...", "")
+    suche = st.text_input("Spieler suchen...", "", key="search_kader_input")
     
     table_rows = []
     for p in kader:
@@ -1138,80 +1109,6 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-    st.write("")
-    st.markdown("### 🤝 Doppel-Paarungen (Coop-Statistik)")
-    st.caption("Auswertung aller Doppel- und Koop-Matches.")
-    
-    pair_stats = {}
-    for sess in st.session_state.sessions_list:
-        for match in sess.get("results", {}).values():
-            winner = match.get("winner", "")
-            s1 = match.get("s1", "")
-            s2 = match.get("s2", "")
-            ergebnis = match.get("ergebnis", "0:0")
-            
-            try:
-                l1, l2 = map(int, ergebnis.split(":"))
-            except:
-                l1, l2 = 0, 0
-                
-            h1 = int(match.get("180_s1", 0))
-            h2 = int(match.get("180_s2", 0))
-            a1 = float(match.get("avg_s1", 0.0))
-            a2 = float(match.get("avg_s2", 0.0))
-            
-            def process_pair(pair_str, is_won, won_legs, lost_legs, h_count, avg_val):
-                if " & " in pair_str:
-                    p_members = sorted([p.strip() for p in pair_str.split("&")])
-                    pair_key = " & ".join(p_members)
-                    if pair_key not in pair_stats:
-                        pair_stats[pair_key] = {"Matches": 0, "Siege": 0, "Niederlagen": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0}
-                    pair_stats[pair_key]["Matches"] += 1
-                    if is_won:
-                        pair_stats[pair_key]["Siege"] += 1
-                    else:
-                        pair_stats[pair_key]["Niederlagen"] += 1
-                    pair_stats[pair_key]["Legs_Won"] += won_legs
-                    pair_stats[pair_key]["Legs_Lost"] += lost_legs
-                    pair_stats[pair_key]["180er"] += h_count
-                    if avg_val > 0:
-                        pair_stats[pair_key]["Avg_Sum"] += avg_val
-                        pair_stats[pair_key]["Avg_Count"] += 1
-
-            if " & " in s1:
-                is_s1_win = (winner == s1)
-                process_pair(s1, is_s1_win, l1, l2, h1, a1)
-            if " & " in s2:
-                is_s2_win = (winner == s2)
-                process_pair(s2, is_s2_win, l2, l1, h2, a2)
-
-    pair_rows = []
-    for pair_name, p_data in pair_stats.items():
-        m = p_data["Matches"]
-        s = p_data["Siege"]
-        n = p_data["Niederlagen"]
-        quote = f"{(s / m * 100):.0f}%" if m > 0 else "0%"
-        acount = p_data["Avg_Count"]
-        avg_val = f"{(p_data['Avg_Sum'] / acount):.1f}" if acount > 0 else "–"
-        pair_rows.append({
-            "Doppel-Team": pair_name,
-            "Matches": m,
-            "Siege": s,
-            "Niederlagen": n,
-            "Siegquote": quote,
-            "Legs Gewonnen": p_data["Legs_Won"],
-            "Legs Verloren": p_data["Legs_Lost"],
-            "🎯 180er": p_data["180er"],
-            "📊 Ø Average": avg_val
-        })
-        
-    if pair_rows:
-        df_pairs = pd.DataFrame(pair_rows)
-        df_pairs = df_pairs.sort_values(by=["Siege", "Legs Gewonnen"], ascending=False)
-        st.dataframe(df_pairs, use_container_width=True, hide_index=True)
-    else:
-        st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
-
 with tab_session:
     st.subheader("Up & Down Sessions & Verlauf")
     st.write("Übersicht aller absolvierten Trainingsabende und Spielabläufe.")
@@ -1239,13 +1136,13 @@ with tab_session:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Gespielte Abende", value=str(total_sessions_cnt), delta="Sessions")
+        st.metric(label="Trainingsabende", value=str(total_sessions_cnt), delta="gesamt")
     with col2:
         st.metric(label="ø Anwesende Spieler", value=str(avg_attendance_val), delta="pro Abend")
     with col3:
         st.metric(label="Rekord-Kaiser 👑", value=top_kaiser_display, delta="meiste Board 1 Siege")
         
-    if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new"):
+    if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new_btn"):
         open_new_session_dialog()
 
     st.write("### Bisherige Sessions")
@@ -1260,7 +1157,7 @@ with tab_session:
                 total_rounds = sess.get("total_rounds", 4)
                 st.markdown(f"**{sess['id']}** — **{sess['datum']}** (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['modus_leg']}*{gaeste_text}){status_text}")
                 
-                if st.button("📊 Spielablauf ansehen", key=f"s_view_{idx}", use_container_width=True):
+                if st.button("📊 Spielablauf ansehen", key=f"s_view_unique_{idx}", use_container_width=True):
                     open_session_archive_dialog(idx)
 
 with tab_archiv:
@@ -1292,6 +1189,7 @@ with tab_archiv:
                 col_b1, col_b2, col_b3 = st.columns(3)
                 with col_b1:
                     if st.button("📊 Spielablauf", key=f"arch_view_btn_{idx}", use_container_width=True):
+                        open_session_archive_session_idx = idx
                         open_session_archive_dialog(idx)
                 with col_b2:
                     if st.button("⚡ Schnelldurchlauf", key=f"arch_quick_btn_{idx}", use_container_width=True):
