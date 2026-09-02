@@ -220,7 +220,7 @@ def get_board_players(session, round_num, board_name):
             for i in range(0, min(K * 2, len(active_spieler) - len(active_spieler) % 2), 2):
                 pairs.append((active_spieler[i], active_spieler[i+1]))
             while len(pairs) <= b_idx:
-                pairs.append(("Offen", "Offen"))
+                pairs.append(("-", "-"))
             return list(pairs[b_idx])
         
         # Round > 1 Up & Down logic with strict feeder checks
