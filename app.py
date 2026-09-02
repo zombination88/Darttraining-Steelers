@@ -1,4 +1,3 @@
-# STREAMING_CHUNK:Importing required libraries...
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -23,14 +22,18 @@ try:
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    safe_creds = {k: v for k, v in creds_dict.items() if k not in ["type", "project_id"]}
+    # Nur die absolut notwendigen Felder für die Verbindung übergeben
+    safe_creds = {
+        "client_email": creds_dict.get("client_email"),
+        "private_key": creds_dict.get("private_key"),
+        "token_uri": creds_dict.get("token_uri", "https://oauth2.googleapis.com/token")
+    }
         
     conn = st.connection("gsheets", type=FixedGSheetsConnection, **safe_creds)
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
-# STREAMING_CHUNK:Defining data loading functions...
 def load_data():
     if SHEET_URL == "" or SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
         st.warning("Bitte trage den Google Sheets Link ein!")
@@ -57,7 +60,6 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
-# STREAMING_CHUNK:Defining data saving functions...
 def save_data(sessions):
     serializable_sessions = []
     for sess in sessions:
@@ -76,7 +78,6 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-# STREAMING_CHUNK:Setting up layout and roster...
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -104,7 +105,6 @@ if "sessions_list" not in st.session_state:
 
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
-# STREAMING_CHUNK:Defining helper functions for boards...
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
@@ -218,7 +218,6 @@ def is_session_completed(sess):
             return False
     return True
 
-# STREAMING_CHUNK:Defining dialog for new sessions...
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -280,7 +279,6 @@ def open_new_session_dialog():
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for editing sessions...
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
 def open_edit_session_dialog(session_idx):
     pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_input_{session_idx}")
@@ -357,7 +355,6 @@ def open_edit_session_dialog(session_idx):
             st.success("Session erfolgreich aktualisiert!")
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for board management...
 @st.dialog("📋 Board-Erfassung")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
@@ -488,7 +485,6 @@ def open_board_dialog(board_name, session_idx):
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for session deletion...
 @st.dialog("🗑️ Session löschen (Passwortgeschützt)")
 def open_delete_dialog(session_idx):
     if session_idx >= len(st.session_state.sessions_list):
@@ -514,7 +510,6 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
-# STREAMING_CHUNK:Rendering main overview tab...
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
@@ -665,7 +660,6 @@ with tab_übersicht:
     else:
         st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
-# STREAMING_CHUNK:Rendering roster and stats tab...
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler).")
@@ -729,7 +723,6 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-# STREAMING_CHUNK:Rendering sessions tab...
 with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
@@ -776,7 +769,6 @@ with tab_session:
                             open_board_dialog(b_name, idx)
                 st.divider()
 
-# STREAMING_CHUNK:Rendering archive tab...
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Hier kannst du gespeicherte Sessions verwalten und bei Bedarf sicher löschen.")
