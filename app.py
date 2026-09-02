@@ -127,7 +127,8 @@ def get_boards_list(session, round_num=None):
 def get_resting_player(session, round_num):
     spieler = session.get("spieler", [])
     K = session.get("boards_count", 4)
-    has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
+    # Nur bei ungerader Spieleranzahl oder mehr Spielern als 2*K gibt es einen Pausierenden
+    has_resting = (len(spieler) % 2 != 0) or (len(spieler) > 2 * K)
     if not has_resting:
         return None
         
@@ -166,7 +167,7 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     K = session.get("boards_count", len(boards))
-    has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
+    has_resting = (len(spieler) % 2 != 0) or (len(spieler) > 2 * K)
     
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
@@ -480,6 +481,7 @@ def open_quick_entry_dialog(session_idx):
     total_rounds = sess.get("total_rounds", 4)
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    is_2v2 = (modus == "Koop 2vs2 (Up & Down)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
@@ -511,6 +513,9 @@ def open_quick_entry_dialog(session_idx):
         alle_mögliche_spieler.append("-")
     alle_mögliche_spieler.sort()
 
+    in_coop_phase_qe = is_standard_training and current_round > singles_rounds
+    is_coop_round_qe = is_2v2 or in_coop_phase_qe
+
     for b_name in boards_in_round:
         st.markdown(f"**{b_name}**")
         auto_p = get_board_players(sess, current_round, b_name)
@@ -522,9 +527,56 @@ def open_quick_entry_dialog(session_idx):
         if not p1_default: p1_default = auto_p[0]
         if not p2_default: p2_default = auto_p[1]
         
-        if p1_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p1_default)
-        if p2_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p2_default)
-        
+        if is_coop_round_qe:
+            h_parts = [p.strip() for p in p1_default.split("&")] if "&" in p1_default else [p1_default, "-"]
+            g_parts = [p.strip() for p in p2_default.split("&")] if "&" in p2_default else [p2_default, "-"]
+            
+            h1_def = h_parts[0] if len(h_parts) > 0 else "-"
+            h2_def = h_parts[1] if len(h_parts) > 1 else "-"
+            g1_def = g_parts[0] if len(g_parts) > 0 else "-"
+            g2_def = g_parts[1] if len(g_parts) > 1 else "-"
+            
+            if h1_def not in alle_mögliche_spieler: alle_mögliche_spieler.append(h1_def)
+            if h2_def not in alle_mögliche_spieler: alle_mögliche_spieler.append(h2_def)
+            if g1_def not in alle_mögliche_spieler: alle_mögliche_spieler.append(g1_def)
+            if g2_def not in alle_mögliche_spieler: alle_mögliche_spieler.append(g2_def)
+            alle_mögliche_spieler.sort()
+
+            st.markdown(f"**Heim-Team ({b_name})**")
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                idx_h1 = alle_mögliche_spieler.index(h1_def) if h1_def in alle_mögliche_spieler else 0
+                sel_h1 = st.selectbox(f"Heim S1 ({b_name})", alle_mögliche_spieler, index=idx_h1, key=f"qe_h1_{session_idx}_{current_round}_{b_name}")
+            with col_h2:
+                idx_h2 = alle_mögliche_spieler.index(h2_def) if h2_def in alle_mögliche_spieler else 0
+                sel_h2 = st.selectbox(f"Heim S2 ({b_name})", alle_mögliche_spieler, index=idx_h2, key=f"qe_h2_{session_idx}_{current_round}_{b_name}")
+            
+            st.markdown(f"**Gast-Team ({b_name})**")
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                idx_g1 = alle_mögliche_spieler.index(g1_def) if g1_def in alle_mögliche_spieler else 0
+                sel_g1 = st.selectbox(f"Gast S1 ({b_name})", alle_mögliche_spieler, index=idx_g1, key=f"qe_g1_{session_idx}_{current_round}_{b_name}")
+            with col_g2:
+                idx_g2 = alle_mögliche_spieler.index(g2_def) if g2_def in alle_mögliche_spieler else 0
+                sel_g2 = st.selectbox(f"Gast S2 ({b_name})", alle_mögliche_spieler, index=idx_g2, key=f"qe_g2_{session_idx}_{current_round}_{b_name}")
+                
+            sel_p1 = f"{sel_h1} & {sel_h2}"
+            sel_p2 = f"{sel_g1} & {sel_g2}"
+        else:
+            if p1_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p1_default)
+            if p2_default not in alle_mögliche_spieler: alle_mögliche_spieler.append(p2_default)
+            alle_mögliche_spieler.sort()
+            
+            c_p1, c_vs, c_p2 = st.columns([3, 1, 3])
+            with c_p1:
+                idx1 = alle_mögliche_spieler.index(p1_default) if p1_default in alle_mögliche_spieler else 0
+                sel_p1 = st.selectbox(f"Heim ({b_name})", alle_mögliche_spieler, index=idx1, key=f"qe_p1_{session_idx}_{current_round}_{b_name}")
+            with c_vs:
+                st.markdown("<div style='text-align: center; color: #ff4b4b; padding-top: 30px; font-weight: bold;'>VS</div>", unsafe_allow_html=True)
+            with c_p2:
+                idx2 = alle_mögliche_spieler.index(p2_default) if p2_default in alle_mögliche_spieler else 0
+                sel_p2 = st.selectbox(f"Gast ({b_name})", alle_mögliche_spieler, index=idx2, key=f"qe_p2_{session_idx}_{current_round}_{b_name}")
+
         try:
             default_score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
             default_score2 = int(existing_match.get("ergebnis", "0:0").split(":")[1])
@@ -535,26 +587,16 @@ def open_quick_entry_dialog(session_idx):
         def_180_2 = int(existing_match.get("180_s2", 0))
         def_avg_1 = float(existing_match.get("avg_s1", 0.0))
         def_avg_2 = float(existing_match.get("avg_s2", 0.0))
-        
-        c_p1, c_vs, c_p2 = st.columns([3, 1, 3])
-        with c_p1:
-            idx1 = alle_mögliche_spieler.index(p1_default) if p1_default in alle_mögliche_spieler else 0
-            sel_p1 = st.selectbox(f"Heim ({b_name})", alle_mögliche_spieler, index=idx1, key=f"qe_p1_{session_idx}_{current_round}_{b_name}")
-        with c_vs:
-            st.markdown("<div style='text-align: center; color: #ff4b4b; padding-top: 30px; font-weight: bold;'>VS</div>", unsafe_allow_html=True)
-        with c_p2:
-            idx2 = alle_mögliche_spieler.index(p2_default) if p2_default in alle_mögliche_spieler else 0
-            sel_p2 = st.selectbox(f"Gast ({b_name})", alle_mögliche_spieler, index=idx2, key=f"qe_p2_{session_idx}_{current_round}_{b_name}")
 
         sc1, sc2, t180_1, t180_2 = st.columns(4)
         with sc1:
-            s1_val = st.number_input(f"Legs {sel_p1}", min_value=0, max_value=5, value=default_score1, key=f"qe_sc1_{session_idx}_{current_round}_{b_name}")
+            s1_val = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=default_score1, key=f"qe_sc1_{session_idx}_{current_round}_{b_name}")
         with sc2:
-            s2_val = st.number_input(f"Legs {sel_p2}", min_value=0, max_value=5, value=default_score2, key=f"qe_sc2_{session_idx}_{current_round}_{b_name}")
+            s2_val = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=default_score2, key=f"qe_sc2_{session_idx}_{current_round}_{b_name}")
         with t180_1:
-            t180_1_val = st.number_input(f"180er ({sel_p1})", min_value=0, max_value=10, value=def_180_1, key=f"qe_180_1_{session_idx}_{current_round}_{b_name}")
+            t180_1_val = st.number_input(f"180er Heim", min_value=0, max_value=10, value=def_180_1, key=f"qe_180_1_{session_idx}_{current_round}_{b_name}")
         with t180_2:
-            t180_2_val = st.number_input(f"180er ({sel_p2})", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
+            t180_2_val = st.number_input(f"180er Gast", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
             
         ergebnis_str = f"{s1_val}:{s2_val}"
         winner = sel_p1 if s1_val > s2_val else (sel_p2 if s2_val > s1_val else None)
@@ -1073,7 +1115,7 @@ with tab_übersicht:
                                             if st.button("🔄 Ändern", key=f"sub_btn1_{b_name}_{next_r}", help="Spieler 1 auswechseln"):
                                                 open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 1, p1)
                                     else:
-                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 8px 0;'>{p1}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 12px 0;'>{p1}</div>", unsafe_allow_html=True)
                                     
                                     st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                     
@@ -1084,7 +1126,7 @@ with tab_übersicht:
                                             if st.button("🔄 Ändern", key=f"sub_btn2_{b_name}_{next_r}", help="Spieler 2 auswechseln"):
                                                 open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 2, p2)
                                     else:
-                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 8px 0;'>{p2}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 0.95em; margin: 12px 0;'>{p2}</div>", unsafe_allow_html=True)
                                     
                                     st.write("")
                                     if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
