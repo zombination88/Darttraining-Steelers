@@ -699,7 +699,7 @@ with tab_übersicht:
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
-    st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler) inklusive 180er und Match-Averages.")
+    st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler) inklusive 180er, Match-Averages und Gesamtschnitt des Teams.")
     
     stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0} for p in kader}
     
@@ -707,7 +707,10 @@ with tab_kader:
     total_wins = 0
     total_losses = 0
     
+    team_session_avgs = []
+    
     for sess in st.session_state.sessions_list:
+        sess_avgs = []
         for match in sess.get("results", {}).values():
             winner = match.get("winner", "")
             loser = match.get("loser", "")
@@ -723,11 +726,13 @@ with tab_kader:
                 if a1 > 0:
                     stats[s1]["Avg_Sum"] += a1
                     stats[s1]["Avg_Count"] += 1
+                    sess_avgs.append(a1)
             if s2 in stats:
                 stats[s2]["180er"] += h2
                 if a2 > 0:
                     stats[s2]["Avg_Sum"] += a2
                     stats[s2]["Avg_Count"] += 1
+                    sess_avgs.append(a2)
             
             if winner:
                 for p in winner.split(" & "):
@@ -744,17 +749,35 @@ with tab_kader:
                         player_matches_played += 1
                         total_losses += 1
 
+        if sess_avgs:
+            t_avg = sum(sess_avgs) / len(sess_avgs)
+            team_session_avgs.append({"Datum": sess.get("datum", "Unbekannt"), "Team-Average": round(t_avg, 1)})
+
     total_games = total_wins + total_losses
     avg_win_rate = f"{(total_wins / total_games * 100):.0f}%" if total_games > 0 else "0%"
 
-    col1, col2, col3 = st.columns(3)
+    # Gesamtschnitt des Teams berechnen
+    all_team_avgs = [stats[p]["Avg_Sum"] / stats[p]["Avg_Count"] for p in kader if stats[p]["Avg_Count"] > 0]
+    overall_team_avg = f"{(sum(all_team_avgs) / len(all_team_avgs)):.1f}" if all_team_avgs else "–"
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="Aktive Spieler", value=len(kader), delta="im Kader")
     with col2:
-        st.metric(label="Absolvierte Spieler-Matches", value=str(player_matches_played), delta="aus Sessions")
+        st.metric(label="Absolvierte Matches", value=str(player_matches_played), delta="aus Sessions")
     with col3:
         st.metric(label="Ø Siegquote", value=avg_win_rate, delta="gesamt")
+    with col4:
+        st.metric(label="Team-Gesamtschnitt", value=overall_team_avg, delta="Ø Average")
         
+    st.write("")
+    st.markdown("### 📈 Team-Entwicklung (Gesamt-Average über Sessions)")
+    if team_session_avgs:
+        df_trend = pd.DataFrame(team_session_avgs)
+        st.line_chart(df_trend.set_index("Datum"))
+    else:
+        st.info("Noch nicht genügend Average-Daten vorhanden, um die Team-Entwicklung anzuzeigen.")
+
     st.write("### Spielerübersicht & Rangliste")
     suche = st.text_input("Spieler suchen...", "")
     
