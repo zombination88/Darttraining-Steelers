@@ -198,11 +198,6 @@ def get_board_players(session, round_num, board_name):
                 if p not in ordered_players:
                     ordered_players.append(p)
             spieler = ordered_players[:len(spieler)]
-        else:
-            chrono_s_idx = len(all_sessions) - 1 - s_idx
-            if spieler:
-                shift = (chrono_s_idx * 2) % len(spieler)
-                spieler = spieler[shift:] + spieler[:shift]
 
     pairs = []
     
@@ -1071,13 +1066,11 @@ with tab_session:
     st.subheader("Up & Down Sessions & Team-Planung")
     st.write("Verwaltet hier das nächste Training und startet die nächste Session nach Abstimmung.")
     
-    # NEU: Team-Umfrage & Coach-Planung
     with st.expander("📋 Umfrage / Team-Abstimmung (Wer kommt zum Training?)", expanded=True):
         st.markdown("Hier kann der Teamcoach (oder ein Vertretter) sehen, wer fürs nächste Training zugesagt hat, und die Session direkt mit diesen Spielern starten.")
         
-        # Initialisiere Abstimmungsliste im Session State falls nicht vorhanden
         if "training_poll" not in st.session_state:
-            st.session_state.training_poll = {p: True for p in kader} # Standardmäßig alle dabei
+            st.session_state.training_poll = {p: True for p in kader}
             
         st.markdown("**Aktuelle Zusages-Liste für den nächsten Trainingstag:**")
         poll_cols = st.columns(2)
@@ -1095,7 +1088,7 @@ with tab_session:
                 st.session_state.training_poll[p] = new_val
                 
         confirmed_players = [p for p, attending in st.session_state.training_poll.items() if attending]
-        st.info(📋 f"Aktuell zugesagt: **{len(confirmed_players)} Spieler** ({', '.join(confirmed_players)})")
+        st.info(f"Aktuell zugesagt: **{len(confirmed_players)} Spieler** ({', '.join(confirmed_players)})")
         
         if st.button("🚀 Nächste Session mit diesen Zusagen starten", type="primary", use_container_width=True):
             open_new_session_dialog(preselected_players=confirmed_players)
@@ -1166,7 +1159,7 @@ with tab_archiv:
                         st.rerun()
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
+    st.subheader("🎯 Modus & Regeln")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
@@ -1186,7 +1179,7 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### ⏱️ Der Ablauf an eurem Board")
         st.markdown("""
-        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speគាត់ ab.
+        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speichert ab.
         2. **Automatische Weiterleitung:** Der Gewinner steigt automatisch eine Etage höher (oder bleibt Kaiser auf B1), der Verlierer rutscht eine Etage tiefer.
         3. **Nächste Runde:** Sobald *alle* Boards ihre Ergebnisse eingetragen haben, schaltet die App vollautomatisch in die nächste Runde und setzt die neuen Paarungen zusammen.
         """)
