@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
@@ -10,42 +11,52 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # WICHTIG: Füge hier den Link zu deiner eigenen Google Tabelle ein!
 SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" 
 
-# --- DATENBANKVERBINDUNG ---
-@st.cache_resource
-def init_connection():
-    # Lädt den Text aus den Secrets
-    creds_dict = json.loads(st.secrets["google_json"])
-    # Baut die Verbindung direkt auf, um den Konflikt mit dem Wort "type" in der JSON zu umgehen
-    return GSheetsConnection("gsheets", **creds_dict)
-
+# --- DATENBANKVERBINDUNG (Natives Google gspread) ---
 try:
-    conn = init_connection()
+    # 1. Lade den kopierten Text aus den Secrets
+    creds_dict = json.loads(st.secrets["google_json"])
+    # 2. Definiere die nötigen Google-Rechte
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # 3. Erstelle die Zugangsdaten
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    # 4. Autorisiere den Google Client
+    gc = gspread.authorize(creds)
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
 def load_data():
     if SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" or SHEET_URL == "":
-        st.warning("Bitte trage in Zeile 10 in der app.py noch deinen Google Sheets Link (die komplette https:// URL) ein!")
+        st.warning("Bitte trage in Zeile 11 in der app.py noch deinen Google Sheets Link (die komplette https:// URL) ein!")
         return []
         
     try:
-        df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
-        if df is not None and not df.empty and "json_data" in df.columns:
-            raw_str = df["json_data"].dropna().iloc[0]
-            raw_data = json.loads(raw_str)
-            sessions = []
-            for sess in raw_data:
-                fixed_results = {}
-                for k, v in sess.get("results", {}).items():
-                    parts = k.split("_", 1)
-                    if len(parts) == 2:
-                        r_num = int(parts[0])
-                        b_name = parts[1]
-                        fixed_results[(r_num, b_name)] = v
-                sess["results"] = fixed_results
-                sessions.append(sess)
-            return sessions
+        # Öffne die Tabelle und lese alle Werte aus
+        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
+        values = sheet.get_all_values()
+        
+        # Prüfe, ob Daten vorhanden sind und ob die Spalte 'json_data' existiert
+        if len(values) > 1 and "json_data" in values[0]:
+            idx = values[0].index("json_data")
+            raw_str = values[1][idx]
+            
+            if raw_str:
+                raw_data = json.loads(raw_str)
+                sessions = []
+                for sess in raw_data:
+                    fixed_results = {}
+                    for k, v in sess.get("results", {}).items():
+                        parts = k.split("_", 1)
+                        if len(parts) == 2:
+                            r_num = int(parts[0])
+                            b_name = parts[1]
+                            fixed_results[(r_num, b_name)] = v
+                    sess["results"] = fixed_results
+                    sessions.append(sess)
+                return sessions
     except Exception as e:
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
@@ -61,10 +72,13 @@ def save_data(sessions):
         serializable_sessions.append(sess_copy)
     
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
-    df_to_save = pd.DataFrame({"json_data": [json_str]})
     
     try:
-        conn.update(spreadsheet=SHEET_URL, worksheet="sessions", data=df_to_save)
+        # Öffne die Tabelle, leere sie und schreibe die neuen Daten extrem sicher Zelle für Zelle
+        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
+        sheet.clear()
+        sheet.update_cell(1, 1, "json_data")
+        sheet.update_cell(2, 1, json_str)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
