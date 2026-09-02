@@ -117,7 +117,7 @@ def get_board_players(session, round_num, board_name):
     is_2v2 = (modus == "Koop 2vs2 (Up & Down)")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     
-    total_rounds = session.get("total_rounds", 4)
+    total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
     singles_rounds = total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
@@ -671,12 +671,12 @@ with tab_übersicht:
         if last_s:
             l_date = last_s.get('datum', '–')
             l_results = last_s.get('results', {})
-            l_total_rounds = last_s.get('total_rounds', 4)
             
             kaiser_winner = "Noch offen"
-            final_match = l_results.get((l_total_rounds, "Kaiser B1"))
-            if final_match and final_match.get("winner"):
-                kaiser_winner = final_match.get("winner")
+            kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner")]
+            if kaiser_matches:
+                kaiser_matches.sort(key=lambda x: x[0], reverse=True)
+                kaiser_winner = kaiser_matches[0][1].get("winner")
             
             count_180s = {}
             match_avgs = []
