@@ -13,21 +13,18 @@ SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN"
 
 # Verbindung zu Google Sheets herstellen
 try:
-    # Liest den Text aus den Secrets und wandelt ihn um
     creds_dict = json.loads(st.secrets["google_json"])
-    # Baut die Verbindung auf
     conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
 def load_data():
-    if SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
-        st.warning("Bitte trage in Zeile 10 in der app.py noch deinen Google Sheets Link ein!")
+    if SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" or SHEET_URL == "":
+        st.warning("Bitte trage in Zeile 10 in der app.py noch deinen Google Sheets Link (die komplette https:// URL) ein!")
         return []
         
     try:
-        # Liest das Tabellenblatt "sessions" aus deiner Google-Tabelle
         df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
         if df is not None and not df.empty and "json_data" in df.columns:
             raw_str = df["json_data"].dropna().iloc[0]
@@ -709,45 +706,53 @@ with tab_archiv:
                 st.divider()
 
 with tab_regeln:
-    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
     st.markdown("""
-    **1. Mannschaft & Meldung**
-    - **Spielerkader:** 10 Spieler. Namentliche Meldung bis zum 31. August in nuLiga.
-    
-    **2. Spielmodus & Ablauf (Liga und Pokal)**
-    - **Heimspieltag:** Dienstag
-    - **Modus:** 4er-Team; 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
-    - **Aufstellung (3 Blöcke):**
+# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
+1.  Mannschaft & Meldung
+2.  Spielmodus & Ablauf (Liga und Pokal)
+3.  Spielbericht & Online-Meldung
+4.  Mannschaftsvorstellung (Kader)
+
+### 1. Mannschaft & Meldung
+  - **Mannschaftsmeldung:** Erledigt.
+  - **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
+
+### 2. Spielmodus & Ablauf (Liga und Pokal)
+  - **Heimspieltag ist Dienstag **
+  - **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+  - **Aufstellung (3 Blöcke):**
       - **Block 1:** 4 Einzelspieler.
-      - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption).
-      - **Block 3:** 2 Doppel (freie Aufstellung aus max. 8 Spielern).
-    - **Rahmenbedingungen:**
+      - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
+      - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
+  - **Rahmenbedingungen:**
       - **Spielzeit:** Mo–Do ab 20:00 Uhr.
       - **Austragung:** Parallel auf zwei Boards.
       - **Einwerfzeit:** 30 Minuten für Gäste.
-    - **Board-Zuordnung & Schreiber:**
-      - Heimmannschaft schreibt und beginnt auf Board 1.
-      - Gastmannschaft schreibt und beginnt auf Board 2.
-    - **Schwabenpokal:** Nur K.O.-Runden (4-5 Spiele mehr je nach Teamgröße).
-    
-    **3. Spielbericht & Online-Meldung**
-    - **Papier-Spielbericht:** Händische Führung, Unterschrift beider Kapitäne.
-    - **Ergebnismeldung:** Innerhalb von 6 Stunden via Online-Schnellerfassung.
-    - **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
-    - **Aufbewahrung:** Bis Saisonende im Verein.
-    
-    **4. Mannschaftsvorstellung (Kader)**
-    - Andreas Böhm
-    - Andrino Czombera (Teamcaptain)
-    - Dennis Güttner
-    - Marco Eser
-    - Maximilian Zientner
-    - Michael Kummer
-    - Michael Mak
-    - Michael Neumeier
-    - Thomas Schaudt
-    - Wolfgang Schneider
+  - **Board-Zuordnung & Schreiber:**
+    - Die Heimmannschaft schreibt und beginnt auf Board 1.  
+    - Die Gastmannschaft schreibt und beginnt auf Board 2.  
+  - **Schwabenpokal:**
+    - Nur K.O. Runden
+    - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
+
+### 3. Spielbericht & Online-Meldung
+  - **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
+  - **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
+  - **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+  - **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
+
+### 4. Mannschaftsvorstellung (Kader)
+  - Andreas Böhm
+  - Andrino Czombera (Teamcaptain)
+  - Dennis Güttner
+  - Marco Eser
+  - Maximilian Zientner
+  - Michael Kummer
+  - Michael Mak
+  - Michael Neumeier
+  - Thomas Schaudt
+  - Wolfgang Schneider
     """)
 ```eof
 
-Damit funktioniert die Verbindung jetzt zu 100%. Sag Bescheid, wenn die App damit reibungslos startet!
+Bitte kopiere den Code und tausche in Zeile 10 `"HIER_DEINEN_TABELLEN_LINK_EINFÜGEN"` durch deinen tatsächlichen Link aus (Achte darauf, dass die Anführungszeichen `"` am Anfang und am Ende des Links stehen bleiben).
