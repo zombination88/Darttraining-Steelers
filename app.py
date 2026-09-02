@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import base64
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -29,16 +28,6 @@ def init_connection():
         return None
 
 sheet_conn = init_connection()
-
-@st.cache_resource
-def load_audio_b64():
-    try:
-        with open("vereinssong.mp3", "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
-    except Exception:
-        return ""
-
-audio_b64 = load_audio_b64()
 
 def load_data():
     if not sheet_conn:
@@ -93,18 +82,8 @@ with col1:
     except Exception:
         pass
     
-    if audio_b64:
-        audio_html = f"""
-        <audio id="vereinssong_audio" src="data:audio/mp3;base64,{audio_b64}"></audio>
-        <div style="text-align: center; margin-top: 6px;">
-            <button onclick="document.getElementById('vereinssong_audio').play()" 
-                    style="background-color: #ff4b4b; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
-                    title="Vereinssong abspielen">
-                🎵 Song
-            </button>
-        </div>
-        """
-        st.markdown(audio_html, unsafe_allow_html=True)
+    with st.popover("🎵 Song", use_container_width=True):
+        st.audio("vereinssong.mp3")
 
 with col2:
     st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
@@ -161,13 +140,12 @@ def get_waiting_player(session, round_num):
     if match_info and match_info.get("loser"):
         return match_info["loser"]
     else:
-        # Fallback: wenn das letzte Board noch nicht gespielt wurde, nehmen wir den bisherigen Wartenden aus Runde prev_r-1 oder rotieren
         return get_waiting_player(session, prev_r)
 
 def get_board_players(session, round_num, board_name):
     boards = get_boards_list(session, round_num)
     if board_name not in boards:
-        return ["Offen", "Offen"]
+        return ["-", "-"]
     b_idx = boards.index(board_name)
     
     modus = session.get("modus", "Up & Down")
@@ -311,8 +289,8 @@ def is_session_completed(sess):
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
     sess = st.session_state.sessions_list[session_idx]
     alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
-    if "Offen" not in alle_spieler:
-        alle_spieler.append("Offen")
+    if "-" not in alle_spieler:
+        alle_spieler.append("-")
     alle_spieler.sort()
 
     st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
