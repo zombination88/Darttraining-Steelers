@@ -17,31 +17,25 @@ def init_connection():
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
-        scopes = [
+        scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        client = gspread.authorize(credentials)
-        return client
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
+        return sheet
     except Exception as e:
         return None
 
-client = init_connection()
+sheet_conn = init_connection()
 
 def load_data():
-    if SHEET_URL == "" or SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
-        st.warning("Bitte trage den Google Sheets Link ein!")
+    if not sheet_conn:
         return []
         
-    if client is None:
-        st.error("Fehler bei der Datenbankverbindung. Bitte Secrets prüfen.")
-        return []
-
     try:
-        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
-        data = sheet.get_all_records()
+        data = sheet_conn.get_all_records()
         if data and "json_data" in data[0]:
             raw_str = data[0]["json_data"]
             if raw_str:
@@ -63,10 +57,9 @@ def load_data():
     return []
 
 def save_data(sessions):
-    if client is None:
-        st.error("Keine Verbindung zur Datenbank zum Speichern.")
+    if not sheet_conn:
         return
-
+        
     serializable_sessions = []
     for sess in sessions:
         sess_copy = sess.copy()
@@ -77,11 +70,9 @@ def save_data(sessions):
         serializable_sessions.append(sess_copy)
     
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
-    
     try:
-        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
-        sheet.clear()
-        sheet.update([["json_data"], [json_str]])
+        sheet_conn.clear()
+        sheet_conn.update([["json_data"], [json_str]])
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -110,7 +101,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -224,6 +215,50 @@ def is_session_completed(sess):
         if max_r < total_rounds:
             return False
     return True
+
+@st.dialog("🔄 Spieler auswechseln")
+def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
+    sess = st.session_state.sessions_list[session_idx]
+    alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
+    if "Offen" not in alle_spieler:
+        alle_spieler.append("Offen")
+    alle_spieler.sort()
+
+    st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
+    st.write(Aktueller Spieler: **{current_player}**")
+    
+    idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
+    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{board_name}_{round_num}_{slot_num}")
+    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{board_name}_{round_num}_{slot_num}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col2:
+        if st.button("Änderung speichern", type="primary", use_container_width=True):
+            final_name = new_txt.strip() if new_txt.strip() else new_sel
+            if "results" not in sess:
+                sess["results"] = {}
+            
+            if (round_num, board_name) not in sess["results"]:
+                auto_p = get_board_players(sess, round_num, board_name)
+                sess["results"][(round_num, board_name)] = {
+                    "s1": auto_p[0],
+                    "s2": auto_p[1],
+                    "ergebnis": "0:0",
+                    "winner": "",
+                    "loser": ""
+                }
+            
+            if slot_num == 1:
+                sess["results"][(round_num, board_name)]["s1"] = final_name
+            else:
+                sess["results"][(round_num, board_name)]["s2"] = final_name
+                
+            save_data(st.session_state.sessions_list)
+            st.success("Spieler erfolgreich gewechselt und gespeichert!")
+            st.rerun()
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
@@ -393,77 +428,15 @@ def open_board_dialog(board_name, session_idx):
         auto_players = get_board_players(sess, current_round, board_name)
         current_p1, current_p2 = auto_players[0], auto_players[1]
         score1, score2 = 3, 0
-    
-    is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
-    if is_2v2:
-        base_teams = []
-        spieler_list = sess.get("spieler", kader)
-        for i in range(0, len(spieler_list)-1, 2):
-            base_teams.append(f"{spieler_list[i]} & {spieler_list[i+1]}")
-        if len(spieler_list) % 2 != 0:
-            base_teams.append(f"{spieler_list[-1]} & Offen")
-        alle_spieler = list(set(base_teams + [current_p1, current_p2]))
-    else:
-        alle_spieler = list(set(sess.get("spieler", kader) + [current_p1, current_p2]))
-        
-    if "Offen" not in alle_spieler:
-        alle_spieler.append("Offen")
-    alle_spieler.sort()
 
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Team / Spieler 1 (Heim)**")
-        c1, c2 = st.columns([4, 1])
-        c1.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p1}</div>", unsafe_allow_html=True)
-        
-        with c2.popover("🔄", help="Spieler 1 auswechseln"):
-            st.markdown("**Spieler wechseln**")
-            idx1 = alle_spieler.index(current_p1) if current_p1 in alle_spieler else 0
-            new_p1_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx1, key=f"pop_s1_{board_name}")
-            new_p1_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt1_{board_name}")
-            
-            if st.button("🔄 Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
-                final_p1 = new_p1_txt if new_p1_txt.strip() else new_p1_sel
-                if "results" not in sess: sess["results"] = {}
-                sess["results"][(current_round, board_name)] = {
-                    "s1": final_p1, 
-                    "s2": current_p2, 
-                    "ergebnis": f"{score1}:{score2}", 
-                    "winner": "", 
-                    "loser": ""
-                }
-                save_data(st.session_state.sessions_list)
-                st.success("Änderung gespeichert!")
-                st.rerun()
-                
+        st.markdown(f"**Team / Spieler 1 (Heim):** `{current_p1}`")
         in_score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=score1, key=f"d_score1_{board_name}_{session_idx}")
         
     with col2:
-        st.markdown("**Team / Spieler 2 (Gast)**")
-        c3, c4 = st.columns([4, 1])
-        c3.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p2}</div>", unsafe_allow_html=True)
-        
-        with c4.popover("🔄", help="Spieler 2 auswechseln"):
-            st.markdown("**Spieler wechseln**")
-            idx2 = alle_spieler.index(current_p2) if current_p2 in alle_spieler else 0
-            new_p2_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx2, key=f"pop_s2_{board_name}")
-            new_p2_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt2_{board_name}")
-            
-            if st.button("🔄 Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
-                final_p2 = new_p2_txt if new_p2_txt.strip() else new_p2_sel
-                if "results" not in sess: sess["results"] = {}
-                sess["results"][(current_round, board_name)] = {
-                    "s1": current_p1, 
-                    "s2": final_p2, 
-                    "ergebnis": f"{score1}:{score2}", 
-                    "winner": "", 
-                    "loser": ""
-                }
-                save_data(st.session_state.sessions_list)
-                st.success("Änderung gespeichert!")
-                st.rerun()
-                
+        st.markdown(f"**Team / Spieler 2 (Gast):** `{current_p2}`")
         in_score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=score2, key=f"d_score2_{board_name}_{session_idx}")
         
     ergebnis = f"{in_score1}:{in_score2}"
@@ -608,25 +581,25 @@ with tab_übersicht:
                                     players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
                                     p1, p2 = players_now[0], players_now[1]
                                 
-                                p1_display = p1.replace(" & ", "<br>&<br>")
-                                p2_display = p2.replace(" & ", "<br>&<br>")
-                                
-                                p1_first = p1.split(" & ")[0]
-                                p2_first = p2.split(" & ")[0]
-                                
-                                p1_stat = f"Legs: {session_stats.get(p1_first, {}).get('legs_won', 0)}:{session_stats.get(p1_first, {}).get('legs_lost', 0)}" if p1 != "Offen" else ""
-                                p2_stat = f"Legs: {session_stats.get(p2_first, {}).get('legs_won', 0)}:{session_stats.get(p2_first, {}).get('legs_lost', 0)}" if p2 != "Offen" else ""
-                                
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.0em;'>{p1_display}</div>", unsafe_allow_html=True)
-                                st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em;'>{p1_stat}</div>", unsafe_allow_html=True)
+                                # Spieler 1 mit Wechsel-Button daneben
+                                sc1, sc2 = st.columns([5, 1])
+                                sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
+                                with sc2:
+                                    if st.button("🔄", key=f"sub_btn1_{b_name}_{next_r}", help="Spieler 1 auswechseln"):
+                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 1, p1)
                                 
-                                st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 5px 0;'>VS</div>", unsafe_allow_html=True)
+                                st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.0em;'>{p2_display}</div>", unsafe_allow_html=True)
-                                st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em; margin-bottom: 15px;'>{p2_stat}</div>", unsafe_allow_html=True)
+                                # Spieler 2 mit Wechsel-Button daneben
+                                sc3, sc4 = st.columns([5, 1])
+                                sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
+                                with sc4:
+                                    if st.button("🔄", key=f"sub_btn2_{b_name}_{next_r}", help="Spieler 2 auswechseln"):
+                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 2, p2)
                                 
+                                st.write("")
                                 if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
                                     open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
                             else:
@@ -658,7 +631,7 @@ with tab_übersicht:
                 "Datum": sess_date,
                 "Runde": round_num,
                 "Board": board_name,
-                "Spieler": f"{m_info['s1']}\n{m_info['s2']}",
+                "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
                 "Ergebnis": m_info['ergebnis'],
                 "Sieger": m_info['winner'] if m_info['winner'] else "Offen"
             })
@@ -796,3 +769,48 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
+
+with tab_regeln:
+    st.markdown("""
+# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
+
+### 1. Mannschaft & Meldung
+  - **Mannschaftsmeldung:** Erledigt.
+  - **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
+
+### 2. Spielmodus & Ablauf (Liga und Pokal)
+  - **Heimspieltag:** Dienstag.
+  - **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+  - **Aufstellung (3 Blöcke):**
+      - **Block 1:** 4 Einzelspieler.
+      - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
+      - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
+  - **Rahmenbedingungen:**
+      - **Spielzeit:** Mo–Do ab 20:00 Uhr.
+      - **Austragung:** Parallel auf zwei Boards.
+      - **Einwerfzeit:** 30 Minuten für Gäste.
+  - **Board-Zuordnung & Schreiber:**
+    - Die Heimmannschaft schreibt und beginnt auf Board 1.  
+    - Die Gastmannschaft schreibt und beginnt auf Board 2.  
+  - **Schwabenpokal:**
+    - Nur K.O.-Runden.
+    - Es können bis zu 4–5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße).
+
+### 3. Spielbericht & Online-Meldung
+  - **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
+  - **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
+  - **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+  - **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
+
+### 4. Mannschaftsvorstellung (Kader)
+  - Andreas Böhm
+  - Andrino Czombera (Teamcaptain)
+  - Dennis Güttner
+  - Marco Eser
+  - Maximilian Zientner
+  - Michael Kummer
+  - Michael Mak
+  - Michael Neumeier
+  - Thomas Schaudt
+  - Wolfgang Scheider
+    """)
