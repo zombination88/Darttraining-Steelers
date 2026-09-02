@@ -66,6 +66,7 @@ kader = [
 
 st.session_state.sessions_list = load_data()
 
+# Reiter "BDV-Regeln" wurde entfernt
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
@@ -79,13 +80,33 @@ def get_board_players(session, round_num, board_name):
         return ["Offen", "Offen"]
     b_idx = boards.index(board_name)
     
+    is_2v2 = (session.get("modus") == "Koop 2vs2 (Up & Down)")
+    
     if round_num == 1:
         spieler = session["spieler"]
         pairs = []
-        for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
-            pairs.append((spieler[i], spieler[i+1]))
-        while len(pairs) <= b_idx:
-            pairs.append((spieler[0] if spieler else "Offen", spieler[1] if len(spieler) > 1 else "Offen"))
+        
+        if is_2v2:
+            teams = []
+            # Spieler in 2er Teams zusammenfassen
+            for i in range(0, len(spieler)-1, 2):
+                teams.append(f"{spieler[i]} & {spieler[i+1]}")
+            # Falls ein einzelner Spieler übrig bleibt
+            if len(spieler) % 2 != 0:
+                teams.append(f"{spieler[-1]} & Offen")
+                
+            for i in range(0, min(boards_count * 2, len(teams) - len(teams) % 2), 2):
+                pairs.append((teams[i], teams[i+1]))
+            while len(pairs) <= b_idx:
+                t1 = teams[0] if len(teams) > 0 else "Offen"
+                t2 = teams[1] if len(teams) > 1 else "Offen"
+                pairs.append((t1, t2))
+        else:
+            for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
+                pairs.append((spieler[i], spieler[i+1]))
+            while len(pairs) <= b_idx:
+                pairs.append((spieler[0] if spieler else "Offen", spieler[1] if len(spieler) > 1 else "Offen"))
+        
         return list(pairs[b_idx])
     
     prev_r = round_num - 1
@@ -174,7 +195,7 @@ def open_new_session_dialog():
     session_datum = st.date_input("Datum", date.today())
     leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
     total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
-    spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Liga (4er-Team)"])
+    spielmodus = st.selectbox("Spielmodus", ["Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"])
     anzahl_boards = st.selectbox("Anzahl der Boards", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
     
     st.write("### Anwesende Spieler")
@@ -224,6 +245,82 @@ def open_new_session_dialog():
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
+@st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
+def open_edit_session_dialog(session_idx):
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_input_{session_idx}")
+    if pwd != "1521":
+        if pwd != "":
+            st.error("Falsches Passwort!")
+        return
+
+    sess = st.session_state.sessions_list[session_idx]
+    
+    try:
+        curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
+    except:
+        curr_date = date.today()
+
+    session_datum = st.date_input("Datum", curr_date, key=f"edit_date_{session_idx}")
+    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], index=["Best of 5", "Best of 3"].index(sess.get("modus_leg", "Best of 5")), key=f"edit_leg_{session_idx}")
+    total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=sess.get("total_rounds", 4)-1, key=f"edit_rounds_{session_idx}")
+    
+    modi_list = ["Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"]
+    curr_modus = sess.get("modus", "Up & Down")
+    if curr_modus not in modi_list: modi_list.append(curr_modus)
+    spielmodus = st.selectbox("Spielmodus", modi_list, index=modi_list.index(curr_modus), key=f"edit_modus_{session_idx}")
+    
+    board_opts = ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"]
+    curr_b = sess.get("boards", "6 Boards")
+    if curr_b not in board_opts: board_opts.append(curr_b)
+    anzahl_boards = st.selectbox("Anzahl der Boards", board_opts, index=board_opts.index(curr_b), key=f"edit_bcount_{session_idx}")
+    
+    st.write("### Anwesende Spieler anpassen")
+    anwesende = []
+    cols = st.columns(2)
+    half = len(kader) // 2
+    
+    curr_spieler = sess.get("spieler", [])
+    curr_gaeste = sess.get("gaeste", [])
+    
+    with cols[0]:
+        for spieler in kader[:half]:
+            if st.checkbox(spieler, value=(spieler in curr_spieler), key=f"edit_kader_{spieler}_{session_idx}"):
+                anwesende.append(spieler)
+    with cols[1]:
+        for spieler in kader[half:]:
+            if st.checkbox(spieler, value=(spieler in curr_spieler), key=f"edit_kader_{spieler}_{session_idx}"):
+                anwesende.append(spieler)
+                
+    st.write("### Gastspieler anpassen")
+    g1 = st.text_input("Gastspieler 1", value=curr_gaeste[0] if len(curr_gaeste)>0 else "", key=f"edit_gast1_{session_idx}")
+    g2 = st.text_input("Gastspieler 2", value=curr_gaeste[1] if len(curr_gaeste)>1 else "", key=f"edit_gast2_{session_idx}")
+    g3 = st.text_input("Gastspieler 3", value=curr_gaeste[2] if len(curr_gaeste)>2 else "", key=f"edit_gast3_{session_idx}")
+    g4 = st.text_input("Gastspieler 4", value=curr_gaeste[3] if len(curr_gaeste)>3 else "", key=f"edit_gast4_{session_idx}")
+    
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("Abbrechen", use_container_width=True, key=f"edit_cancel_{session_idx}"):
+            st.rerun()
+    with col_b2:
+        if st.button("Änderungen speichern", type="primary", use_container_width=True, key=f"edit_save_{session_idx}"):
+            gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
+            aktive_spieler = anwesende + gaeste
+            boards_cnt = int(anzahl_boards.split()[0])
+            
+            sess["datum"] = session_datum.strftime("%d.%m.%Y")
+            sess["modus"] = spielmodus
+            sess["boards_count"] = boards_cnt
+            sess["total_rounds"] = total_rounds
+            sess["boards"] = anzahl_boards
+            sess["modus_leg"] = leg_modus
+            sess["spieler"] = aktive_spieler
+            sess["gaeste"] = gaeste
+            
+            st.session_state.sessions_list[session_idx] = sess
+            save_data(st.session_state.sessions_list)
+            st.success("Session erfolgreich aktualisiert!")
+            st.rerun()
+
 @st.dialog("📋 Board-Erfassung")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
@@ -242,18 +339,32 @@ def open_board_dialog(board_name, session_idx):
     st.write(f"### {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
     
     auto_players = get_board_players(sess, current_round, board_name)
-    verfügbare_spieler = sess.get("spieler", kader)
+    
+    # 2vs2 Dropdown Logik anpassen
+    is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
+    if is_2v2:
+        base_teams = []
+        spieler_list = sess.get("spieler", kader)
+        for i in range(0, len(spieler_list)-1, 2):
+            base_teams.append(f"{spieler_list[i]} & {spieler_list[i+1]}")
+        if len(spieler_list) % 2 != 0:
+            base_teams.append(f"{spieler_list[-1]} & Offen")
+        verfügbare_spieler = list(set(base_teams + auto_players))
+        if "Offen" not in verfügbare_spieler: verfügbare_spieler.append("Offen")
+    else:
+        verfügbare_spieler = sess.get("spieler", kader)
+        if "Offen" not in verfügbare_spieler: verfügbare_spieler.append("Offen")
     
     col1, col2 = st.columns(2)
     with col1:
         default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-        s1 = st.selectbox("Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-        score1 = st.number_input(f"Legs für {s1}", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+        s1 = st.selectbox("Team / Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
+        score1 = st.number_input(f"Legs für Heim", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
     with col2:
         remaining = [p for p in verfügbare_spieler if p != s1]
         default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-        s2 = st.selectbox("Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-        score2 = st.number_input(f"Legs für {s2}", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
+        s2 = st.selectbox("Team / Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
+        score2 = st.number_input(f"Legs für Gast", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
         
     ergebnis = f"{score1}:{score2}"
     winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
@@ -311,8 +422,17 @@ def open_delete_dialog(session_idx):
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
-    if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="quick_start_btn"):
-        open_new_session_dialog()
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="quick_start_btn"):
+            open_new_session_dialog()
+    with col_btn2:
+        active_sessions_for_btn = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
+        if active_sessions_for_btn:
+            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="edit_active_btn"):
+                open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_btn[0]))
+        else:
+            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True)
         
     st.write("")
     col1, col2, col3, col4 = st.columns(4)
@@ -328,11 +448,10 @@ with tab_übersicht:
     st.write("")
     
     st.markdown("### 🔴 Laufende Session")
-    active_sessions = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
-    if not active_sessions:
+    if not active_sessions_for_btn:
         st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Übersicht zu sehen.")
     else:
-        curr_sess = active_sessions[0]
+        curr_sess = active_sessions_for_btn[0]
         st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} ({curr_sess['modus']})")
         
         boards_count = curr_sess.get("boards_count", 6)
@@ -341,21 +460,24 @@ with tab_übersicht:
         
         session_stats = {p: {"legs_won": 0, "legs_lost": 0} for p in curr_sess.get("spieler", [])}
         for match in curr_sess.get("results", {}).values():
-            s1 = match.get("s1")
-            s2 = match.get("s2")
+            s1 = match.get("s1", "")
+            s2 = match.get("s2", "")
             ergebnis = match.get("ergebnis", "0:0")
             
             try:
                 l1, l2 = map(int, ergebnis.split(":"))
             except ValueError:
                 l1, l2 = 0, 0
-                
-            if s1 in session_stats:
-                session_stats[s1]["legs_won"] += l1
-                session_stats[s1]["legs_lost"] += l2
-            if s2 in session_stats:
-                session_stats[s2]["legs_won"] += l2
-                session_stats[s2]["legs_lost"] += l1
+            
+            # Trennt 2vs2 Teams für die Einzel-Leg-Statistiken auf
+            for p in s1.split(" & "):
+                if p in session_stats:
+                    session_stats[p]["legs_won"] += l1
+                    session_stats[p]["legs_lost"] += l2
+            for p in s2.split(" & "):
+                if p in session_stats:
+                    session_stats[p]["legs_won"] += l2
+                    session_stats[p]["legs_lost"] += l1
         
         cols_per_row = 3
         for i in range(0, len(active_boards_list), cols_per_row):
@@ -379,17 +501,24 @@ with tab_übersicht:
                                 players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
                                 p1, p2 = players_now[0], players_now[1]
                                 
-                                p1_stat = f"Legs: {session_stats.get(p1, {}).get('legs_won', 0)}:{session_stats.get(p1, {}).get('legs_lost', 0)}" if p1 != "Offen" else ""
-                                p2_stat = f"Legs: {session_stats.get(p2, {}).get('legs_won', 0)}:{session_stats.get(p2, {}).get('legs_lost', 0)}" if p2 != "Offen" else ""
+                                # Behandelt Zeilenumbrüche für 2vs2 Teams im UI
+                                p1_display = p1.replace(" & ", "<br>&<br>")
+                                p2_display = p2.replace(" & ", "<br>&<br>")
+                                
+                                p1_first = p1.split(" & ")[0]
+                                p2_first = p2.split(" & ")[0]
+                                
+                                p1_stat = f"Legs: {session_stats.get(p1_first, {}).get('legs_won', 0)}:{session_stats.get(p1_first, {}).get('legs_lost', 0)}" if p1 != "Offen" else ""
+                                p2_stat = f"Legs: {session_stats.get(p2_first, {}).get('legs_won', 0)}:{session_stats.get(p2_first, {}).get('legs_lost', 0)}" if p2 != "Offen" else ""
                                 
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.1em;'>{p1}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.0em;'>{p1_display}</div>", unsafe_allow_html=True)
                                 st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em;'>{p1_stat}</div>", unsafe_allow_html=True)
                                 
                                 st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 5px 0;'>VS</div>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.1em;'>{p2}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 1.0em;'>{p2_display}</div>", unsafe_allow_html=True)
                                 st.markdown(f"<div style='text-align: center; color: gray; font-size: 0.8em; margin-bottom: 15px;'>{p2_stat}</div>", unsafe_allow_html=True)
                                 
                                 if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
@@ -437,28 +566,39 @@ with tab_kader:
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler).")
     
     stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0} for p in kader}
-    total_matches_played = 0
+    
+    player_matches_played = 0
+    total_wins = 0
+    total_losses = 0
     
     for sess in st.session_state.sessions_list:
         for match in sess.get("results", {}).values():
-            winner = match.get("winner")
-            loser = match.get("loser")
-            total_matches_played += 1
-            if winner in stats:
-                stats[winner]["Matches"] += 1
-                stats[winner]["Siege"] += 1
-            if loser in stats:
-                stats[loser]["Matches"] += 1
-                stats[loser]["Niederlagen"] += 1
+            winner = match.get("winner", "")
+            loser = match.get("loser", "")
+            
+            if winner:
+                for p in winner.split(" & "):
+                    if p in stats:
+                        stats[p]["Matches"] += 1
+                        stats[p]["Siege"] += 1
+                        player_matches_played += 1
+                        total_wins += 1
+            if loser:
+                for p in loser.split(" & "):
+                    if p in stats:
+                        stats[p]["Matches"] += 1
+                        stats[p]["Niederlagen"] += 1
+                        player_matches_played += 1
+                        total_losses += 1
 
-    total_wins = sum(s["Siege"] for s in stats.values())
-    avg_win_rate = f"{(total_wins / total_matches_played * 100):.0f}%" if total_matches_played > 0 else "0%"
+    total_games = total_wins + total_losses
+    avg_win_rate = f"{(total_wins / total_games * 100):.0f}%" if total_games > 0 else "0%"
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(label="Aktive Spieler", value=len(kader), delta="im Kader")
     with col2:
-        st.metric(label="Absolvierte Spiele", value=str(total_matches_played), delta="aus Sessions")
+        st.metric(label="Absolvierte Spieler-Matches", value=str(player_matches_played), delta="aus Sessions")
     with col3:
         st.metric(label="Ø Siegquote", value=avg_win_rate, delta="gesamt")
         
