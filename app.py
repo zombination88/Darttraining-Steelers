@@ -2,38 +2,24 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import gspread
-from google.oauth2.service_account import Credentials
 import textwrap
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# --- DATENBANKVERBINDUNG (Natives Google gspread - 100% verlässlich) ---
+# --- DATENBANKVERBINDUNG ---
 try:
-    # Lade den geheimen Schlüssel aus Streamlit
     creds_dict = json.loads(st.secrets["google_json"])
-    
-    # Schlüssel-Formatierung aggressiv reparieren (Bulletproof PEM Format)
-    pk = creds_dict.get("private_key", "")
-    pk = pk.replace("\\n", "\n")
-    if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
-        body = pk.split("-----BEGIN PRIVATE KEY-----")[1].split("-----END PRIVATE KEY-----")[0]
-        body = "".join(body.split())
-        wrapped = "\n".join(textwrap.wrap(body, 64))
-        creds_dict["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{wrapped}\n-----END PRIVATE KEY-----\n"
+    # Formatierungsprobleme des private_key beheben
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    # Verbindung direkt zu Google aufbauen (umgeht Streamlit-Bugs)
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    gc = gspread.authorize(creds)
+    conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
 except Exception as e:
-    st.error(f"🚨 Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
+    st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
 def load_data():
@@ -42,27 +28,22 @@ def load_data():
         return []
         
     try:
-        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
-        values = sheet.get_all_values()
-        
-        if len(values) > 1 and "json_data" in values[0]:
-            idx = values[0].index("json_data")
-            raw_str = values[1][idx]
-            
-            if raw_str:
-                raw_data = json.loads(raw_str)
-                sessions = []
-                for sess in raw_data:
-                    fixed_results = {}
-                    for k, v in sess.get("results", {}).items():
-                        parts = k.split("_", 1)
-                        if len(parts) == 2:
-                            r_num = int(parts[0])
-                            b_name = parts[1]
-                            fixed_results[(r_num, b_name)] = v
-                    sess["results"] = fixed_results
-                    sessions.append(sess)
-                return sessions
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
+        if df is not None and not df.empty and "json_data" in df.columns:
+            raw_str = df["json_data"].dropna().iloc[0]
+            raw_data = json.loads(raw_str)
+            sessions = []
+            for sess in raw_data:
+                fixed_results = {}
+                for k, v in sess.get("results", {}).items():
+                    parts = k.split("_", 1)
+                    if len(parts) == 2:
+                        r_num = int(parts[0])
+                        b_name = parts[1]
+                        fixed_results[(r_num, b_name)] = v
+                sess["results"] = fixed_results
+                sessions.append(sess)
+            return sessions
     except Exception as e:
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
@@ -78,12 +59,10 @@ def save_data(sessions):
         serializable_sessions.append(sess_copy)
     
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
+    df_to_save = pd.DataFrame({"json_data": [json_str]})
     
     try:
-        sheet = gc.open_by_url(SHEET_URL).worksheet("sessions")
-        sheet.clear()
-        sheet.update_cell(1, 1, "json_data")
-        sheet.update_cell(2, 1, json_str)
+        conn.update(spreadsheet=SHEET_URL, worksheet="sessions", data=df_to_save)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -160,7 +139,8 @@ def get_board_players(session, round_num, board_name):
     l = {}
     for b in boards:
         match_info = res.get((prev_r, b))
-        if match_info:
+        # Prüfe, ob das Match wirklich beendet wurde (winner ist gesetzt)
+        if match_info and match_info.get("winner"):
             w[b] = match_info["winner"]
             l[b] = match_info["loser"]
         else:
@@ -208,8 +188,9 @@ def is_board_ready(session, board_name, next_r):
             
     for rb in req_boards:
         found = False
-        for (r, b) in res.keys():
-            if r == prev_r and b == rb:
+        for (r, b), v in res.items():
+            # Ein Board ist nur bereit, wenn das vorherige Match vollständig beendet ist (winner != leer)
+            if r == prev_r and b == rb and v.get("winner"):
                 found = True
                 break
         if not found:
@@ -223,7 +204,8 @@ def is_session_completed(sess):
     boards_list = get_boards_list(boards_count)
     res = sess.get("results", {})
     for b_name in boards_list:
-        completed = [r for (r, b) in res.keys() if b == b_name]
+        # Nur vollendete Matches zählen
+        completed = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
         max_r = max(completed) if completed else 0
         if max_r < total_rounds:
             return False
@@ -373,7 +355,8 @@ def open_board_dialog(board_name, session_idx):
     total_rounds = sess.get("total_rounds", 4)
     
     res = sess.get("results", {})
-    completed_rounds = [r for (r, b) in res.keys() if b == board_name]
+    # Berechne die aktuelle Runde (wir zählen nur Matches, die auch wirklich abgeschlossen sind)
+    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
     current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
     if current_round > total_rounds:
@@ -384,21 +367,25 @@ def open_board_dialog(board_name, session_idx):
 
     st.write(f"### {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
     
-    auto_players = get_board_players(sess, current_round, board_name)
+    # Prüfe, ob es bereits eine gespeicherte Auswechslung (partielles Match) für diese Runde gibt
+    existing_match = res.get((current_round, board_name))
     
-    # Baue eine saubere Liste aller möglichen Spieler auf
-    is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
-    if is_2v2:
-        base_teams = []
-        spieler_list = sess.get("spieler", kader)
-        for i in range(0, len(spieler_list)-1, 2):
-            base_teams.append(f"{spieler_list[i]} & {spieler_list[i+1]}")
-        if len(spieler_list) % 2 != 0:
-            base_teams.append(f"{spieler_list[-1]} & Offen")
-        alle_spieler = list(set(base_teams + auto_players + kader + sess.get("gaeste", [])))
+    if existing_match:
+        current_p1 = existing_match.get("s1", "Offen")
+        current_p2 = existing_match.get("s2", "Offen")
+        try:
+            score1 = int(existing_match.get("ergebnis", "3:0").split(":")[0])
+            score2 = int(existing_match.get("ergebnis", "3:0").split(":")[1])
+        except:
+            score1, score2 = 3, 0
     else:
-        alle_spieler = list(set(kader + sess.get("gaeste", []) + auto_players))
-        
+        # Standard-Spieler berechnen
+        auto_players = get_board_players(sess, current_round, board_name)
+        current_p1, current_p2 = auto_players[0], auto_players[1]
+        score1, score2 = 3, 0
+    
+    # Liste aller verfügbaren Spieler aufbauen
+    alle_spieler = list(set(kader + sess.get("gaeste", []) + [current_p1, current_p2]))
     if "Offen" not in alle_spieler:
         alle_spieler.append("Offen")
     alle_spieler.sort()
@@ -407,59 +394,84 @@ def open_board_dialog(board_name, session_idx):
     
     with col1:
         st.markdown("**Team / Spieler 1 (Heim)**")
-        sc1, sc2 = st.columns([3, 1])
-        # Auswechseln Toggle-Button neben dem Namen
-        is_sub1 = sc2.toggle("🔄", help="Spieler auswechseln", key=f"tgl1_{board_name}_{session_idx}")
+        c1, c2 = st.columns([4, 1])
+        c1.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p1}</div>", unsafe_allow_html=True)
         
-        if is_sub1:
-            s1_sel = sc1.selectbox("Ersatzspieler:", alle_spieler, index=alle_spieler.index(auto_players[0]) if auto_players[0] in alle_spieler else 0, key=f"sel1_{board_name}_{session_idx}", label_visibility="collapsed")
-            s1_neu = sc1.text_input("Neuer Gast:", placeholder="Neuen Gast eintragen...", key=f"txt1_{board_name}_{session_idx}", label_visibility="collapsed")
-            s1 = s1_neu if s1_neu.strip() else s1_sel
-        else:
-            sc1.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{auto_players[0]}</div>", unsafe_allow_html=True)
-            s1 = auto_players[0]
+        # Popover für den Spielerwechsel 1
+        with c2.popover("🔄", help="Spieler 1 auswechseln"):
+            st.markdown("**Spieler wechseln**")
+            idx1 = alle_spieler.index(current_p1) if current_p1 in alle_spieler else 0
+            new_p1_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx1, key=f"pop_s1_{board_name}")
+            new_p1_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt1_{board_name}")
             
-        score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+            if st.button("Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
+                final_p1 = new_p1_txt if new_p1_txt.strip() else new_p1_sel
+                if "results" not in sess: sess["results"] = {}
+                # Speichere die Auswechslung in der Datenbank, OHNE das Match als beendet zu markieren (winner="")
+                sess["results"][(current_round, board_name)] = {
+                    "s1": final_p1, 
+                    "s2": current_p2, 
+                    "ergebnis": f"{score1}:{score2}", 
+                    "winner": "", 
+                    "loser": ""
+                }
+                save_data(st.session_state.sessions_list)
+                st.rerun()
+                
+        in_score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=score1, key=f"d_score1_{board_name}_{session_idx}")
         
     with col2:
         st.markdown("**Team / Spieler 2 (Gast)**")
-        sc3, sc4 = st.columns([3, 1])
-        # Auswechseln Toggle-Button neben dem Namen
-        is_sub2 = sc4.toggle("🔄", help="Spieler auswechseln", key=f"tgl2_{board_name}_{session_idx}")
+        c3, c4 = st.columns([4, 1])
+        c3.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p2}</div>", unsafe_allow_html=True)
         
-        if is_sub2:
-            s2_sel = sc3.selectbox("Ersatzspieler:", alle_spieler, index=alle_spieler.index(auto_players[1]) if auto_players[1] in alle_spieler else 0, key=f"sel2_{board_name}_{session_idx}", label_visibility="collapsed")
-            s2_neu = sc3.text_input("Neuer Gast:", placeholder="Neuen Gast eintragen...", key=f"txt2_{board_name}_{session_idx}", label_visibility="collapsed")
-            s2 = s2_neu if s2_neu.strip() else s2_sel
-        else:
-            sc3.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{auto_players[1]}</div>", unsafe_allow_html=True)
-            s2 = auto_players[1]
+        # Popover für den Spielerwechsel 2
+        with c4.popover("🔄", help="Spieler 2 auswechseln"):
+            st.markdown("**Spieler wechseln**")
+            idx2 = alle_spieler.index(current_p2) if current_p2 in alle_spieler else 0
+            new_p2_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx2, key=f"pop_s2_{board_name}")
+            new_p2_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt2_{board_name}")
             
-        score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
+            if st.button("Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
+                final_p2 = new_p2_txt if new_p2_txt.strip() else new_p2_sel
+                if "results" not in sess: sess["results"] = {}
+                # Speichere die Auswechslung in der Datenbank, OHNE das Match als beendet zu markieren
+                sess["results"][(current_round, board_name)] = {
+                    "s1": current_p1, 
+                    "s2": final_p2, 
+                    "ergebnis": f"{score1}:{score2}", 
+                    "winner": "", 
+                    "loser": ""
+                }
+                save_data(st.session_state.sessions_list)
+                st.rerun()
+                
+        in_score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=score2, key=f"d_score2_{board_name}_{session_idx}")
         
-    ergebnis = f"{score1}:{score2}"
-    winner = s1 if score1 > score2 else (s2 if score2 > score1 else None)
-    loser = s2 if winner == s1 else (s1 if winner == s2 else None)
+    ergebnis = f"{in_score1}:{in_score2}"
+    winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else None)
+    loser = current_p2 if winner == current_p1 else (current_p1 if winner == current_p2 else None)
     
     st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Sieger: **{winner if winner else 'Unentschieden'}**")
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("Ergebnis speichern", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
-            if score1 == score2:
-                st.error("Ein Unentschieden ist nicht möglich.")
+        if st.button("Ergebnis abschließen", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
+            if in_score1 == in_score2:
+                st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
             else:
                 if "results" not in sess:
                     sess["results"] = {}
+                # Hier wird das Match finalisiert, da der "winner" geschrieben wird
                 sess["results"][(current_round, board_name)] = {
-                    "s1": s1,
-                    "s2": s2,
+                    "s1": current_p1,
+                    "s2": current_p2,
                     "ergebnis": ergebnis,
                     "winner": winner,
                     "loser": loser
                 }
                 save_data(st.session_state.sessions_list)
-                st.success("Ergebnis gespeichert!")
+                st.success("Ergebnis abgeschlossen!")
                 st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
@@ -490,7 +502,6 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
-# --- TABS INHALTE ---
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
@@ -532,6 +543,9 @@ with tab_übersicht:
         
         session_stats = {p: {"legs_won": 0, "legs_lost": 0} for p in curr_sess.get("spieler", [])}
         for match in curr_sess.get("results", {}).values():
+            if not match.get("winner"):
+                continue # Zähle keine Legs von unfertigen/eingewechselten Matches
+            
             s1 = match.get("s1", "")
             s2 = match.get("s2", "")
             ergebnis = match.get("ergebnis", "0:0")
@@ -559,7 +573,7 @@ with tab_übersicht:
                     with cols[j]:
                         with st.container(border=True):
                             res = curr_sess.get("results", {})
-                            completed_rounds = [r for (r, b) in res.keys() if b == b_name]
+                            completed_rounds = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
                             next_r = max(completed_rounds) + 1 if completed_rounds else 1
                             
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
@@ -569,8 +583,14 @@ with tab_übersicht:
                                 ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
                                 st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
                                 
-                                players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
-                                p1, p2 = players_now[0], players_now[1]
+                                # Wenn bereits eine Auswechslung gespeichert wurde, zeige diese im Live-Board an
+                                existing_match = res.get((next_r, b_name))
+                                if existing_match:
+                                    p1 = existing_match.get("s1", "Offen")
+                                    p2 = existing_match.get("s2", "Offen")
+                                else:
+                                    players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
+                                    p1, p2 = players_now[0], players_now[1]
                                 
                                 p1_display = p1.replace(" & ", "<br>&<br>")
                                 p2_display = p2.replace(" & ", "<br>&<br>")
@@ -616,6 +636,8 @@ with tab_übersicht:
     for sess in st.session_state.sessions_list:
         sess_date = sess.get("datum", "")
         for (round_num, board_name), m_info in sess.get("results", {}).items():
+            if not m_info.get("winner"):
+                continue # Verstecke reine Auswechslungs-Zwischenspeicher aus dem Archiv
             all_matches.append({
                 "Datum": sess_date,
                 "Runde": round_num,
@@ -728,7 +750,7 @@ with tab_session:
                 for b_i, b_name in enumerate(active_boards_list):
                     with b_cols[b_i]:
                         res = sess.get("results", {})
-                        completed = [r for (r, b) in res.keys() if b == b_name]
+                        completed = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
                         next_r = max(completed) + 1 if completed else 1
                         
                         if next_r <= total_rounds:
