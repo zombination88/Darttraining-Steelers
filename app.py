@@ -100,7 +100,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
@@ -314,6 +314,9 @@ def open_session_archive_dialog(session_idx):
     
     res = sess.get("results", {})
     total_rounds = sess.get("total_rounds", 4)
+    modus = sess.get("modus", "Up & Down")
+    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
     if not res:
         st.info("Für diese Session wurden noch keine Matches erfasst.")
@@ -348,6 +351,25 @@ def open_session_archive_dialog(session_idx):
             if r_matches:
                 df_r = pd.DataFrame(r_matches)
                 st.dataframe(df_r, use_container_width=True, hide_index=True)
+            
+            if is_standard_training and r == singles_rounds:
+                st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
+                standings_rows = []
+                singles_boards = get_boards_list(sess, singles_rounds)
+                for b_name in singles_boards:
+                    p_list = get_board_players(sess, singles_rounds, b_name)
+                    m_inf = res.get((singles_rounds, b_name))
+                    winner_str = m_inf.get("winner", "–") if m_inf else "–"
+                    standings_rows.append({
+                        "Board": b_name,
+                        "Spieler 1 (Heim)": p_list[0],
+                        "Spieler 2 (Gast)": p_list[1],
+                        "Sieger des Matches": winner_str
+                    })
+                if standings_rows:
+                    df_standings = pd.DataFrame(standings_rows)
+                    st.dataframe(df_standings, use_container_width=True, hide_index=True)
+                
             st.divider()
             
     if st.button("Schließen", use_container_width=True):
@@ -370,7 +392,7 @@ def open_new_session_dialog():
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
         coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1)
         total_rounds = singles_rounds + coop_rounds
-        st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel (auf gewählten Boards) + {coop_rounds} Runden Doppel (auf exakt 2 Boards).")
+        st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel (auf gewählten Boards) + {coop_rounds} Runden Doppel/Koop (auf exakt 2 Boards).")
     else:
         singles_rounds = 0
         coop_rounds = 0
@@ -1104,47 +1126,3 @@ with tab_archiv:
                     if st.button("🗑️ Session löschen", key=f"arch_del_btn_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
                 st.divider()
-
-with tab_bdv:
-    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
-    st.markdown("""
-### 1. Mannschaft & Meldung
-- **Mannschaftsmeldung:** Erledigt.
-- **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
-
-### 2. Spielmodus & Ablauf (Liga und Pokal)
-- **Heimspieltag ist Dienstag**
-- **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
-- **Aufstellung (3 Blöcke):**
-  - **Block 1:** 4 Einzelspieler.
-  - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
-  - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
-- **Rahmenbedingungen:**
-  - **Spielzeit:** Mo–Do ab 20:00 Uhr.
-  - **Austragung:** Parallel auf zwei Boards.
-  - **Einwerfzeit:** 30 Minuten für Gäste.
-- **Board-Zuordnung & Schreiber:**
-  Die Heimmannschaft schreibt und beginnt auf Board 1.  
-  Die Gastmannschaft schreibt und beginnt auf Board 2.  
-- **Schwabenpokal:**
-  - Nur K.O. Runden
-  - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
-
-### 3. Spielbericht & Online-Meldung
-- **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
-- **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
-- **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
-- **Aufbewahrung:** The Originale müssen bis Saisonende im Verein aufbewahrt werden.
-
-### 4. Mannschaftsvorstellung (Kader)
-- Andreas Böhm
-- Andrino Czombera (Teamcaptain)
-- Dennis Güttner
-- Marco Eser
-- Maximilian Zientner
-- Michael Kummer
-- Michael Mak
-- Michael Neumeier
-- Thomas Schaudt
-- Wolfgang Schneider
-    """)
