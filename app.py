@@ -102,7 +102,7 @@ with col_m:
     except Exception:
         pass
 with col_sync:
-    if st.button("🔄", use_container_width=True, help="Daten jetzt frisch aus der Cloud laden"):
+    if st.button("🔄", use_container_width=True, help="Daten frisch aus der Cloud laden"):
         st.session_state.sessions_list = load_data()
         st.success("Synchronisiert!")
         st.rerun()
@@ -260,9 +260,9 @@ def get_board_players(session, round_num, board_name):
                 
         if b_idx == 0:
             top_w = w.get("Kaiser B1", "-")
-            top_w = top_w if top_w else "-"
+            top_w = top_w if top_w != "-" else "-"
             next_w = w.get("Board 2", "-") if len(boards) > 1 else top_w
-            next_w = next_w if next_w else "-"
+            next_w = next_w if next_w != "-" else "-"
             return [top_w, next_w]
         
         if b_idx > 0:
@@ -270,10 +270,10 @@ def get_board_players(session, round_num, board_name):
             next_board = boards[b_idx + 1] if b_idx + 1 < len(boards) else None
             
             loser_from_above = l.get(prev_board, "-")
-            loser_from_above = loser_from_above if loser_from_above else "-"
+            loser_from_above = loser_from_above if loser_from_above != "-" else "-"
             
             winner_from_below = w.get(next_board, "-") if next_board else l.get(boards[b_idx], "-")
-            winner_from_below = winner_from_below if winner_from_below else "-"
+            winner_from_below = winner_from_below if winner_from_below != "-" else "-"
             
             return [loser_from_above, winner_from_below]
             
@@ -313,7 +313,7 @@ def is_board_ready(session, board_name, next_r):
     for rb in req_boards:
         found = False
         for (r, b), v in res.items():
-            if r == prev_r and b == rb and v.get("winner"):
+            if r == prev_r and b == rb and v.get("winner") and v.get("winner") != "-":
                 found = True
                 break
         if not found:
@@ -328,7 +328,7 @@ def is_session_completed(sess):
         boards_in_round = get_boards_list(sess, r)
         for b_name in boards_in_round:
             match_info = res.get((r, b_name))
-            if not match_info or not match_info.get("winner"):
+            if not match_info or not match_info.get("winner") or match_info.get("winner") == "-":
                 return False
     return True
 
@@ -438,7 +438,7 @@ def open_session_archive_dialog(session_idx):
                         st.markdown(f"**{m['Board']}**")
                         st.caption(f"⚔️ **{m['Heim']}** vs **{m['Gast']}**")
                         st.markdown(f"Ergebnis: **{m['Ergebnis']}** | Sieger: **{m['Sieger']}**")
-                        st.caption(f"🎯 180er: {m['180er (H/G.isdigit() and ... or '–') if '180er (H/G)' in m else m['180er (H/G)']}} | 📊 Avg: {m['Average (H/G)']}")
+                        st.caption(f"🎯 180er: {m['180er (H/G)']} | 📊 Avg: {m['Average (H/G)']}")
             
             if is_standard_training and r == singles_rounds:
                 st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
@@ -625,7 +625,7 @@ def open_board_dialog(board_name, session_idx):
     total_rounds = sess.get("total_rounds", 4)
     
     res = sess.get("results", {})
-    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
+    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner") and v.get("winner") != "-"]
     current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
     if current_round > total_rounds:
@@ -752,7 +752,7 @@ with tab_übersicht:
                     b_name = active_boards_list[i + j]
                     with cols[j]:
                         with st.container(border=True):
-                            completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
+                            completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner") and v.get("winner") != "-"]
                             next_r_for_board = max(completed_r_for_board) + 1 if completed_r_for_board else 1
                             
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
@@ -825,7 +825,7 @@ with tab_übersicht:
 
     if display_sess:
         l_results = display_sess.get("results", {})
-        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and m.get("winner") != "-" and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
         if kaiser_matches:
             kaiser_matches.sort(key=lambda x: x[0], reverse=True)
             kaiser_winner_text = kaiser_matches[0][1].get("winner")
@@ -881,12 +881,12 @@ with tab_übersicht:
                 for match in sess.get("results", {}).values():
                     winner = match.get("winner", "")
                     loser = match.get("loser", "")
-                    if winner and " & " not in winner:
+                    if winner and winner != "-" and " & " not in winner:
                         for p in winner.split(" & "):
                             if p in stats_temp:
                                 stats_temp[p]["Matches"] += 1
                                 stats_temp[p]["Siege"] += 1
-                    if loser and " & " not in loser:
+                    if loser and loser != "-" and " & " not in loser:
                         for p in loser.split(" & "):
                             if p in stats_temp:
                                 stats_temp[p]["Matches"] += 1
@@ -912,11 +912,11 @@ with tab_übersicht:
         for sess in st.session_state.sessions_list:
             sess_date = sess.get("datum", "")
             for (round_num, board_name), m_info in sess.get("results", {}).items():
-                if not m_info.get("winner"): continue
+                if not m_info.get("winner") or m_info.get("winner") == "-": continue
                 all_matches.append({
                     "Datum": sess_date, "Runde": round_num, "Board": board_name,
                     "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner'] if m_info['winner'] != "-" else "Unentschieden"
+                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
                 })
                 
         if all_matches:
@@ -968,14 +968,14 @@ with tab_kader:
                     stats[s2]["Avg_Sum"] += a2
                     stats[s2]["Avg_Count"] += 1
             
-            if winner and " & " not in winner:
+            if winner and winner != "-" and " & " not in winner:
                 for p in winner.split(" & "):
                     if p in stats:
                         stats[p]["Matches"] += 1
                         stats[p]["Siege"] += 1
                         player_matches_played += 1
                         total_wins += 1
-            if loser and " & " not in loser:
+            if loser and loser != "-" and " & " not in loser:
                 for p in loser.split(" & "):
                     if p in stats:
                         stats[p]["Matches"] += 1
@@ -1089,7 +1089,7 @@ with tab_session:
     kaiser_count = {}
     for sess in st.session_state.sessions_list:
         l_res = sess.get("results", {})
-        k_matches = [(r, m) for (r, b), m in l_res.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "")]
+        k_matches = [(r, m) for (r, b), m in l_res.items() if b == "Kaiser B1" and m.get("winner") and m.get("winner") != "-" and " & " not in m.get("s1", "")]
         if k_matches:
             k_matches.sort(key=lambda x: x[0], reverse=True)
             w = k_matches[0][1].get("winner")
