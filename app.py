@@ -11,7 +11,7 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# --- DATENBANKVERBINDUNG (Natives Google gspread) ---
+# --- DATENBANKVERBINDUNG (Natives Google gspread - 100% verlässlich) ---
 try:
     # Lade den geheimen Schlüssel aus Streamlit
     creds_dict = json.loads(st.secrets["google_json"])
@@ -113,7 +113,6 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-# Keine BDV-Regeln mehr!
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 # --- HILFSFUNKTIONEN ---
@@ -387,6 +386,7 @@ def open_board_dialog(board_name, session_idx):
     
     auto_players = get_board_players(sess, current_round, board_name)
     
+    # Baue eine saubere Liste aller möglichen Spieler auf
     is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
     if is_2v2:
         base_teams = []
@@ -395,26 +395,46 @@ def open_board_dialog(board_name, session_idx):
             base_teams.append(f"{spieler_list[i]} & {spieler_list[i+1]}")
         if len(spieler_list) % 2 != 0:
             base_teams.append(f"{spieler_list[-1]} & Offen")
-        verfügbare_spieler = list(set(base_teams + auto_players))
-        if "Offen" not in verfügbare_spieler: verfügbare_spieler.append("Offen")
+        alle_spieler = list(set(base_teams + auto_players + kader + sess.get("gaeste", [])))
     else:
-        verfügbare_spieler = sess.get("spieler", kader)
-        if "Offen" not in verfügbare_spieler: verfügbare_spieler.append("Offen")
-    
-    # Hier ist das Feature für den spontanen Ersatzspieler integriert!
+        alle_spieler = list(set(kader + sess.get("gaeste", []) + auto_players))
+        
+    if "Offen" not in alle_spieler:
+        alle_spieler.append("Offen")
+    alle_spieler.sort()
+
     col1, col2 = st.columns(2)
+    
     with col1:
-        default_s1_idx = verfügbare_spieler.index(auto_players[0]) if auto_players[0] in verfügbare_spieler else 0
-        s1_dropdown = st.selectbox("Team / Spieler 1", verfügbare_spieler, index=default_s1_idx, key=f"d_s1_{board_name}_{session_idx}")
-        s1_ersatz = st.text_input("Spontaner Ersatz?", key=f"ersatz1_{board_name}_{session_idx}", placeholder="Falls nicht in Liste")
-        s1 = s1_ersatz if s1_ersatz.strip() != "" else s1_dropdown
+        st.markdown("**Team / Spieler 1 (Heim)**")
+        sc1, sc2 = st.columns([3, 1])
+        # Auswechseln Toggle-Button neben dem Namen
+        is_sub1 = sc2.toggle("🔄", help="Spieler auswechseln", key=f"tgl1_{board_name}_{session_idx}")
+        
+        if is_sub1:
+            s1_sel = sc1.selectbox("Ersatzspieler:", alle_spieler, index=alle_spieler.index(auto_players[0]) if auto_players[0] in alle_spieler else 0, key=f"sel1_{board_name}_{session_idx}", label_visibility="collapsed")
+            s1_neu = sc1.text_input("Neuer Gast:", placeholder="Neuen Gast eintragen...", key=f"txt1_{board_name}_{session_idx}", label_visibility="collapsed")
+            s1 = s1_neu if s1_neu.strip() else s1_sel
+        else:
+            sc1.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{auto_players[0]}</div>", unsafe_allow_html=True)
+            s1 = auto_players[0]
+            
         score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=3, key=f"d_score1_{board_name}_{session_idx}")
+        
     with col2:
-        remaining = [p for p in verfügbare_spieler if p != s1_dropdown]
-        default_s2_idx = remaining.index(auto_players[1]) if auto_players[1] in remaining else 0
-        s2_dropdown = st.selectbox("Team / Spieler 2", remaining, index=default_s2_idx if remaining else 0, key=f"d_s2_{board_name}_{session_idx}")
-        s2_ersatz = st.text_input("Spontaner Ersatz?", key=f"ersatz2_{board_name}_{session_idx}", placeholder="Falls nicht in Liste")
-        s2 = s2_ersatz if s2_ersatz.strip() != "" else s2_dropdown
+        st.markdown("**Team / Spieler 2 (Gast)**")
+        sc3, sc4 = st.columns([3, 1])
+        # Auswechseln Toggle-Button neben dem Namen
+        is_sub2 = sc4.toggle("🔄", help="Spieler auswechseln", key=f"tgl2_{board_name}_{session_idx}")
+        
+        if is_sub2:
+            s2_sel = sc3.selectbox("Ersatzspieler:", alle_spieler, index=alle_spieler.index(auto_players[1]) if auto_players[1] in alle_spieler else 0, key=f"sel2_{board_name}_{session_idx}", label_visibility="collapsed")
+            s2_neu = sc3.text_input("Neuer Gast:", placeholder="Neuen Gast eintragen...", key=f"txt2_{board_name}_{session_idx}", label_visibility="collapsed")
+            s2 = s2_neu if s2_neu.strip() else s2_sel
+        else:
+            sc3.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{auto_players[1]}</div>", unsafe_allow_html=True)
+            s2 = auto_players[1]
+            
         score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=0, key=f"d_score2_{board_name}_{session_idx}")
         
     ergebnis = f"{score1}:{score2}"
@@ -427,7 +447,7 @@ def open_board_dialog(board_name, session_idx):
     with col_btn1:
         if st.button("Ergebnis speichern", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
             if score1 == score2:
-                st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
+                st.error("Ein Unentschieden ist nicht möglich.")
             else:
                 if "results" not in sess:
                     sess["results"] = {}
