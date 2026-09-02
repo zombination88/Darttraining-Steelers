@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import textwrap
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
@@ -10,14 +9,24 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
+# WORKAROUND: Diese Klasse fängt den 'type'-Konflikt von Streamlit ab, der den Absturz verursacht hat.
+class FixedGSheetsConnection(GSheetsConnection):
+    def _connect(self, **kwargs):
+        if "type" not in kwargs or kwargs["type"] != "service_account":
+            kwargs["type"] = "service_account"
+        return super()._connect(**kwargs)
+
 # --- DATENBANKVERBINDUNG ---
 try:
     creds_dict = json.loads(st.secrets["google_json"])
     # Formatierungsprobleme des private_key beheben
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    
+    # 'type' vor der Übergabe aus dem Dictionary entfernen, um den Keyword-Konflikt zu umgehen
+    safe_creds = {k: v for k, v in creds_dict.items() if k != "type"}
         
-    conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
+    conn = st.connection("gsheets", type=FixedGSheetsConnection, **safe_creds)
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
@@ -66,7 +75,6 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-# --- UI SETUP ---
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -94,7 +102,6 @@ if "sessions_list" not in st.session_state:
 
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
-# --- HILFSFUNKTIONEN ---
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
@@ -139,7 +146,7 @@ def get_board_players(session, round_num, board_name):
     l = {}
     for b in boards:
         match_info = res.get((prev_r, b))
-        # Prüfe, ob das Match wirklich beendet wurde (winner ist gesetzt)
+        # Nur wenn das Match wirklich beendet wurde (winner gesetzt) übernehmen
         if match_info and match_info.get("winner"):
             w[b] = match_info["winner"]
             l[b] = match_info["loser"]
@@ -189,7 +196,6 @@ def is_board_ready(session, board_name, next_r):
     for rb in req_boards:
         found = False
         for (r, b), v in res.items():
-            # Ein Board ist nur bereit, wenn das vorherige Match vollständig beendet ist (winner != leer)
             if r == prev_r and b == rb and v.get("winner"):
                 found = True
                 break
@@ -204,14 +210,12 @@ def is_session_completed(sess):
     boards_list = get_boards_list(boards_count)
     res = sess.get("results", {})
     for b_name in boards_list:
-        # Nur vollendete Matches zählen
         completed = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
         max_r = max(completed) if completed else 0
         if max_r < total_rounds:
             return False
     return True
 
-# --- DIALOGE ---
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -367,7 +371,7 @@ def open_board_dialog(board_name, session_idx):
 
     st.write(f"### {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
     
-    # Prüfe, ob es bereits eine gespeicherte Auswechslung (partielles Match) für diese Runde gibt
+    # Prüfe, ob es bereits eine gespeicherte Auswechslung (partielles Match) gibt
     existing_match = res.get((current_round, board_name))
     
     if existing_match:
@@ -385,7 +389,18 @@ def open_board_dialog(board_name, session_idx):
         score1, score2 = 3, 0
     
     # Liste aller verfügbaren Spieler aufbauen
-    alle_spieler = list(set(kader + sess.get("gaeste", []) + [current_p1, current_p2]))
+    is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
+    if is_2v2:
+        base_teams = []
+        spieler_list = sess.get("spieler", kader)
+        for i in range(0, len(spieler_list)-1, 2):
+            base_teams.append(f"{spieler_list[i]} & {spieler_list[i+1]}")
+        if len(spieler_list) % 2 != 0:
+            base_teams.append(f"{spieler_list[-1]} & Offen")
+        alle_spieler = list(set(base_teams + [current_p1, current_p2]))
+    else:
+        alle_spieler = list(set(sess.get("spieler", kader) + [current_p1, current_p2]))
+        
     if "Offen" not in alle_spieler:
         alle_spieler.append("Offen")
     alle_spieler.sort()
@@ -407,7 +422,7 @@ def open_board_dialog(board_name, session_idx):
             if st.button("Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
                 final_p1 = new_p1_txt if new_p1_txt.strip() else new_p1_sel
                 if "results" not in sess: sess["results"] = {}
-                # Speichere die Auswechslung in der Datenbank, OHNE das Match als beendet zu markieren (winner="")
+                # Speichere die Auswechslung, OHNE das Match als beendet zu markieren (winner="")
                 sess["results"][(current_round, board_name)] = {
                     "s1": final_p1, 
                     "s2": current_p2, 
@@ -435,7 +450,7 @@ def open_board_dialog(board_name, session_idx):
             if st.button("Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
                 final_p2 = new_p2_txt if new_p2_txt.strip() else new_p2_sel
                 if "results" not in sess: sess["results"] = {}
-                # Speichere die Auswechslung in der Datenbank, OHNE das Match als beendet zu markieren
+                # Speichere die Auswechslung, OHNE das Match als beendet zu markieren
                 sess["results"][(current_round, board_name)] = {
                     "s1": current_p1, 
                     "s2": final_p2, 
@@ -456,13 +471,13 @@ def open_board_dialog(board_name, session_idx):
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
+        # Dieser Button finalisiert das Ergebnis (Winner wird gesetzt)
         if st.button("Ergebnis abschließen", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
             if in_score1 == in_score2:
                 st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
             else:
                 if "results" not in sess:
                     sess["results"] = {}
-                # Hier wird das Match finalisiert, da der "winner" geschrieben wird
                 sess["results"][(current_round, board_name)] = {
                     "s1": current_p1,
                     "s2": current_p2,
