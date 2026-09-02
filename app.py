@@ -899,7 +899,9 @@ with tab_übersicht:
                     b_name = active_boards_list[i + j]
                     with cols[j]:
                         with st.container(border=True):
-                            next_r = current_active_round
+                            completed_r = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
+                            next_r = max(completed_r) + 1 if completed_r else 1
+                            
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
                             
                             if next_r <= total_rounds:
@@ -915,7 +917,12 @@ with tab_übersicht:
                                     players_now = get_board_players(curr_sess, next_r, b_name)
                                     p1, p2 = players_now[0], players_now[1]
                                 
-                                st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_head}</p>", unsafe_allow_html=True)
+                                if is_standard_training and next_r > singles_rounds:
+                                    r_head_board = f"Doppelrunde {next_r - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
+                                else:
+                                    r_head_board = f"Runde {next_r}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {next_r}/{total_rounds}"
+                                    
+                                st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_head_board}</p>", unsafe_allow_html=True)
                                 
                                 sc1, sc2 = st.columns([5, 2])
                                 sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
