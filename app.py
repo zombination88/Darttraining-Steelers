@@ -127,7 +127,7 @@ def get_board_players(session, round_num, board_name):
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     
     total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
-    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+    singles_rounds = session.get("singles_rounds", total_rounds - 2 if total_rounds > 2 else 4)
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
@@ -253,36 +253,22 @@ def is_board_ready(session, board_name, next_r):
     total_rounds = session.get("total_rounds", 4)
     singles_rounds = session.get("singles_rounds", total_rounds - 2 if modus == "Standard-Training (Einzel + Coop)" and total_rounds > 2 else total_rounds)
     
-    if modus == "Standard-Training (Einzel + Coop)" and next_r == singles_rounds + 1:
-        return True
-        
-    boards = get_boards_list(session, next_r)
-    if board_name not in boards:
-        return False
-        
-    b_idx = boards.index(board_name)
     res = session.get("results", {})
     prev_r = next_r - 1
     
-    req_boards = []
-    if b_idx == 0:
-        req_boards.append(boards[0])
-        if len(boards) > 1:
-            req_boards.append(boards[1])
-    else:
-        req_boards.append(boards[b_idx - 1])
-        if b_idx + 1 < len(boards):
-            req_boards.append(boards[b_idx + 1])
-        else:
-            req_boards.append(boards[b_idx])
-            
-    for rb in req_boards:
-        found = False
-        for (r, b), v in res.items():
-            if r == prev_r and b == rb and v.get("winner"):
-                found = True
-                break
-        if not found:
+    # Beim Übergang vom Einzel zum Coop im Standard-Training: Alle Einzelrunden auf allen Boards müssen komplett sein
+    if modus == "Standard-Training (Einzel + Coop)" and next_r == singles_rounds + 1:
+        for r in range(1, singles_rounds + 1):
+            boards_in_r = get_boards_list(session, r)
+            for b_name_check in boards_in_r:
+                if not res.get((r, b_name_check), {}).get("winner"):
+                    return False
+        return True
+        
+    # Für alle Folgerunden (Up & Down / Standard): Die vorherige Runde muss auf Allen Boards vollständig abgeschlossen sein
+    boards_prev = get_boards_list(session, prev_r)
+    for b_name_check in boards_prev:
+        if not res.get((prev_r, b_name_check), {}).get("winner"):
             return False
             
     return True
@@ -578,16 +564,38 @@ def open_edit_session_dialog(session_idx):
             st.rerun()
 
 @st.dialog("📋 Board-Erfassung & 180er/Average-Tracking")
-def open_board_dialog(board_name, session_idx):
+def open_board_dialog(board_name, session_idx, target_round=None):
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
-    
     res = sess.get("results", {})
-    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
-    current_round = max(completed_rounds) + 1 if completed_rounds else 1
+    
+    if target_round is None:
+        current_active_round = 1
+        for r_check in range(1, total_rounds + 1):
+            boards_in_r = get_boards_list(sess, r_check)
+            round_complete = True
+            for b_n in boards_in_r:
+                if not res.get((r_check, b_n), {}).get("winner"):
+                    round_complete = False
+                    break
+            if not round_complete:
+                current_active_round = r_check
+                break
+            else:
+                if r_check == total_rounds:
+                    current_active_round = total_rounds
+        current_round = current_active_round
+    else:
+        current_round = target_round
     
     if current_round > total_rounds:
         st.warning(f"{board_name} hat alle {total_rounds} Runden bereits beendet.")
+        if st.button("Schließen", use_container_width=True):
+            st.rerun()
+        return
+
+    if not is_board_ready(sess, board_name, current_round):
+        st.warning(f"Dieses Board kann noch nicht bespielt werden, da in der vorherigen Runde noch nicht alle Spiele abgeschlossen sind.")
         if st.button("Schließen", use_container_width=True):
             st.rerun()
         return
@@ -745,7 +753,6 @@ with tab_übersicht:
                     
         active_boards_list = get_boards_list(curr_sess, current_active_round)
         
-        # Runden-Bezeichnung für Übersicht (Getrennte Zählung für Einzel und Doppel)
         if is_standard_training and current_active_round > singles_rounds:
             coop_curr = current_active_round - singles_rounds
             round_title_str = f"Doppelrunde {coop_curr} von {coop_rounds}"
@@ -780,7 +787,6 @@ with tab_übersicht:
                                     players_now = get_board_players(curr_sess, next_r, b_name)
                                     p1, p2 = players_now[0], players_now[1]
                                 
-                                # Untertitel pro Board mit separater Einzel/Doppel-Zählung
                                 if is_standard_training and next_r > singles_rounds:
                                     coop_n = next_r - singles_rounds
                                     round_sub_str = f"Doppelrunde {coop_n}/{coop_rounds}"
@@ -806,7 +812,7 @@ with tab_übersicht:
                                 
                                 st.write("")
                                 if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
-                                    open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
+                                    open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess), current_active_round)
                             else:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle {total_rounds} Runden beendet</p>", unsafe_allow_html=True)
                                 st.success("✅ Board abgeschlossen")
@@ -1162,7 +1168,7 @@ with tab_session:
                             label_btn = f"🏆 {b_name}\nBeendet"
                             
                         if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                            open_board_dialog(b_name, idx)
+                            open_board_dialog(b_name, idx, next_r)
                 st.divider()
 
 with tab_archiv:
