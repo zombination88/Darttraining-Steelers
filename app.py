@@ -82,7 +82,7 @@ with col1:
     except Exception:
         pass
     
-    with st.popover("🎵", help="Vereinssong abspielen"):
+    with st.popover("🎵 ▾", help="Vereinssong abspielen"):
         try:
             with open("vereinssong.mp3", "rb") as audio_file:
                 audio_bytes = audio_file.read()
@@ -162,7 +162,9 @@ def get_board_players(session, round_num, board_name):
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
-    resting_p = get_resting_player(session, round_num)
+    max_active_pl = len(boards) * 2
+    has_resting = (len(spieler) > max_active_pl and len(spieler) % 2 != 0)
+    resting_p = get_resting_player(session, round_num) if has_resting else None
     active_spieler = [p for p in spieler if p != resting_p] if resting_p else spieler.copy()
     
     if round_num == 1 and not in_coop_phase:
@@ -239,7 +241,6 @@ def get_board_players(session, round_num, board_name):
         return list(pairs[b_idx])
     else:
         boards_count = session.get("boards_count", 4)
-        has_resting = (len(spieler) > boards_count * 2 and len(spieler) % 2 != 0)
         
         if round_num == 1:
             for i in range(0, min(boards_count * 2, len(active_spieler) - len(active_spieler) % 2), 2):
@@ -757,8 +758,8 @@ def open_quick_entry_dialog(session_idx):
                 sel_p1b = st.selectbox("Heim Spieler 2", available_players, index=idx2, key=f"qe_{b_name}_{chosen_r}_p1b")
                 final_s1 = f"{sel_p1a} & {sel_p1b}"
                 
-                in_l1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=s_l1, key=f"qe_l1_{b_name}_{chosen_r}")
-                in_180_1 = st.number_input(f"180er Heim", min_value=0, max_value=20, value=c1_180, key=f"qe_180_1_{b_name}_{chosen_r}")
+                in_l1 = st.number_input(f"Legs Heim ({b_name})", min_value=0, max_value=5, value=s_l1, key=f"qe_l1_{b_name}_{chosen_r}")
+                in_180_1 = st.number_input(f"180er Heim ({b_name})", min_value=0, max_value=20, value=c1_180, key=f"qe_180_1_{b_name}_{chosen_r}")
                 
             with col_t2:
                 st.markdown("**Gast-Team**")
@@ -768,8 +769,8 @@ def open_quick_entry_dialog(session_idx):
                 sel_p2b = st.selectbox("Gast Spieler 2", available_players, index=idx4, key=f"qe_{b_name}_{chosen_r}_p2b")
                 final_s2 = f"{sel_p2a} & {sel_p2b}"
                 
-                in_l2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=s_l2, key=f"qe_l2_{b_name}_{chosen_r}")
-                in_180_2 = st.number_input(f"180er Gast", min_value=0, max_value=20, value=c2_180, key=f"qe_180_2_{b_name}_{chosen_r}")
+                in_l2 = st.number_input(f"Legs Gast ({b_name})", min_value=0, max_value=5, value=s_l2, key=f"qe_l2_{b_name}_{chosen_r}")
+                in_180_2 = st.number_input(f"180er Gast ({b_name})", min_value=0, max_value=20, value=c2_180, key=f"qe_180_2_{b_name}_{chosen_r}")
                 
         else:
             col_p1, col_p2 = st.columns(2)
@@ -1215,13 +1216,30 @@ with tab_session:
     st.subheader("Up & Down Sessions & Verlauf")
     st.write("Übersicht aller absolvierten Trainingsabende und Spielabläufe.")
     
+    total_sessions_cnt = len(st.session_state.sessions_list)
+    total_attendance = sum(len(s.get("spieler", [])) for s in st.session_state.sessions_list)
+    avg_attendance_val = round(total_attendance / total_sessions_cnt, 1) if total_sessions_cnt > 0 else 0
+
+    kaiser_win_counts = {}
+    for sess in st.session_state.sessions_list:
+        for (r, b), m_inf in sess.get("results", {}).items():
+            if b == "Kaiser B1" and m_inf.get("winner") and " & " not in m_inf.get("s1", "") and " & " not in m_inf.get("s2", ""):
+                w_name = m_inf.get("winner")
+                kaiser_win_counts[w_name] = kaiser_win_counts.get(w_name, 0) + 1
+    
+    if kaiser_win_counts:
+        top_kaiser = max(kaiser_win_counts, key=kaiser_win_counts.get)
+        top_kaiser_display = f"{top_kaiser} ({kaiser_win_counts[top_kaiser]}x)"
+    else:
+        top_kaiser_display = "–"
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Gespielte Abende", value=str(len(st.session_state.sessions_list)), delta="Sessions")
+        st.metric(label="Gespielte Abende", value=str(total_sessions_cnt), delta="Sessions")
     with col2:
-        st.metric(label="Aktive Spieler", value=str(len(kader)), delta="im Kader")
+        st.metric(label="ø Anwesende Spieler", value=str(avg_attendance_val), delta="pro Abend")
     with col3:
-        st.metric(label="Aktueller Kaiser", value=current_kaiser, delta="Training")
+        st.metric(label="Rekord-Kaiser 👑", value=top_kaiser_display, delta="meiste Board 1 Siege")
         
     if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new"):
         open_new_session_dialog()
