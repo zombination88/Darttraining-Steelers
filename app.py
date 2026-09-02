@@ -82,7 +82,6 @@ with col1:
     except Exception:
         pass
     
-    # Kompakter Musik-Button (nur Symbol mit Dropdown) unter dem Logo per Popover
     with st.popover("🎵", help="Vereinssong abspielen"):
         try:
             with open("vereinssong.mp3", "rb") as audio_file:
@@ -145,7 +144,6 @@ def get_resting_player(session, round_num):
     if prev_match and prev_match.get("loser"):
         return prev_match.get("loser")
     
-    # Fallback rotation
     shift = (round_num - 1) % len(spieler)
     return spieler[shift]
 
@@ -241,6 +239,8 @@ def get_board_players(session, round_num, board_name):
         return list(pairs[b_idx])
     else:
         boards_count = session.get("boards_count", 4)
+        has_resting = (len(spieler) > boards_count * 2 and len(spieler) % 2 != 0)
+        
         if round_num == 1:
             for i in range(0, min(boards_count * 2, len(active_spieler) - len(active_spieler) % 2), 2):
                 pairs.append((active_spieler[i], active_spieler[i+1]))
@@ -262,8 +262,6 @@ def get_board_players(session, round_num, board_name):
                 w[b] = def_players[0]
                 l[b] = def_players[1]
                 
-        has_resting = (len(spieler) > boards_count * 2 and len(spieler) % 2 != 0)
-        
         if b_idx == 0:
             return [w.get("Kaiser B1", "-"), w.get("Board 2", "-") if len(boards) > 1 else w.get("Kaiser B1", "-")]
         
@@ -742,7 +740,6 @@ def open_quick_entry_dialog(session_idx):
         c2_180 = int(current_m.get("180_s2", 0))
         
         if is_coop_round or modus == "Koop 2vs2 (Up & Down)":
-            # 2 Spieler per Team auswählbar
             parts1 = [p.strip() for p in curr_s1.split("&")] if " & " in curr_s1 else [curr_s1, "-"]
             parts2 = [p.strip() for p in curr_s2.split("&")] if " & " in curr_s2 else [curr_s2, "-"]
             
@@ -856,7 +853,6 @@ with tab_übersicht:
         
     st.write("")
     
-    # Sinnvolle Metriken für Darts-Spieler
     total_sessions_count = len(st.session_state.sessions_list)
     total_180s_all = 0
     for s in st.session_state.sessions_list:
@@ -915,7 +911,6 @@ with tab_übersicht:
                     
         active_boards_list = get_boards_list(curr_sess, current_active_round)
         
-        # Pausenanzeige bei ungerader Spieleranzahl
         spieler_list = curr_sess.get("spieler", [])
         max_active_pl = len(active_boards_list) * 2
         has_rest = (len(spieler_list) > max_active_pl and len(spieler_list) % 2 != 0)
@@ -959,7 +954,6 @@ with tab_übersicht:
                                 r_label = f"Runde {next_r}/{total_rounds}" if not (is_std and next_r > singles_r) else f"Doppelrunde {next_r-singles_r}/{total_rounds-singles_r}"
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_label}</p>", unsafe_allow_html=True)
                                 
-                                # Spieler 1 Anzeige & Wechsel
                                 if p1 in ["-", "Offen"]:
                                     st.markdown(f"<div style='text-align: center; font-weight: bold; color: gray; margin: 8px 0;'>-</div>", unsafe_allow_html=True)
                                 else:
@@ -971,7 +965,6 @@ with tab_übersicht:
                                 
                                 st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                 
-                                # Spieler 2 Anzeige & Wechsel
                                 if p2 in ["-", "Offen"]:
                                     st.markdown(f"<div style='text-align: center; font-weight: bold; color: gray; margin: 8px 0;'>-</div>", unsafe_allow_html=True)
                                 else:
@@ -1079,7 +1072,6 @@ with tab_kader:
             t_avg = sum(sess_avgs) / len(sess_avgs)
             team_session_avgs.append({"Datum": sess.get("datum", "Unbekannt"), "Team-Average": round(t_avg, 1)})
 
-    # Beste Siegquote statt des festen 50%-Durchschnitts
     best_wr = 0.0
     best_wr_player = "–"
     for p in kader:
@@ -1145,7 +1137,6 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-    # DOPPEL-PAARUNGEN / COOP-STATISTIK
     st.write("")
     st.markdown("### 🤝 Doppel-Paarungen (Coop-Statistik)")
     st.caption("Auswertung aller Doppel- und Koop-Matches.")
@@ -1247,20 +1238,12 @@ with tab_session:
                 total_rounds = sess.get("total_rounds", 4)
                 st.markdown(f"**{sess['id']}** — **{sess['datum']}** (*{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['modus_leg']}*{gaeste_text}){status_text}")
                 
-                c_btn1, c_btn2, c_btn3 = st.columns(3)
-                with c_btn1:
-                    if st.button("📊 Spielablauf ansehen", key=f"s_view_{idx}", use_container_width=True):
-                        open_session_archive_dialog(idx)
-                with c_btn2:
-                    if st.button("⚡ Schnelldurchlauf", key=f"s_quick_{idx}", use_container_width=True):
-                        open_quick_entry_dialog(idx)
-                with c_btn3:
-                    if st.button("🗑️ Löschen", key=f"s_del_{idx}", use_container_width=True):
-                        open_delete_dialog(idx)
+                if st.button("📊 Spielablauf ansehen", key=f"s_view_{idx}", use_container_width=True):
+                    open_session_archive_dialog(idx)
 
 with tab_archiv:
-    st.subheader("Match-Archiv & Schnelleintrag")
-    st.write("Hier kannst du vergangene Sessions nachtragen oder ältere Ergebnisse einsehen.")
+    st.subheader("Match-Archiv & Session-Verwaltung")
+    st.write("Hier kannst du vergangene Sessions nachtragen oder ältere Ergebnisse einsehen, bearbeiten und verwalten.")
     
     if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_btn"):
         open_new_session_dialog()
