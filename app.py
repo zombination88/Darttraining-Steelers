@@ -225,7 +225,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
     alle_spieler.sort()
 
     st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
-    st.write(Aktueller Spieler: **{current_player}**")
+    st.write(f"Aktueller Spieler: **{current_player}**")
     
     idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
     new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{board_name}_{round_num}_{slot_num}")
@@ -257,7 +257,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
                 sess["results"][(round_num, board_name)]["s2"] = final_name
                 
             save_data(st.session_state.sessions_list)
-            st.success("Spieler erfolgreich gewechselt und gespeichert!")
+            st.success("Spieler erfolgreich gewechselt und für alle Runden gespeichert!")
             st.rerun()
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
