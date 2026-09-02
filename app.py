@@ -1126,7 +1126,7 @@ with tab_archiv:
                         st.rerun()
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
+    st.subheader("🎯 Modus & Regeln")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
@@ -1154,9 +1154,9 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
         st.markdown("""
-        * Wenn wir z. B. zu neunt sind, setzt das System auf dem allerletzten Board einen **Platzhalter (`-`)** ein.
-        * Wer auf dem allerletzten Board verliert, bekommt in der nächsten Runde das Freilos (die Pause). 
-        * Dadurch wandert der Pausenplatz in den Runden automatisch von unten nach oben durch, und das System hält exakt die richtige Reihenfolge ein!
+        * Wenn wir z. B. zu neunt auf 4 Boards spielen, bekommt auf dem allerletzten Board (Board 4) der Verlierer in der nächsten Runde die Pause (er landet sozusagen auf dem Abstellgleis / kriegt das `-` als Gegner).
+        * Der Spieler, der zuvor in der Pause war / auf den Einsatz gewartet hat, steigt stattdessen auf Board 4 auf und spielt dort gegen den Verlierer von Board 3.
+        * Dadurch wechselt sich die Pause von Runde zu Runde automatisch ab, und das System hält exakt die richtige Reihenfolge ein!
         """)
 
     with st.container(border=True):
