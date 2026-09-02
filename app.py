@@ -100,7 +100,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -123,7 +123,6 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
-    # Automatische Rotation über Trainingstage für Einzel-Startboards
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
         try:
@@ -666,11 +665,18 @@ with tab_übersicht:
     col_l, col_r = st.columns(2)
     with col_l:
         st.markdown("### Letzte Session")
-        last_s = st.session_state.sessions_list[0] if st.session_state.sessions_list else None
         
-        if last_s:
-            l_date = last_s.get('datum', '–')
-            l_results = last_s.get('results', {})
+        display_sess = None
+        for s in st.session_state.sessions_list:
+            if is_session_completed(s) or s.get("results"):
+                display_sess = s
+                break
+        if not display_sess and st.session_state.sessions_list:
+            display_sess = st.session_state.sessions_list[0]
+            
+        if display_sess:
+            l_date = display_sess.get('datum', '–')
+            l_results = display_sess.get('results', {})
             
             kaiser_winner = "Noch offen"
             kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner")]
@@ -711,8 +717,38 @@ with tab_übersicht:
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
         st.caption("Sortiert nach Siegquote und absolvierten Matches")
-        st.write("**Andrino Czombera**")
-        st.progress(0.0)
+        
+        # Dynamische Berechnung des Spitzenreiters
+        stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
+        for sess in st.session_state.sessions_list:
+            for match in sess.get("results", {}).values():
+                winner = match.get("winner", "")
+                loser = match.get("loser", "")
+                if winner:
+                    for p in winner.split(" & "):
+                        if p in stats_temp:
+                            stats_temp[p]["Matches"] += 1
+                            stats_temp[p]["Siege"] += 1
+                if loser:
+                    for p in loser.split(" & "):
+                        if p in stats_temp:
+                            stats_temp[p]["Matches"] += 1
+
+        best_p = "Keiner"
+        best_q = 0.0
+        best_m = 0
+        for p in kader:
+            m = stats_temp[p]["Matches"]
+            s = stats_temp[p]["Siege"]
+            if m > 0:
+                q = s / m
+                if q > best_q or (q == best_q and m > best_m):
+                    best_q = q
+                    best_m = m
+                    best_p = p
+
+        st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
+        st.progress(best_q)
 
     st.write("### Zuletzt ausgetragene Board-Matches")
     st.caption("Best of 5 und Gewinner für die Statistik")
@@ -860,6 +896,81 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
+    # DOPPEL-PAARUNGEN / COOP-STATISTIK FÜR DIE LIGA
+    st.write("")
+    st.markdown("### 🤝 Doppel-Paarungen (Coop-Statistik für die Liga)")
+    st.caption("Auswertung aller Doppel- und Koop-Matches zur Findung der perfekten Ligapaarungen.")
+    
+    pair_stats = {}
+    for sess in st.session_state.sessions_list:
+        for match in sess.get("results", {}).values():
+            winner = match.get("winner", "")
+            s1 = match.get("s1", "")
+            s2 = match.get("s2", "")
+            ergebnis = match.get("ergebnis", "0:0")
+            
+            try:
+                l1, l2 = map(int, ergebnis.split(":"))
+            except:
+                l1, l2 = 0, 0
+                
+            h1 = int(match.get("180_s1", 0))
+            h2 = int(match.get("180_s2", 0))
+            a1 = float(match.get("avg_s1", 0.0))
+            a2 = float(match.get("avg_s2", 0.0))
+            
+            def process_pair(pair_str, is_won, won_legs, lost_legs, h_count, avg_val):
+                if " & " in pair_str:
+                    p_members = sorted([p.strip() for p in pair_str.split("&")])
+                    pair_key = " & ".join(p_members)
+                    if pair_key not in pair_stats:
+                        pair_stats[pair_key] = {"Matches": 0, "Siege": 0, "Niederlagen": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0}
+                    pair_stats[pair_key]["Matches"] += 1
+                    if is_won:
+                        pair_stats[pair_key]["Siege"] += 1
+                    else:
+                        pair_stats[pair_key]["Niederlagen"] += 1
+                    pair_stats[pair_key]["Legs_Won"] += won_legs
+                    pair_stats[pair_key]["Legs_Lost"] += lost_legs
+                    pair_stats[pair_key]["180er"] += h_count
+                    if avg_val > 0:
+                        pair_stats[pair_key]["Avg_Sum"] += avg_val
+                        pair_stats[pair_key]["Avg_Count"] += 1
+
+            if " & " in s1:
+                is_s1_win = (winner == s1)
+                process_pair(s1, is_s1_win, l1, l2, h1, a1)
+            if " & " in s2:
+                is_s2_win = (winner == s2)
+                process_pair(s2, is_s2_win, l2, l1, h2, a2)
+
+    pair_rows = []
+    for pair_name, p_data in pair_stats.items():
+        m = p_data["Matches"]
+        s = p_data["Siege"]
+        n = p_data["Niederlagen"]
+        quote = f"{(s / m * 100):.0f}%" if m > 0 else "0%"
+        acount = p_data["Avg_Count"]
+        avg_val = f"{(p_data['Avg_Sum'] / acount):.1f}" if acount > 0 else "–"
+        pair_rows.append({
+            "Doppel-Team": pair_name,
+            "Matches": m,
+            "Siege": s,
+            "Niederlagen": n,
+            "Siegquote": quote,
+            "Legs Gewonnen": p_data["Legs_Won"],
+            "Legs Verloren": p_data["Legs_Lost"],
+            "🎯 180er": p_data["180er"],
+            "📊 Ø Average": avg_val
+        })
+        
+    if pair_rows:
+        df_pairs = pd.DataFrame(pair_rows)
+        df_pairs = df_pairs.sort_values(by=["Siege", "Legs Gewonnen"], ascending=False)
+        st.dataframe(df_pairs, use_container_width=True, hide_index=True)
+    else:
+        st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
+
 with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
@@ -924,3 +1035,48 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
+
+with tab_bdv:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    st.markdown("""
+### 1. Mannschaft & Meldung
+- **Mannschaftsmeldung:** Erledigt.
+- **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
+
+### 2. Spielmodus & Ablauf (Liga und Pokal)
+- **Heimspieltag ist Dienstag.**
+- **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+- **Aufstellung (3 Blöcke):**
+  - **Block 1:** 4 Einzelspieler.
+  - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
+  - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
+- **Rahmenbedingungen:**
+  - **Spielzeit:** Mo–Do ab 20:00 Uhr.
+  - **Austragung:** Parallel auf zwei Boards.
+  - **Einwerfzeit:** 30 Minuten für Gäste.
+- **Board-Zuordnung & Schreiber:**
+  - Die Heimmannschaft schreibt und beginnt auf Board 1.  
+  - Die Gastmannschaft schreibt und beginnt auf Board 2.  
+
+**Schwabenpokal:**
+- Nur K.O.-Runden.
+- Es können bis zu 4–5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße).
+
+### 3. Spielbericht & Online-Meldung
+- **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
+- **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
+- **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+- **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
+
+### 4. Mannschaftsvorstellung (Kader)
+- Andreas Böhm
+- Andrino Czombera (Teamcaptain)
+- Dennis Güttner
+- Marco Eser
+- Maximilian Zientner
+- Michael Kummer
+- Michael Mak
+- Michael Neumeier
+- Thomas Schaudt
+- Wolfgang Scheider
+    """)
