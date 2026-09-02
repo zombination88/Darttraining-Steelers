@@ -127,12 +127,11 @@ def get_board_players(session, round_num, board_name):
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     
     total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
-    singles_rounds = session.get("singles_rounds", total_rounds - 2 if total_rounds > 2 else 4)
+    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
     
-    # Runde 1: Neue Spieler zuerst (Board 1 abwärts), danach Rückkehrer (von Board 4 aufwärts)
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
         try:
@@ -723,6 +722,10 @@ with tab_übersicht:
         st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} ({curr_sess['modus']})")
         
         total_rounds = curr_sess.get("total_rounds", 4)
+        modus = curr_sess.get("modus", "Up & Down")
+        is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+        singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+        coop_rounds = total_rounds - singles_rounds if is_standard_training else 0
         
         res = curr_sess.get("results", {})
         current_active_round = 1
@@ -741,7 +744,16 @@ with tab_übersicht:
                     current_active_round = total_rounds
                     
         active_boards_list = get_boards_list(curr_sess, current_active_round)
-        st.markdown(f"#### Runde {current_active_round} von {total_rounds} ({len(active_boards_list)} Boards aktiv)")
+        
+        # Runden-Bezeichnung für Übersicht (Getrennte Zählung für Einzel und Doppel)
+        if is_standard_training and current_active_round > singles_rounds:
+            coop_curr = current_active_round - singles_rounds
+            round_title_str = f"Doppelrunde {coop_curr} von {coop_rounds}"
+        else:
+            s_max = singles_rounds if is_standard_training else total_rounds
+            round_title_str = f"Runde {current_active_round} von {s_max}"
+            
+        st.markdown(f"#### {round_title_str} ({len(active_boards_list)} Boards aktiv)")
         
         cols_per_row = 3
         for i in range(0, len(active_boards_list), cols_per_row):
@@ -768,7 +780,15 @@ with tab_übersicht:
                                     players_now = get_board_players(curr_sess, next_r, b_name)
                                     p1, p2 = players_now[0], players_now[1]
                                 
-                                st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
+                                # Untertitel pro Board mit separater Einzel/Doppel-Zählung
+                                if is_standard_training and next_r > singles_rounds:
+                                    coop_n = next_r - singles_rounds
+                                    round_sub_str = f"Doppelrunde {coop_n}/{coop_rounds}"
+                                else:
+                                    s_max = singles_rounds if is_standard_training else total_rounds
+                                    round_sub_str = f"Runde {next_r}/{s_max}"
+                                    
+                                st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{round_sub_str}</p>", unsafe_allow_html=True)
                                 
                                 sc1, sc2 = st.columns([5, 2])
                                 sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
@@ -1026,7 +1046,6 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-    # DOPPEL-PAARUNGEN / COOP-STATISTIK FÜR DIE LIGA
     st.write("")
     st.markdown("### 🤝 Doppel-Paarungen (Coop-Statistik für die Liga)")
     st.caption("Auswertung aller Doppel- und Koop-Matches zur Findung der perfekten Ligapaarungen.")
