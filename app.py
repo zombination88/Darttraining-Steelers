@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
+import base64
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -28,6 +29,16 @@ def init_connection():
         return None
 
 sheet_conn = init_connection()
+
+@st.cache_resource
+def load_audio_b64():
+    try:
+        with open("vereinssong.mp3", "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
+        return ""
+
+audio_b64 = load_audio_b64()
 
 def load_data():
     if not sheet_conn:
@@ -81,10 +92,19 @@ with col1:
         st.image("logo.png.png", width=85)
     except Exception:
         pass
-    try:
-        st.audio("vereinssong.mp3")
-    except Exception:
-        pass
+    
+    if audio_b64:
+        audio_html = f"""
+        <audio id="vereinssong_audio" src="data:audio/mp3;base64,{audio_b64}"></audio>
+        <div style="text-align: center; margin-top: 6px;">
+            <button onclick="document.getElementById('vereinssong_audio').play()" 
+                    style="background-color: #ff4b4b; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
+                    title="Vereinssong abspielen">
+                🎵 Song
+            </button>
+        </div>
+        """
+        st.markdown(audio_html, unsafe_allow_html=True)
 
 with col2:
     st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
@@ -141,7 +161,8 @@ def get_waiting_player(session, round_num):
     if match_info and match_info.get("loser"):
         return match_info["loser"]
     else:
-        return "-"
+        # Fallback: wenn das letzte Board noch nicht gespielt wurde, nehmen wir den bisherigen Wartenden aus Runde prev_r-1 oder rotieren
+        return get_waiting_player(session, prev_r)
 
 def get_board_players(session, round_num, board_name):
     boards = get_boards_list(session, round_num)
@@ -161,13 +182,10 @@ def get_board_players(session, round_num, board_name):
     K = session.get("boards_count", len(boards))
     has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
     
-    active_spieler = list(spieler)
     waiting_p = None
+    active_spieler = list(spieler)
     if has_resting:
-        if round_num == 1:
-            waiting_p = spieler[2 * K] if len(spieler) > 2 * K else (spieler[-1] if len(spieler) % 2 != 0 else None)
-        else:
-            waiting_p = get_waiting_player(session, round_num)
+        waiting_p = get_waiting_player(session, round_num)
         if waiting_p and waiting_p in active_spieler:
             active_spieler.remove(waiting_p)
 
@@ -193,7 +211,7 @@ def get_board_players(session, round_num, board_name):
             if i + 1 < len(teams):
                 pairs.append((teams[i], teams[i+1]))
         while len(pairs) <= b_idx:
-            pairs.append(("Offen", "Offen"))
+            pairs.append(("-", "-"))
         return list(pairs[b_idx])
     else:
         if round_num == 1:
@@ -607,8 +625,8 @@ def open_board_dialog(board_name, session_idx):
     existing_match = res.get((current_round, board_name))
     
     if existing_match:
-        current_p1 = existing_match.get("s1", "–")
-        current_p2 = existing_match.get("s2", "–")
+        current_p1 = existing_match.get("s1", "-")
+        current_p2 = existing_match.get("s2", "-")
         try:
             score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
             score2 = int(existing_match.get("ergebnis", "0:0").split(":")[1])
@@ -1192,8 +1210,20 @@ with tab_session:
                         completed = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
                         next_r = max(completed) + 1 if completed else 1
                         
+                        modus_s = sess.get("modus", "Up & Down")
+                        is_std_s = (modus_s == "Standard-Training (Einzel + Coop)")
+                        singles_r_s = sess.get("singles_rounds", total_rounds - 2 if is_std_s and total_rounds > 2 else total_rounds)
+                        
+                        if is_std_s:
+                            if next_r <= singles_r_s:
+                                lbl_r_str = f"Runde {next_r}/{singles_r_s}"
+                            else:
+                                lbl_r_str = f"Doppelrunde {next_r - singles_r_s}/{total_rounds - singles_r_s}"
+                        else:
+                            lbl_r_str = f"Runde {next_r}/{total_rounds}"
+
                         if next_r <= total_rounds:
-                            label_btn = f"🎯 {b_name}\nRunde {next_r}/{total_rounds}"
+                            label_btn = f"🎯 {b_name}\n{lbl_r_str}"
                         else:
                             label_btn = f"🏆 {b_name}\nBeendet"
                             
