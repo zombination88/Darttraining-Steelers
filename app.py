@@ -1,9 +1,10 @@
-import json
-from datetime import date, timedelta
-from google.oauth2.service_account import Credentials
-import gspread
-import pandas as pd
 import streamlit as st
+import pandas as pd
+from datetime import date, timedelta
+import json
+import gspread
+from google.oauth2.service_account import Credentials
+import base64
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
@@ -110,7 +111,7 @@ if "sessions_list" not in st.session_state:
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(session, round_num=None):
-    boards_count = session.get("boards_count", 6)
+    boards_count = session.get("boards_count", 4)
     modus = session.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
@@ -237,9 +238,9 @@ def get_board_players(session, round_num, board_name):
             pairs.append((t1, t2))
         return list(pairs[b_idx])
     else:
-        boards_count = session.get("boards_count", 6)
+        boards_count = session.get("boards_count", len(boards))
         if round_num == 1:
-            active_spielern = spieler[:2 * boards_count] if not has_resting else spieler[:2 * boards_count]
+            active_spielern = spieler[:2 * boards_count] if has_resting else spieler[:2 * boards_count]
             for i in range(0, min(boards_count * 2, len(active_spielern) - len(active_spielern) % 2), 2):
                 pairs.append((active_spielern[i], active_spielern[i+1]))
             while len(pairs) <= b_idx:
@@ -1034,7 +1035,7 @@ with tab_übersicht:
         singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
         
         res = curr_sess.get("results", {})
-        boards_count = curr_sess.get("boards_count", 6)
+        boards_count = curr_sess.get("boards_count", 4)
         all_possible_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"][:boards_count]
         
         current_active_round = 1
@@ -1328,7 +1329,7 @@ with tab_kader:
             t_avg = sum(sess_avgs) / len(sess_avgs)
             team_session_avgs.append({"Datum": sess.get("datum", "Unbekannt"), "Team-Average": round(t_avg, 1)})
 
-    # Top-Siegquote berechnen
+    # Beste Siegquote berechnen (ab min 2 Matches)
     best_player_name = "-"
     best_player_rate = 0.0
     for p in kader:
@@ -1490,40 +1491,56 @@ with tab_session:
         st.info("Keine Sessions vorhanden. Starte über den Button oben eine neue Session.")
     else:
         for idx, sess in enumerate(st.session_state.sessions_list):
-            with st.container():
+            with st.container(border=True):
                 gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
                 status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
+                modus_txt = sess.get("modus", "Up & Down")
+                boards_txt = sess.get("boards", "4 Boards")
                 total_rounds = sess.get("total_rounds", 4)
-                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['modus_leg']} · {sess['id']}{gaeste_text}*{status_text}")
                 
-                active_boards_list = get_boards_list(sess, 1)
+                st.markdown(f"**{sess['id']}** — **{sess['datum']}** (*{modus_txt} · {boards_txt} · {total_rounds} Runden*{gaeste_text}){status_text}")
                 
-                b_cols = st.columns(len(active_boards_list))
-                for b_i, b_name in enumerate(active_boards_list):
-                    with b_cols[b_i]:
-                        res = sess.get("results", {})
-                        completed = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
-                        next_r = max(completed) + 1 if completed else 1
-                        
-                        modus_s = sess.get("modus", "Up & Down")
-                        is_std_s = (modus_s == "Standard-Training (Einzel + Coop)")
-                        singles_r_s = sess.get("singles_rounds", total_rounds - 2 if is_std_s and total_rounds > 2 else total_rounds)
-                        
-                        if is_std_s:
-                            if next_r <= singles_r_s:
-                                lbl_r_str = f"Runde {next_r}/{singles_r_s}"
-                            else:
-                                lbl_r_str = f"Doppelrunde {next_r - singles_r_s}/{total_rounds - singles_r_s}"
+                res = sess.get("results", {})
+                if res:
+                    match_rows = []
+                    is_std = (modus_txt == "Standard-Training (Einzel + Coop)")
+                    singles_r = sess.get("singles_rounds", total_rounds - 2 if is_std and total_rounds > 2 else total_rounds)
+                    
+                    for r in range(1, total_rounds + 1):
+                        if is_std:
+                            r_lbl = f"Runde {r}/{singles_r} (Einzel)" if r <= singles_r else f"Doppelrunde {r - singles_r}/{total_rounds - singles_r} (Coop)"
                         else:
-                            lbl_r_str = f"Runde {next_r}/{total_rounds}"
+                            r_lbl = f"Runde {r}/{total_rounds}"
                             
-                        if next_r <= total_rounds:
-                            label_btn = f"🎯 {b_name}\n{lbl_r_str}"
-                        else:
-                            label_btn = f"🏆 {b_name}\nBeendet"
-                            
-                        if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                            open_board_dialog(b_name, idx)
+                        boards_r = get_boards_list(sess, r)
+                        for b in boards_r:
+                            m_inf = res.get((r, b))
+                            if m_inf and m_inf.get("winner"):
+                                match_rows.append({
+                                    "Runde": r_lbl,
+                                    "Board": b,
+                                    "Heim": m_inf.get("s1", "–"),
+                                    "Gast": m_inf.get("s2", "–"),
+                                    "Ergebnis": m_inf.get("ergebnis", "–"),
+                                    "Sieger": m_inf.get("winner", "–")
+                                })
+                    if match_rows:
+                        df_sess_matches = pd.DataFrame(match_rows)
+                        st.dataframe(df_sess_matches, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Noch keine Ergebnisse für diese Session eingetragen.")
+                else:
+                    st.info("Noch keine Ergebnisse für diese Session eingetragen.")
+                
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.button("📊 Detaillierter Spielablauf", key=f"sess_arch_{idx}", use_container_width=True):
+                        open_session_archive_dialog(idx)
+                with col_b2:
+                    if not is_session_completed(sess):
+                        active_boards_list = get_boards_list(sess, 1)
+                        if st.button("🎯 Board-Erfassung öffnen", key=f"sess_board_open_{idx}", use_container_width=True):
+                            open_board_dialog(active_boards_list[0], idx)
                 st.divider()
 
 with tab_archiv:
