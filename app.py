@@ -10,7 +10,7 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 
 # --- KONFIGURATION ---
 # WICHTIG: Füge hier den Link zu deiner eigenen Google Tabelle ein!
-SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" 
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0" 
 
 # --- DATENBANKVERBINDUNG (Natives Google gspread) ---
 def get_credentials():
