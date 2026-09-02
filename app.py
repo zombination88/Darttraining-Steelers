@@ -233,10 +233,10 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Abbrechen", use_container_width=True):
+        if st.button("Abbrechen", use_container_width=True, key=f"sub_cancel_{board_name}_{round_num}_{slot_num}"):
             st.rerun()
     with col2:
-        if st.button("Änderung speichern", type="primary", use_container_width=True):
+        if st.button("Änderung speichern", type="primary", use_container_width=True, key=f"sub_save_{board_name}_{round_num}_{slot_num}"):
             final_name = new_txt.strip() if new_txt.strip() else new_sel
             if "results" not in sess:
                 sess["results"] = {}
@@ -257,7 +257,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
                 sess["results"][(round_num, board_name)]["s2"] = final_name
                 
             save_data(st.session_state.sessions_list)
-            st.success("Spieler erfolgreich gewechselt und für alle Runden gespeichert!")
+            st.success("Spieler erfolgreich gewechselt und für alle weiteren Runden gespeichert!")
             st.rerun()
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
@@ -584,19 +584,19 @@ with tab_übersicht:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
                                 
                                 # Spieler 1 mit Wechsel-Button daneben
-                                sc1, sc2 = st.columns([5, 1])
+                                sc1, sc2 = st.columns([5, 2])
                                 sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
                                 with sc2:
-                                    if st.button("🔄", key=f"sub_btn1_{b_name}_{next_r}", help="Spieler 1 auswechseln"):
+                                    if st.button("🔄 Ändern", key=f"sub_btn1_{b_name}_{next_r}", help="Spieler 1 auswechseln"):
                                         open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 1, p1)
                                 
                                 st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                 
                                 # Spieler 2 mit Wechsel-Button daneben
-                                sc3, sc4 = st.columns([5, 1])
+                                sc3, sc4 = st.columns([5, 2])
                                 sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
                                 with sc4:
-                                    if st.button("🔄", key=f"sub_btn2_{b_name}_{next_r}", help="Spieler 2 auswechseln"):
+                                    if st.button("🔄 Ändern", key=f"sub_btn2_{b_name}_{next_r}", help="Spieler 2 auswechseln"):
                                         open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 2, p2)
                                 
                                 st.write("")
