@@ -1500,38 +1500,6 @@ with tab_session:
                 
                 st.markdown(f"**{sess['id']}** — **{sess['datum']}** (*{modus_txt} · {boards_txt} · {total_rounds} Runden*{gaeste_text}){status_text}")
                 
-                res = sess.get("results", {})
-                if res:
-                    match_rows = []
-                    is_std = (modus_txt == "Standard-Training (Einzel + Coop)")
-                    singles_r = sess.get("singles_rounds", total_rounds - 2 if is_std and total_rounds > 2 else total_rounds)
-                    
-                    for r in range(1, total_rounds + 1):
-                        if is_std:
-                            r_lbl = f"Runde {r}/{singles_r} (Einzel)" if r <= singles_r else f"Doppelrunde {r - singles_r}/{total_rounds - singles_r} (Coop)"
-                        else:
-                            r_lbl = f"Runde {r}/{total_rounds}"
-                            
-                        boards_r = get_boards_list(sess, r)
-                        for b in boards_r:
-                            m_inf = res.get((r, b))
-                            if m_inf and m_inf.get("winner"):
-                                match_rows.append({
-                                    "Runde": r_lbl,
-                                    "Board": b,
-                                    "Heim": m_inf.get("s1", "–"),
-                                    "Gast": m_inf.get("s2", "–"),
-                                    "Ergebnis": m_inf.get("ergebnis", "–"),
-                                    "Sieger": m_inf.get("winner", "–")
-                                })
-                    if match_rows:
-                        df_sess_matches = pd.DataFrame(match_rows)
-                        st.dataframe(df_sess_matches, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Noch keine Ergebnisse für diese Session eingetragen.")
-                else:
-                    st.info("Noch keine Ergebnisse für diese Session eingetragen.")
-                
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
                     if st.button("📊 Detaillierter Spielablauf", key=f"sess_arch_{idx}", use_container_width=True):
