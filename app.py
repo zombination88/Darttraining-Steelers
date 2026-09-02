@@ -75,7 +75,8 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-st.markdown("<h1 style='margin: 0; padding-top: 12px; padding-bottom: 10px; font-size: 2.0rem; text-align: center;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
+# --- KOPFZEILE (MOBIL OPTIMIERT) ---
+st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem; text-align: center;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
@@ -229,16 +230,16 @@ def get_board_players(session, round_num, board_name):
         l = {}
         for b in boards:
             match_info = res.get((prev_r, b))
-            if match_info and match_info.get("winner"):
+            # HIER IST DER FIX FÜR DAS "-" PLATZHALTER-SYSTEM:
+            if match_info and match_info.get("winner") and match_info.get("winner") != "-":
                 w[b] = match_info["winner"]
                 l[b] = match_info["loser"]
             else:
-                def_players = get_board_players(session, prev_r, b)
-                w[b] = def_players[0]
-                l[b] = def_players[1]
+                w[b] = "-"
+                l[b] = "-"
                 
         if b_idx == 0:
-            return [w["Kaiser B1"], w.get("Board 2", "-") if len(boards) > 1 else w["Kaiser B1"]]
+            return [w.get("Kaiser B1", "-"), w.get("Board 2", "-") if len(boards) > 1 else w.get("Kaiser B1", "-")]
         
         if b_idx > 0:
             prev_board = boards[b_idx - 1]
@@ -326,7 +327,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
         if st.button("Änderung speichern", type="primary", use_container_width=True, key=f"sub_save_{board_name}_{round_num}_{slot_num}"):
             final_name = new_txt.strip() if new_txt.strip() else new_sel
             
-            # SMART-SYNC: Hole aktuellste Daten vor dem Speichern!
+            # SMART-SYNC: Immer frische Daten holen vor dem Speichern!
             frische_daten = load_data()
             target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
             
@@ -354,7 +355,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
                 
             save_data(frische_daten)
             st.session_state.sessions_list = frische_daten
-            st.success("Spieler synchronisiert und gewechselt!")
+            st.success("Spieler erfolgreich im Hintergrund gewechselt!")
             st.rerun()
 
 @st.dialog("📊 Spielablauf & Rundenübersicht")
@@ -380,21 +381,40 @@ def open_session_archive_dialog(session_idx):
                 
             st.markdown(f"#### 🎯 {r_display}")
             boards_in_r = get_boards_list(sess, r)
-            
+            r_matches = []
             for b_name in boards_in_r:
                 match_info = res.get((r, b_name))
                 if match_info:
-                    with st.container(border=True):
-                        st.markdown(f"**{b_name}**")
-                        st.markdown(f"{match_info.get('s1', '-')} **vs** {match_info.get('s2', '-')}")
-                        st.caption(f"Ergebnis: {match_info.get('ergebnis', '-')} | Sieger: {match_info.get('winner', '-')}")
-                        st.caption(f"180er: {match_info.get('180_s1', 0)}/{match_info.get('180_s2', 0)} | Avg: {match_info.get('avg_s1', 0.0)}/{match_info.get('avg_s2', 0.0)}")
+                    r_matches.append({
+                        "Board": b_name,
+                        "Heim": match_info.get("s1", "–"),
+                        "Gast": match_info.get("s2", "–"),
+                        "Ergebnis": match_info.get("ergebnis", "–"),
+                        "Sieger": match_info.get("winner", "-"),
+                        "180er (H/G)": f"{match_info.get('180_s1', 0)} / {match_info.get('180_s2', 0)}",
+                        "Average (H/G)": f"{match_info.get('avg_s1', 0.0)} / {match_info.get('avg_s2', 0.0)}"
+                    })
                 else:
                     auto_p = get_board_players(sess, r, b_name)
+                    r_matches.append({
+                        "Board": b_name,
+                        "Heim": auto_p[0],
+                        "Gast": auto_p[1],
+                        "Ergebnis": "Ausstehend",
+                        "Sieger": "–",
+                        "180er (H/G)": "–",
+                        "Average (H/G)": "–"
+                    })
+            
+            if r_matches:
+                for m in r_matches:
                     with st.container(border=True):
-                        st.markdown(f"**{b_name}**")
-                        st.markdown(f"{auto_p[0]} **vs** {auto_p[1]}")
-                        st.caption("Noch ausstehend")
+                        st.markdown(f"**{m['Board']}**")
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.markdown(f"**{m['Heim']}** vs **{m['Gast']}**")
+                        c2.markdown(f"Ergebnis: **{m['Ergebnis']}**")
+                        c3.markdown(f"Sieger: {m['Sieger']}")
+                        c4.markdown(f"180er: {m['180er (H/G)']} | Avg: {m['Average (H/G)']}")
             
             if is_standard_training and r == singles_rounds:
                 st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
@@ -463,7 +483,10 @@ def open_new_session_dialog():
         if st.button("Session starten", type="primary", use_container_width=True):
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
             aktive_spieler = anwesende + gaeste
-            new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+            
+            # SMART-SYNC: Hole die Liste direkt vor dem Einfügen!
+            frische_daten = load_data()
+            new_id = f"S-{len(frische_daten) + 1}"
             boards_cnt = int(anzahl_boards.split()[0])
             
             new_session = {
@@ -479,12 +502,10 @@ def open_new_session_dialog():
                 "gaeste": gaeste,
                 "results": {}
             }
-            # SMART-SYNC
-            frische_daten = load_data()
             frische_daten.insert(0, new_session)
             save_data(frische_daten)
             st.session_state.sessions_list = frische_daten
-            st.success("Session synchronisiert und gestartet!")
+            st.success("Session erfolgreich im Hintergrund gestartet!")
             st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten")
@@ -577,7 +598,7 @@ def open_edit_session_dialog(session_idx):
             
             save_data(frische_daten)
             st.session_state.sessions_list = frische_daten
-            st.success("Session synchronisiert und aktualisiert!")
+            st.success("Session erfolgreich im Hintergrund aktualisiert!")
             st.rerun()
 
 @st.dialog("📋 Board-Erfassung & Tracking")
@@ -672,7 +693,7 @@ def open_board_dialog(board_name, session_idx):
                 }
                 save_data(frische_daten)
                 st.session_state.sessions_list = frische_daten
-                st.success("Ergebnis synchronisiert und gespeichert!")
+                st.success("Ergebnis erfolgreich im Hintergrund gespeichert!")
                 st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
@@ -799,7 +820,7 @@ def open_quick_entry_dialog(session_idx):
                     }
                     save_data(frische_daten)
                     st.session_state.sessions_list = frische_daten
-                    st.success("Gespeichert & Synchronisiert!")
+                    st.success("Gespeichert im Hintergrund!")
 
     if st.button("Schließen", use_container_width=True):
         st.rerun()
@@ -836,9 +857,9 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
+# --- TABS ---
+
 with tab_übersicht:
-    st.subheader("Übersicht & Live-Status")
-    
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("➕ Neue Session", type="primary", use_container_width=True, key="quick_start_btn"):
@@ -850,12 +871,13 @@ with tab_übersicht:
                 open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_btn[0]))
         else:
             st.button("⚙️ Bearbeiten", use_container_width=True, disabled=True)
-        
+            
     st.write("")
     
+    # 1. LAUFENDE SESSION GANZ OBEN
     st.markdown("### 🔴 Laufende Session")
     if not active_sessions_for_btn:
-        st.info("Derzeit läuft keine aktive Session.")
+        st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Übersicht zu sehen.")
     else:
         curr_sess = active_sessions_for_btn[0]
         st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} ({curr_sess['modus']})")
@@ -866,7 +888,9 @@ with tab_übersicht:
         singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
         
         res = curr_sess.get("results", {})
-        current_active_round = 1
+        
+        # Bestimme die niedrigste noch offene Runde, nur für die Überschrift
+        current_active_round_global = 1
         for r_check in range(1, total_rounds + 1):
             boards_in_r = get_boards_list(curr_sess, r_check)
             round_complete = True
@@ -875,22 +899,22 @@ with tab_übersicht:
                     round_complete = False
                     break
             if not round_complete:
-                current_active_round = r_check
+                current_active_round_global = r_check
                 break
             else:
                 if r_check == total_rounds:
-                    current_active_round = total_rounds
+                    current_active_round_global = total_rounds
                     
-        active_boards_list = get_boards_list(curr_sess, current_active_round)
+        active_boards_list = get_boards_list(curr_sess, current_active_round_global)
         
-        if is_standard_training and current_active_round > singles_rounds:
-            r_head = f"Doppelrunde {current_active_round - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
+        if is_standard_training and current_active_round_global > singles_rounds:
+            r_head_global = f"Doppelrunde {current_active_round_global - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
         else:
-            r_head = f"Runde {current_active_round}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {current_active_round}/{total_rounds}"
+            r_head_global = f"Runde {current_active_round_global}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {current_active_round_global}/{total_rounds}"
             
-        st.markdown(f"#### {r_head} ({len(active_boards_list)} Boards aktiv)")
+        st.markdown(f"#### {r_head_global} ({len(active_boards_list)} Boards aktiv)")
         
-        # 1 BOARD PRO REIHE (Perfekt für Handys!)
+        # BOARDS UNTEREINANDER (1 Spalte) FÜR HANDY
         cols_per_row = 1
         for i in range(0, len(active_boards_list), cols_per_row):
             cols = st.columns(cols_per_row)
@@ -899,53 +923,57 @@ with tab_übersicht:
                     b_name = active_boards_list[i + j]
                     with cols[j]:
                         with st.container(border=True):
-                            completed_r = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
-                            next_r = max(completed_r) + 1 if completed_r else 1
+                            # HIER DER FIX: Bestimme die Runde FÜR DIESES SPEZIFISCHE BOARD
+                            completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
+                            next_r_for_board = max(completed_r_for_board) + 1 if completed_r_for_board else 1
                             
                             st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
                             
-                            if next_r <= total_rounds:
-                                ready = is_board_ready(curr_sess, b_name, next_r)
+                            if next_r_for_board <= total_rounds:
+                                ready = is_board_ready(curr_sess, b_name, next_r_for_board)
                                 ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
                                 st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
                                 
-                                existing_match = res.get((next_r, b_name))
+                                existing_match = res.get((next_r_for_board, b_name))
                                 if existing_match:
                                     p1 = existing_match.get("s1", "-")
                                     p2 = existing_match.get("s2", "-")
                                 else:
-                                    players_now = get_board_players(curr_sess, next_r, b_name)
+                                    players_now = get_board_players(curr_sess, next_r_for_board, b_name)
                                     p1, p2 = players_now[0], players_now[1]
                                 
-                                if is_standard_training and next_r > singles_rounds:
-                                    r_head_board = f"Doppelrunde {next_r - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
+                                if is_standard_training and next_r_for_board > singles_rounds:
+                                    r_head_board = f"Doppelrunde {next_r_for_board - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
                                 else:
-                                    r_head_board = f"Runde {next_r}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {next_r}/{total_rounds}"
-                                    
+                                    r_head_board = f"Runde {next_r_for_board}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {next_r_for_board}/{total_rounds}"
+                                
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_head_board}</p>", unsafe_allow_html=True)
                                 
                                 sc1, sc2 = st.columns([5, 2])
                                 sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
                                 with sc2:
-                                    if st.button("🔄", key=f"sub1_{b_name}_{next_r}", help="Wechsel"):
-                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 1, p1)
+                                    if st.button("🔄", key=f"sub1_{b_name}_{next_r_for_board}", help="Wechsel"):
+                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r_for_board, 1, p1)
                                 
                                 st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                 
                                 sc3, sc4 = st.columns([5, 2])
                                 sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
                                 with sc4:
-                                    if st.button("🔄", key=f"sub2_{b_name}_{next_r}", help="Wechsel"):
-                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r, 2, p2)
+                                    if st.button("🔄", key=f"sub2_{b_name}_{next_r_for_board}", help="Wechsel"):
+                                        open_substitution_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r_for_board, 2, p2)
                                 
                                 st.write("")
-                                if st.button("🎯 Eintragen", key=f"live_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
+                                if st.button("🎯 Eintragen", key=f"live_{b_name}_{next_r_for_board}", use_container_width=True, disabled=not ready):
                                     open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
                             else:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
                                 st.success("✅ Abgeschlossen")
 
     st.write("")
+    st.divider()
+
+    # 2. ALLGEMEINE STATISTIKEN DARUNTER
     st.markdown("### 📊 Allgemeine Statistiken")
     
     total_180s = 0
