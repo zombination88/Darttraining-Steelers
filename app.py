@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+import base64
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
@@ -133,7 +134,6 @@ def get_resting_player(session, round_num):
     if round_num == 1:
         return spieler[2 * K] if len(spieler) > 2 * K else (spieler[-1] if len(spieler) % 2 != 0 else None)
         
-    # For round > 1, the resting player is the loser of the last board in the previous round
     prev_r = round_num - 1
     boards = get_boards_list(session, prev_r)
     if not boards:
@@ -165,6 +165,8 @@ def get_board_players(session, round_num, board_name):
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
+    K = session.get("boards_count", len(boards))
+    has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
     
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
@@ -276,9 +278,12 @@ def get_board_players(session, round_num, board_name):
         if b_idx == len(boards) - 1:
             prev_board = boards[b_idx - 1]
             loser_from_above = l.get(prev_board, "-")
-            # The second player on the last board in round > 1 is the player who rested in round_num - 1
-            resting_p_prev = get_resting_player(session, round_num - 1)
-            return [loser_from_above, resting_p_prev if resting_p_prev else "-"]
+            if has_resting:
+                resting_p_prev = get_resting_player(session, round_num - 1)
+                return [loser_from_above, resting_p_prev if resting_p_prev else "-"]
+            else:
+                loser_from_last = l.get(boards[b_idx], "-")
+                return [loser_from_above, loser_from_last]
             
     return ["-", "-"]
 
@@ -317,6 +322,7 @@ def is_board_ready(session, board_name, next_r):
         req_boards.append(boards[b_idx + 1])
     else:
         req_boards.append(boards[b_idx - 1])
+        req_boards.append(boards[b_idx])
             
     for rb in req_boards:
         match_inf = res.get((prev_r, rb))
@@ -633,7 +639,7 @@ def open_retroactive_session_dialog():
             st.error("Falsches Passwort!")
         return
 
-    yesterday = date.today() - timedelta(days=1) if 'timedelta' in globals() else date.today()
+    yesterday = date.today() - timedelta(days=1)
     session_datum = st.date_input("Datum der Session", yesterday, key="retro_date_input")
     leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], key="retro_leg_input")
     spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"], key="retro_mod_input")
@@ -695,7 +701,7 @@ def open_retroactive_session_dialog():
             }
             st.session_state.sessions_list.insert(0, new_session)
             save_data(st.session_state.sessions_list)
-            st.success("Session erfolgreich nachträglich angelegt! Du kannst nun die Ergebnisse im Schnelldurchlauf eintragen.")
+            st.success("Session erfolgreich nachträglich angelegt!")
             st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
