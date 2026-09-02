@@ -100,7 +100,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
@@ -132,7 +132,7 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
-    # Runde 1: Übernahme der finalen Board-Platzierungen der letzten Session (Invers: Board 4 wird zu Board 1)
+    # Runde 1: Neue Spieler zuerst (Board 1 abwärts), danach Rückkehrer (von Board 4 aufwärts)
     if round_num == 1 and not in_coop_phase:
         all_sessions = st.session_state.sessions_list
         try:
@@ -144,7 +144,7 @@ def get_board_players(session, round_num, board_name):
         if s_idx + 1 < len(all_sessions):
             prev_sess = all_sessions[s_idx + 1]
             
-        if prev_sess:
+        if prev_sess and "results" in prev_sess:
             prev_total = prev_sess.get("total_rounds", 4)
             prev_modus = prev_sess.get("modus", "Up & Down")
             prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
@@ -152,23 +152,31 @@ def get_board_players(session, round_num, board_name):
             target_r = prev_singles if prev_is_std else prev_total
             
             prev_boards = get_boards_list(prev_sess, target_r)
-            board_players_list = []
-            for pb in prev_boards:
-                p_pair = get_board_players(prev_sess, target_r, pb)
-                board_players_list.append(p_pair)
+            prev_results = prev_sess.get("results", {})
             
-            # Umkehren: Wer unten (Board 4) war, kommt nach oben (Board 1)
-            board_players_list.reverse()
+            prev_players_bottom_to_top = []
+            for pb in reversed(prev_boards):
+                match_inf = prev_results.get((target_r, pb))
+                p1, p2 = "Offen", "Offen"
+                if match_inf:
+                    p1 = match_inf.get("s1", "Offen")
+                    p2 = match_inf.get("s2", "Offen")
+                else:
+                    p_pair = get_board_players(prev_sess, target_r, pb)
+                    p1, p2 = p_pair[0], p_pair[1]
+                if p2 != "Offen" and p2 not in prev_players_bottom_to_top:
+                    prev_players_bottom_to_top.append(p2)
+                if p1 != "Offen" and p1 not in prev_players_bottom_to_top:
+                    prev_players_bottom_to_top.append(p1)
             
-            carried_players = []
-            for pair in board_players_list:
-                for p in pair:
-                    if p != "Offen" and p in spieler and p not in carried_players:
-                        carried_players.append(p)
+            returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
+            new_players = [p for p in spieler if p not in prev_players_bottom_to_top]
+            
+            ordered_players = new_players + returning_players
             for p in spieler:
-                if p not in carried_players:
-                    carried_players.append(p)
-            spieler = carried_players
+                if p not in ordered_players:
+                    ordered_players.append(p)
+            spieler = ordered_players[:len(spieler)]
         else:
             chrono_s_idx = len(all_sessions) - 1 - s_idx
             if spieler:
@@ -431,7 +439,7 @@ def open_new_session_dialog():
         coop_rounds = 0
         total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
         
-    anzahl_boards = st.selectbox("Anzahl der Boards (für Einzel)", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"])
+    anzahl_boards = st.selectbox("Anzahl der Boards (für Einzel)", ["4 Boards", "6 Boards", "5 Boards", "3 Boards", "2 Boards", "1 Board"], index=0)
     
     st.write("### Anwesende Spieler")
     anwesende = []
@@ -517,8 +525,8 @@ def open_edit_session_dialog(session_idx):
         coop_rounds = 0
         total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=sess.get("total_rounds", 4)-1, key=f"edit_rounds_{session_idx}")
     
-    board_opts = ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"]
-    curr_b = sess.get("boards", "6 Boards")
+    board_opts = ["4 Boards", "6 Boards", "5 Boards", "3 Boards", "2 Boards", "1 Board"]
+    curr_b = sess.get("boards", "4 Boards")
     if curr_b not in board_opts: board_opts.append(curr_b)
     anzahl_boards = st.selectbox("Anzahl der Boards", board_opts, index=board_opts.index(curr_b), key=f"edit_bcount_{session_idx}")
     
@@ -593,10 +601,10 @@ def open_board_dialog(board_name, session_idx):
         current_p1 = existing_match.get("s1", "Offen")
         current_p2 = existing_match.get("s2", "Offen")
         try:
-            score1 = int(existing_match.get("ergebnis", "3:0").split(":")[0])
-            score2 = int(existing_match.get("ergebnis", "3:0").split(":")[1])
+            score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
+            score2 = int(existing_match.get("ergebnis", "0:0").split(":")[1])
         except:
-            score1, score2 = 3, 0
+            score1, score2 = 0, 0
         t1_180 = int(existing_match.get("180_s1", 0))
         t2_180 = int(existing_match.get("180_s2", 0))
         avg1 = float(existing_match.get("avg_s1", 0.0))
@@ -604,7 +612,7 @@ def open_board_dialog(board_name, session_idx):
     else:
         auto_players = get_board_players(sess, current_round, board_name)
         current_p1, current_p2 = auto_players[0], auto_players[1]
-        score1, score2 = 3, 0
+        score1, score2 = 0, 0
         t1_180, t2_180 = 0, 0
         avg1, avg2 = 0.0, 0.0
 
@@ -1143,7 +1151,7 @@ with tab_archiv:
     st.write("Klicke auf eine Session, um den detaillierten Spielablauf aller Runden einzusehen, oder verwalte/lösche sie bei Bedarf.")
     
     if not st.session_state.sessions_list:
-        st.info("Noch keine Sessions vorhanden.")
+        st.info("Keine Sessions vorhanden.")
     else:
         for idx, sess in enumerate(st.session_state.sessions_list):
             with st.container(border=True):
@@ -1156,6 +1164,56 @@ with tab_archiv:
                     if st.button("📊 Spielablauf ansehen", key=f"arch_view_btn_{idx}", use_container_width=True):
                         open_session_archive_dialog(idx)
                 with col_btn2:
-                    if st.button("🗑️ Session lösche", key=f"arch_del_btn_{idx}", use_container_width=True):
+                    if st.button("🗑️ Session löschen", key=f"arch_del_btn_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
                 st.divider()
+
+with tab_bdv:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    st.markdown("""
+# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
+1.  Mannschaft & Meldung
+2.  Spielmodus & Ablauf (Liga und Pokal)
+3.  Spielbericht & Online-Meldung
+4.  Mannschaftsvorstellung (Kader)
+
+### 1. Mannschaft & Meldung
+- **Mannschaftsmeldung:** Erledigt.
+- **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
+
+### 2. Spielmodus & Ablauf (Liga und Pokal)
+- **Heimspieltag ist Dienstag**
+- **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+- **Aufstellung (3 Blöcke):**
+  - **Block 1:** 4 Einzelspieler.
+  - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
+  - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
+- **Rahmenbedingungen:**
+  - **Spielzeit:** Mo–Do ab 20:00 Uhr.
+  - **Austragung:** Parallel auf zwei Boards.
+  - **Einwerfzeit:** 30 Minuten für Gäste.
+- **Board-Zuordnung & Schreiber:**
+  Die Heimmannschaft schreibt und beginnt auf Board 1.  
+  Die Gastmannschaft schreibt und beginnt auf Board 2.  
+- **Schwabenpokal:**
+  - Nur K.O. Runden
+  - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
+
+### 3. Spielbericht & Online-Meldung
+- **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
+- **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
+- **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+- **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
+
+### 4. Mannschaftsvorstellung (Kader)
+- Andreas Böhm
+- Andrino Czombera
+- Dennis Güttner
+- Marco Eser
+- Maximilian Zientner
+- Michael Kummer
+- Michael Mak
+- Michael Neumeier
+- Thomas Schaudt
+- Wolfgang Scheider
+    """)
