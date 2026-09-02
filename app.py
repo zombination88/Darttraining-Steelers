@@ -705,4 +705,3 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
-```eof
