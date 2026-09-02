@@ -2,65 +2,71 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# WORKAROUND: Diese Klasse fängt den 'type'-Konflikt von Streamlit ab
-class FixedGSheetsConnection(GSheetsConnection):
-    def _connect(self, **kwargs):
-        if "type" not in kwargs or kwargs["type"] != "service_account":
-            kwargs["type"] = "service_account"
-        return super()._connect(**kwargs)
-
-# --- DATENBANKVERBINDUNG ---
-try:
-    creds_dict = json.loads(st.secrets["google_json"])
-    if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    
-    # Nur die absolut notwendigen Felder für die Verbindung übergeben
-    safe_creds = {
-        "client_email": creds_dict.get("client_email"),
-        "private_key": creds_dict.get("private_key"),
-        "token_uri": creds_dict.get("token_uri", "https://oauth2.googleapis.com/token")
-    }
+# --- DIREKTE DATENBANKVERBINDUNG (GSPREAD) ---
+@st.cache_resource
+def init_connection():
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
-    conn = st.connection("gsheets", type=FixedGSheetsConnection, **safe_creds)
-except Exception as e:
-    st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
-    st.stop()
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(credentials)
+        return client
+    except Exception as e:
+        return None
+
+client = init_connection()
 
 def load_data():
     if SHEET_URL == "" or SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
         st.warning("Bitte trage den Google Sheets Link ein!")
         return []
         
+    if client is None:
+        st.error("Fehler bei der Datenbankverbindung. Bitte Secrets prüfen.")
+        return []
+
     try:
-        df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
-        if df is not None and not df.empty and "json_data" in df.columns:
-            raw_str = df["json_data"].dropna().iloc[0]
-            raw_data = json.loads(raw_str)
-            sessions = []
-            for sess in raw_data:
-                fixed_results = {}
-                for k, v in sess.get("results", {}).items():
-                    parts = k.split("_", 1)
-                    if len(parts) == 2:
-                        r_num = int(parts[0])
-                        b_name = parts[1]
-                        fixed_results[(r_num, b_name)] = v
-                sess["results"] = fixed_results
-                sessions.append(sess)
-            return sessions
+        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
+        data = sheet.get_all_records()
+        if data and "json_data" in data[0]:
+            raw_str = data[0]["json_data"]
+            if raw_str:
+                raw_data = json.loads(raw_str)
+                sessions = []
+                for sess in raw_data:
+                    fixed_results = {}
+                    for k, v in sess.get("results", {}).items():
+                        parts = k.split("_", 1)
+                        if len(parts) == 2:
+                            r_num = int(parts[0])
+                            b_name = parts[1]
+                            fixed_results[(r_num, b_name)] = v
+                    sess["results"] = fixed_results
+                    sessions.append(sess)
+                return sessions
     except Exception as e:
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
 def save_data(sessions):
+    if client is None:
+        st.error("Keine Verbindung zur Datenbank zum Speichern.")
+        return
+
     serializable_sessions = []
     for sess in sessions:
         sess_copy = sess.copy()
@@ -71,10 +77,11 @@ def save_data(sessions):
         serializable_sessions.append(sess_copy)
     
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
-    df_to_save = pd.DataFrame({"json_data": [json_str]})
     
     try:
-        conn.update(spreadsheet=SHEET_URL, worksheet="sessions", data=df_to_save)
+        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
+        sheet.clear()
+        sheet.update([["json_data"], [json_str]])
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
