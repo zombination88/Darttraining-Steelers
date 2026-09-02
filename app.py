@@ -402,12 +402,9 @@ def open_session_archive_dialog(session_idx):
             if r_matches:
                 for m in r_matches:
                     with st.container(border=True):
-                        st.markdown(f"**{m['Board']}**")
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.markdown(f"**{m['Heim']}** vs **{m['Gast']}**")
-                        c2.markdown(f"Ergebnis: **{m['Ergebnis']}**")
-                        c3.markdown(f"Sieger: {m['Sieger']}")
-                        c4.markdown(f"180er: {m['180er (H/G)']} | Avg: {m['Average (H/G)']}")
+                        st.markdown(f"**{m['Board']}** | {m['Ergebnis']}")
+                        st.markdown(f"{m['Heim']} **vs** {m['Gast']}")
+                        st.caption(f"🏆 Sieger: {m['Sieger']} | 🎯 180er: {m['180er (H/G)']} | 📊 Avg: {m['Average (H/G)']}")
             
             if is_standard_training and r == singles_rounds:
                 st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
@@ -416,13 +413,16 @@ def open_session_archive_dialog(session_idx):
                     p_list = get_board_players(sess, singles_rounds, b_name)
                     m_inf = res.get((singles_rounds, b_name))
                     winner_str = m_inf.get("winner", "–") if m_inf else "–"
-                    st.write(f"- **{b_name}:** {p_list[0]} vs {p_list[1]} ➔ **Sieger:** {winner_str}")
+                    with st.container(border=True):
+                        st.markdown(f"**{b_name}**")
+                        st.markdown(f"{p_list[0]} **vs** {p_list[1]}")
+                        st.caption(f"🏆 Sieger des Matches: **{winner_str}**")
                 st.divider()
                 
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
-@st.dialog("➕ Neue Session starten (Passwortgeschützt)")
+@st.dialog("➕ Neue Session starten")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
     if pwd != "1521":
@@ -495,7 +495,7 @@ def open_new_session_dialog():
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
-@st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
+@st.dialog("⚙️ Session bearbeiten")
 def open_edit_session_dialog(session_idx):
     pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_input_{session_idx}")
     if pwd != "1521":
@@ -584,7 +584,7 @@ def open_edit_session_dialog(session_idx):
             st.success("Session erfolgreich aktualisiert!")
             st.rerun()
 
-@st.dialog("📋 Board-Erfassung & 180er/Average-Tracking")
+@st.dialog("📋 Board-Erfassung & Tracking")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
@@ -771,8 +771,8 @@ def open_quick_entry_dialog(session_idx):
             s_col1, s_col2, a_col1, a_col2 = st.columns(4)
             with s_col1: n_s1 = st.number_input(f"Legs {p1_val[:10]}...", 0, 5, s1, key=f"q_ls1_{b_name}")
             with s_col2: n_s2 = st.number_input(f"Legs {p2_val[:10]}...", 0, 5, s2, key=f"q_ls2_{b_name}")
-            with a_col1: n_h1 = st.number_input("180er Heim", 0, 20, h1, key=f"q_1801_{b_name}")
-            with a_col2: n_h2 = st.number_input("180er Gast", 0, 20, h2, key=f"q_1802_{b_name}")
+            with a_col1: n_h1 = st.number_input("180er H", 0, 20, h1, key=f"q_1801_{b_name}")
+            with a_col2: n_h2 = st.number_input("180er G", 0, 20, h2, key=f"q_1802_{b_name}")
 
             if st.button(f"Ergebnis speichern für {b_name}", use_container_width=True, key=f"q_save_{b_name}"):
                 if n_s1 == n_s2 and n_s1 != 0:
@@ -796,7 +796,7 @@ def open_quick_entry_dialog(session_idx):
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
-@st.dialog("🗑️ Session löschen (Passwortgeschützt)")
+@st.dialog("🗑️ Session löschen")
 def open_delete_dialog(session_idx):
     if session_idx >= len(st.session_state.sessions_list):
         st.rerun()
@@ -820,8 +820,6 @@ def open_delete_dialog(session_idx):
                 st.rerun()
             elif pwd != "":
                 st.error("Falsches Passwort!")
-
-# --- TABS ---
 
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
@@ -868,13 +866,14 @@ with tab_übersicht:
         
         anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
 
-    c1, c2 = st.columns(2)
-    with c1: st.metric(label="Trainingsabende", value=str(len(st.session_state.sessions_list)), delta="gesamt")
-    with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
-    
-    c3, c4 = st.columns(2)
-    with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
-    with c4: st.metric(label="Anwesende Spieler", value=str(anwesende_count), delta="im Training")
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric(label="Sessions", value=str(len(st.session_state.sessions_list)), delta="gesamt")
+        with c2: st.metric(label="180er", value=str(total_180s), delta="Team gesamt")
+        st.divider()
+        c3, c4 = st.columns(2)
+        with c3: st.metric(label="Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
+        with c4: st.metric(label="Anwesend", value=str(anwesende_count), delta="Spieler")
         
     st.write("")
     
@@ -915,7 +914,7 @@ with tab_übersicht:
             
         st.markdown(f"#### {r_head} ({len(active_boards_list)} Boards aktiv)")
         
-        cols_per_row = 2
+        cols_per_row = 1 
         for i in range(0, len(active_boards_list), cols_per_row):
             cols = st.columns(cols_per_row)
             for j in range(cols_per_row):
@@ -991,7 +990,7 @@ with tab_übersicht:
                     top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
                     best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
                 
-                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
+                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1:** 👑 {kaiser_winner_text}\n\n**High Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
             else:
                 st.info("Keine Daten vorhanden.")
 
@@ -1041,7 +1040,11 @@ with tab_übersicht:
                 })
                 
         if all_matches:
-            st.dataframe(pd.DataFrame(all_matches), use_container_width=True, hide_index=True)
+            for m in reversed(all_matches):
+                with st.container(border=True):
+                    st.markdown(f"**{m['Datum']} - {m['Board']}** ({m['Runde']})")
+                    st.markdown(f"{m['Spieler']}")
+                    st.caption(f"Ergebnis: {m['Ergebnis']} | Sieger: {m['Sieger']}")
         else:
             st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
@@ -1106,13 +1109,14 @@ with tab_kader:
     all_team_avgs = [stats[p]["Avg_Sum"] / stats[p]["Avg_Count"] for p in kader if stats[p]["Avg_Count"] > 0]
     overall_team_avg = f"{(sum(all_team_avgs) / len(all_team_avgs)):.1f}" if all_team_avgs else "–"
 
-    c1, c2 = st.columns(2)
-    with c1: st.metric(label="Aktive Spieler", value=len(kader), delta="im Kader")
-    with c2: st.metric(label="Absolvierte Matches", value=str(player_matches_played), delta="aus Sessions")
-    
-    c3, c4 = st.columns(2)
-    with c3: st.metric(label="Ø Siegquote", value=avg_win_rate, delta="gesamt")
-    with c4: st.metric(label="Team-Gesamtschnitt", value=overall_team_avg, delta="Ø Average")
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric(label="Aktive Spieler", value=len(kader), delta="im Kader")
+        with c2: st.metric(label="Matches", value=str(player_matches_played), delta="aus Sessions")
+        st.divider()
+        c3, c4 = st.columns(2)
+        with c3: st.metric(label="Ø Siegquote", value=avg_win_rate, delta="gesamt")
+        with c4: st.metric(label="Team Average", value=overall_team_avg, delta="Ø Gesamt")
         
     st.write("### Spielerübersicht & Rangliste")
     table_rows = []
@@ -1132,7 +1136,11 @@ with tab_kader:
             "🎯 180er": t180, "📊 Ø Average": avg_val
         })
         
-    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+    sorted_rows = sorted(table_rows, key=lambda x: (x["Siege"], x["Legs Gewonnen"]), reverse=True)
+    for row in sorted_rows:
+        with st.container(border=True):
+            st.markdown(f"**{row['Spieler']}** — Quote: **{row['Siegquote']}**")
+            st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 📊 Avg: {row['📊 Ø Average']} | 🎯 180er: {row['🎯 180er']} | Legs: {row['Legs Gewonnen']}:{row['Legs Verloren']}")
 
     with st.expander("🤝 Doppel-Paarungen (Coop-Statistik)", expanded=False):
         pair_stats = {}
@@ -1181,8 +1189,11 @@ with tab_kader:
             })
             
         if pair_rows:
-            df_pairs = pd.DataFrame(pair_rows).sort_values(by=["Siege", "Legs Gewonnen"], ascending=False)
-            st.dataframe(df_pairs, use_container_width=True, hide_index=True)
+            sorted_pairs = sorted(pair_rows, key=lambda x: (x["Siege"], x["Legs Gewonnen"]), reverse=True)
+            for row in sorted_pairs:
+                with st.container(border=True):
+                    st.markdown(f"**{row['Doppel-Team']}** — Quote: **{row['Siegquote']}**")
+                    st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 📊 Avg: {row['📊 Ø Average']} | 🎯 180er: {row['🎯 180er']} | Legs: {row['Legs Gewonnen']}:{row['Legs Verloren']}")
         else:
             st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
 
@@ -1206,10 +1217,12 @@ with tab_session:
             
     rekord_kaiser = max(kaiser_count, key=kaiser_count.get) if kaiser_count else "Noch offen"
     
-    c1, c2 = st.columns(2)
-    with c1: st.metric("Gespielte Abende", str(len(st.session_state.sessions_list)))
-    with c2: st.metric("Ø Anwesende Spieler", avg_anwesende)
-    st.metric("Rekord-Kaiser", rekord_kaiser, "Meiste Board 1 Siege")
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric("Gespielte Abende", str(len(st.session_state.sessions_list)))
+        with c2: st.metric("Ø Anwesende", avg_anwesende, "Spieler")
+        st.divider()
+        st.metric("Rekord-Kaiser", rekord_kaiser, "Meiste Board 1 Siege")
         
     if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new"):
         open_new_session_dialog()
