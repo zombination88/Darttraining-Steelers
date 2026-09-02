@@ -2,31 +2,34 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import os
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
-DATA_FILE = "sessions.json"
+# Verbindung zu Google Sheets herstellen
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                raw_data = json.load(f)
-                sessions = []
-                for sess in raw_data:
-                    fixed_results = {}
-                    for k, v in sess.get("results", {}).items():
-                        parts = k.split("_", 1)
-                        if len(parts) == 2:
-                            r_num = int(parts[0])
-                            b_name = parts[1]
-                            fixed_results[(r_num, b_name)] = v
-                    sess["results"] = fixed_results
-                    sessions.append(sess)
-                return sessions
-        except Exception:
-            return []
+    try:
+        # Liest das Tabellenblatt "sessions" aus deiner Google-Tabelle
+        df = conn.read(worksheet="sessions", ttl=0)
+        if df is not None and not df.empty and "json_data" in df.columns:
+            raw_str = df["json_data"].dropna().iloc[0]
+            raw_data = json.loads(raw_str)
+            sessions = []
+            for sess in raw_data:
+                fixed_results = {}
+                for k, v in sess.get("results", {}).items():
+                    parts = k.split("_", 1)
+                    if len(parts) == 2:
+                        r_num = int(parts[0])
+                        b_name = parts[1]
+                        fixed_results[(r_num, b_name)] = v
+                sess["results"] = fixed_results
+                sessions.append(sess)
+            return sessions
+    except Exception as e:
+        st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
 def save_data(sessions):
@@ -39,8 +42,13 @@ def save_data(sessions):
         sess_copy["results"] = fixed_results
         serializable_sessions.append(sess_copy)
     
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(serializable_sessions, f, ensure_ascii=False, indent=4)
+    json_str = json.dumps(serializable_sessions, ensure_ascii=False)
+    df_to_save = pd.DataFrame({"json_data": [json_str]})
+    
+    try:
+        conn.update(worksheet="sessions", data=df_to_save)
+    except Exception as e:
+        st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
 col1, col2 = st.columns([1, 6])
 with col1:
@@ -64,10 +72,10 @@ kader = [
     "Wolfgang Schneider"
 ]
 
-st.session_state.sessions_list = load_data()
+if "sessions_list" not in st.session_state:
+    st.session_state.sessions_list = load_data()
 
-# Reiter "BDV-Regeln" wurde entfernt
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -88,10 +96,8 @@ def get_board_players(session, round_num, board_name):
         
         if is_2v2:
             teams = []
-            # Spieler in 2er Teams zusammenfassen
             for i in range(0, len(spieler)-1, 2):
                 teams.append(f"{spieler[i]} & {spieler[i+1]}")
-            # Falls ein einzelner Spieler übrig bleibt
             if len(spieler) % 2 != 0:
                 teams.append(f"{spieler[-1]} & Offen")
                 
@@ -340,7 +346,6 @@ def open_board_dialog(board_name, session_idx):
     
     auto_players = get_board_players(sess, current_round, board_name)
     
-    # 2vs2 Dropdown Logik anpassen
     is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
     if is_2v2:
         base_teams = []
@@ -469,7 +474,6 @@ with tab_übersicht:
             except ValueError:
                 l1, l2 = 0, 0
             
-            # Trennt 2vs2 Teams für die Einzel-Leg-Statistiken auf
             for p in s1.split(" & "):
                 if p in session_stats:
                     session_stats[p]["legs_won"] += l1
@@ -501,7 +505,6 @@ with tab_übersicht:
                                 players_now = get_board_players(curr_sess, min(next_r, total_rounds), b_name)
                                 p1, p2 = players_now[0], players_now[1]
                                 
-                                # Behandelt Zeilenumbrüche für 2vs2 Teams im UI
                                 p1_display = p1.replace(" & ", "<br>&<br>")
                                 p2_display = p2.replace(" & ", "<br>&<br>")
                                 
@@ -688,3 +691,44 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
+
+with tab_regeln:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    st.markdown("""
+    **1. Mannschaft & Meldung**
+    - **Spielerkader:** 10 Spieler. Namentliche Meldung bis zum 31. August in nuLiga.
+    
+    **2. Spielmodus & Ablauf (Liga und Pokal)**
+    - **Heimspieltag:** Dienstag
+    - **Modus:** 4er-Team; 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+    - **Aufstellung (3 Blöcke):**
+      - **Block 1:** 4 Einzelspieler.
+      - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption).
+      - **Block 3:** 2 Doppel (freie Aufstellung aus max. 8 Spielern).
+    - **Rahmenbedingungen:**
+      - **Spielzeit:** Mo–Do ab 20:00 Uhr.
+      - **Austragung:** Parallel auf zwei Boards.
+      - **Einwerfzeit:** 30 Minuten für Gäste.
+    - **Board-Zuordnung & Schreiber:**
+      - Heimmannschaft schreibt und beginnt auf Board 1.
+      - Gastmannschaft schreibt und beginnt auf Board 2.
+    - **Schwabenpokal:** Nur K.O.-Runden (4-5 Spiele mehr je nach Teamgröße).
+    
+    **3. Spielbericht & Online-Meldung**
+    - **Papier-Spielbericht:** Händische Führung, Unterschrift beider Kapitäne.
+    - **Ergebnismeldung:** Innerhalb von 6 Stunden via Online-Schnellerfassung.
+    - **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+    - **Aufbewahrung:** Bis Saisonende im Verein.
+    
+    **4. Mannschaftsvorstellung (Kader)**
+    - Andreas Böhm
+    - Andrino Czombera (Teamcaptain)
+    - Dennis Güttner
+    - Marco Eser
+    - Maximilian Zientner
+    - Michael Kummer
+    - Michael Mak
+    - Michael Neumeier
+    - Thomas Schaudt
+    - Wolfgang Schneider
+    """)
