@@ -149,7 +149,7 @@ def get_board_players(session, round_num, board_name):
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     
     total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
-    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else 4)
+    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
@@ -235,7 +235,6 @@ def get_board_players(session, round_num, board_name):
         boards_count = session.get("boards_count", 6)
         active_boards = boards[:boards_count]
         
-        # Nur so viele Spieler aktiv einteilen wie Boards * 2 (gerade Anzahl für Matches)
         max_active_players = len(active_boards) * 2
         active_spieler = spieler[:max_active_players]
         pausen_spieler = spieler[max_active_players:] if len(spieler) > max_active_players else []
@@ -250,7 +249,6 @@ def get_board_players(session, round_num, board_name):
                 pairs.append(("-", "-"))
             return list(pairs[b_idx])
         
-        # Für Folgerunden (> 1): Up & Down Berechnung
         prev_r = round_num - 1
         res = session.get("results", {})
         w = {}
@@ -264,8 +262,6 @@ def get_board_players(session, round_num, board_name):
                 w[b] = "-"
                 l[b] = "-"
                 
-        # Wer hat in der Vorsaison/Vorrunde pausiert? Der wandert jetzt auf das letzte Board nach oben/rein
-        # Ermittlung des aktiven Pools der Vorrunde
         prev_boards = get_boards_list(session, prev_r)
         prev_active_players = []
         for pb in prev_boards[:boards_count]:
@@ -278,10 +274,8 @@ def get_board_players(session, round_num, board_name):
                 if p_pair[0] != "-": prev_active_players.append(p_pair[0])
                 if p_pair[1] != "-": prev_active_players.append(p_pair[1])
                 
-        # Wer war in der Pause?
         current_pausen_spieler = [p for p in spieler if p not in prev_active_players]
         
-        # Up & Down Zuweisung
         if b_idx == 0:
             top_w = w.get("Kaiser B1", "-")
             next_w = w.get("Board 2", "-") if len(active_boards) > 1 else top_w
@@ -293,7 +287,6 @@ def get_board_players(session, round_num, board_name):
             
             loser_from_above = l.get(prev_board, "-")
             
-            # Wenn wir auf dem allerletzten Board sind und es einen Pausenspieler gibt, ersetzt dieser den Verlierer von unten
             if b_idx == len(active_boards) - 1 and current_pausen_spieler:
                 winner_from_below = current_pausen_spieler[0]
             else:
@@ -461,7 +454,7 @@ def open_session_archive_dialog(session_idx):
         st.rerun()
 
 @st.dialog("➕ Neue Session starten")
-def open_new_session_dialog():
+def open_new_session_dialog(preselected_players=None):
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
     if pwd != "1521":
         if pwd != "":
@@ -489,13 +482,16 @@ def open_new_session_dialog():
     anwesende = []
     cols = st.columns(2)
     half = len(kader) // 2
+    
+    default_set = preselected_players if preselected_players is not None else kader
+    
     with cols[0]:
         for spieler in kader[:half]:
-            if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
+            if st.checkbox(spieler, value=(spieler in default_set), key=f"form_kader_{spieler}"):
                 anwesende.append(spieler)
     with cols[1]:
         for spieler in kader[half:]:
-            if st.checkbox(spieler, value=True, key=f"form_kader_{spieler}"):
+            if st.checkbox(spieler, value=(spieler in default_set), key=f"form_kader_{spieler}"):
                 anwesende.append(spieler)
                 
     st.write("### Gastspieler (optional, max. 4)")
@@ -730,7 +726,6 @@ with tab_übersicht:
             
     st.write("")
     
-    # 1. LAUFENDE SESSION GANZ OBEN
     st.markdown("### 🔴 Laufende Session")
     if not active_sessions_for_btn:
         st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Übersicht zu sehen.")
@@ -797,7 +792,6 @@ with tab_übersicht:
     st.write("")
     st.divider()
 
-    # 2. ALLGEMEINE STATISTIKEN DARUNTER
     st.markdown("### 📊 Allgemeine Statistiken")
     
     total_180s = 0
@@ -1074,8 +1068,39 @@ with tab_kader:
             st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
 
 with tab_session:
-    st.subheader("Up & Down Sessions")
-    st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
+    st.subheader("Up & Down Sessions & Team-Planung")
+    st.write("Verwaltet hier das nächste Training und startet die nächste Session nach Abstimmung.")
+    
+    # NEU: Team-Umfrage & Coach-Planung
+    with st.expander("📋 Umfrage / Team-Abstimmung (Wer kommt zum Training?)", expanded=True):
+        st.markdown("Hier kann der Teamcoach (oder ein Vertretter) sehen, wer fürs nächste Training zugesagt hat, und die Session direkt mit diesen Spielern starten.")
+        
+        # Initialisiere Abstimmungsliste im Session State falls nicht vorhanden
+        if "training_poll" not in st.session_state:
+            st.session_state.training_poll = {p: True for p in kader} # Standardmäßig alle dabei
+            
+        st.markdown("**Aktuelle Zusages-Liste für den nächsten Trainingstag:**")
+        poll_cols = st.columns(2)
+        half_poll = len(kader) // 2
+        
+        with poll_cols[0]:
+            for p in kader[:half_poll]:
+                curr_val = st.session_state.training_poll.get(p, True)
+                new_val = st.checkbox(p, value=curr_val, key=f"poll_{p}")
+                st.session_state.training_poll[p] = new_val
+        with poll_cols[1]:
+            for p in kader[half_poll:]:
+                curr_val = st.session_state.training_poll.get(p, True)
+                new_val = st.checkbox(p, value=curr_val, key=f"poll_{p}")
+                st.session_state.training_poll[p] = new_val
+                
+        confirmed_players = [p for p, attending in st.session_state.training_poll.items() if attending]
+        st.info(📋 f"Aktuell zugesagt: **{len(confirmed_players)} Spieler** ({', '.join(confirmed_players)})")
+        
+        if st.button("🚀 Nächste Session mit diesen Zusagen starten", type="primary", use_container_width=True):
+            open_new_session_dialog(preselected_players=confirmed_players)
+
+    st.write("")
     
     total_anwesende = 0
     for s in st.session_state.sessions_list:
@@ -1100,7 +1125,7 @@ with tab_session:
         st.divider()
         st.metric("Rekord-Kaiser", rekord_kaiser, "Meiste Board 1 Siege")
         
-    if st.button("➕ Neue Session starten", use_container_width=True, key="tab_session_new"):
+    if st.button("➕ Manuelle Session starten", use_container_width=True, key="tab_session_new"):
         open_new_session_dialog()
 
     st.write("### Bisherige Sessions & Board-Endstände")
@@ -1141,7 +1166,7 @@ with tab_archiv:
                         st.rerun()
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Regeln")
+    st.subheader("🎯 Modus & Spielablauf")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
@@ -1161,13 +1186,13 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### ⏱️ Der Ablauf an eurem Board")
         st.markdown("""
-        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speichert ab.
+        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speគាត់ ab.
         2. **Automatische Weiterleitung:** Der Gewinner steigt automatisch eine Etage höher (oder bleibt Kaiser auf B1), der Verlierer rutscht eine Etage tiefer.
         3. **Nächste Runde:** Sobald *alle* Boards ihre Ergebnisse eingetragen haben, schaltet die App vollautomatisch in die nächste Runde und setzt die neuen Paarungen zusammen.
         """)
 
     with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei einer ungeraden Spieleranzahl?")
+        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
         st.markdown("""
         * Wenn wir z. B. zu neunt auf 4 Boards spielen, können 8 Spieler spielen und 1 Spieler hat Pause (kommt auf das Abstellgleis).
         * Wenn auf dem untersten Board (Board 4) ein Spieler verliert, geht dieser in der nächsten Runde auf das Abstellgleis. 
