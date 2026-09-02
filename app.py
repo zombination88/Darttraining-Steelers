@@ -1,4 +1,3 @@
-# STREAMING_CHUNK:Importing required libraries...
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -10,7 +9,7 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# WORKAROUND: Diese Klasse fängt den 'type'-Konflikt von Streamlit ab
+# WORKAROUND: Diese Klasse fängt den 'type'-Konflikt von Streamlit ab, der den Absturz verursacht hat.
 class FixedGSheetsConnection(GSheetsConnection):
     def _connect(self, **kwargs):
         if "type" not in kwargs or kwargs["type"] != "service_account":
@@ -20,17 +19,18 @@ class FixedGSheetsConnection(GSheetsConnection):
 # --- DATENBANKVERBINDUNG ---
 try:
     creds_dict = json.loads(st.secrets["google_json"])
+    # Formatierungsprobleme des private_key beheben
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    safe_creds = {k: v for k, v in creds_dict.items() if k not in ["type", "project_id"]}
+    # 'type' vor der Übergabe aus dem Dictionary entfernen, um den Keyword-Konflikt zu umgehen
+    safe_creds = {k: v for k, v in creds_dict.items() if k != "type"}
         
     conn = st.connection("gsheets", type=FixedGSheetsConnection, **safe_creds)
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
 
-# STREAMING_CHUNK:Defining data loading functions...
 def load_data():
     if SHEET_URL == "" or SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
         st.warning("Bitte trage den Google Sheets Link ein!")
@@ -57,7 +57,6 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
-# STREAMING_CHUNK:Defining data saving functions...
 def save_data(sessions):
     serializable_sessions = []
     for sess in sessions:
@@ -76,7 +75,6 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-# STREAMING_CHUNK:Setting up layout and roster...
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -96,7 +94,7 @@ kader = [
     "Michael Mak",
     "Michael Neumeier",
     "Thomas Schaudt",
-    "Wolfgang Scheider"
+    "Wolfgang Schneider"
 ]
 
 if "sessions_list" not in st.session_state:
@@ -104,7 +102,6 @@ if "sessions_list" not in st.session_state:
 
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
-# STREAMING_CHUNK:Defining helper functions for boards...
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
@@ -149,6 +146,7 @@ def get_board_players(session, round_num, board_name):
     l = {}
     for b in boards:
         match_info = res.get((prev_r, b))
+        # Nur wenn das Match wirklich beendet wurde (winner gesetzt) übernehmen
         if match_info and match_info.get("winner"):
             w[b] = match_info["winner"]
             l[b] = match_info["loser"]
@@ -218,7 +216,6 @@ def is_session_completed(sess):
             return False
     return True
 
-# STREAMING_CHUNK:Defining dialog for new sessions...
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -280,7 +277,6 @@ def open_new_session_dialog():
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for editing sessions...
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
 def open_edit_session_dialog(session_idx):
     pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_input_{session_idx}")
@@ -357,13 +353,13 @@ def open_edit_session_dialog(session_idx):
             st.success("Session erfolgreich aktualisiert!")
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for board management...
 @st.dialog("📋 Board-Erfassung")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
     
     res = sess.get("results", {})
+    # Berechne die aktuelle Runde (wir zählen nur Matches, die auch wirklich abgeschlossen sind)
     completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
     current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
@@ -375,6 +371,7 @@ def open_board_dialog(board_name, session_idx):
 
     st.write(f"### {board_name} (Session {sess['id']}) — Runde {current_round} von {total_rounds}")
     
+    # Prüfe, ob es bereits eine gespeicherte Auswechslung (partielles Match) gibt
     existing_match = res.get((current_round, board_name))
     
     if existing_match:
@@ -386,10 +383,12 @@ def open_board_dialog(board_name, session_idx):
         except:
             score1, score2 = 3, 0
     else:
+        # Standard-Spieler berechnen
         auto_players = get_board_players(sess, current_round, board_name)
         current_p1, current_p2 = auto_players[0], auto_players[1]
         score1, score2 = 3, 0
     
+    # Liste aller verfügbaren Spieler aufbauen
     is_2v2 = (sess.get("modus") == "Koop 2vs2 (Up & Down)")
     if is_2v2:
         base_teams = []
@@ -413,6 +412,7 @@ def open_board_dialog(board_name, session_idx):
         c1, c2 = st.columns([4, 1])
         c1.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p1}</div>", unsafe_allow_html=True)
         
+        # Popover für den Spielerwechsel 1
         with c2.popover("🔄", help="Spieler 1 auswechseln"):
             st.markdown("**Spieler wechseln**")
             idx1 = alle_spieler.index(current_p1) if current_p1 in alle_spieler else 0
@@ -422,6 +422,7 @@ def open_board_dialog(board_name, session_idx):
             if st.button("Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
                 final_p1 = new_p1_txt if new_p1_txt.strip() else new_p1_sel
                 if "results" not in sess: sess["results"] = {}
+                # Speichere die Auswechslung, OHNE das Match als beendet zu markieren (winner="")
                 sess["results"][(current_round, board_name)] = {
                     "s1": final_p1, 
                     "s2": current_p2, 
@@ -439,6 +440,7 @@ def open_board_dialog(board_name, session_idx):
         c3, c4 = st.columns([4, 1])
         c3.markdown(f"<div style='padding-top: 5px; font-weight: bold;'>{current_p2}</div>", unsafe_allow_html=True)
         
+        # Popover für den Spielerwechsel 2
         with c4.popover("🔄", help="Spieler 2 auswechseln"):
             st.markdown("**Spieler wechseln**")
             idx2 = alle_spieler.index(current_p2) if current_p2 in alle_spieler else 0
@@ -448,6 +450,7 @@ def open_board_dialog(board_name, session_idx):
             if st.button("Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
                 final_p2 = new_p2_txt if new_p2_txt.strip() else new_p2_sel
                 if "results" not in sess: sess["results"] = {}
+                # Speichere die Auswechslung, OHNE das Match als beendet zu markieren
                 sess["results"][(current_round, board_name)] = {
                     "s1": current_p1, 
                     "s2": final_p2, 
@@ -468,6 +471,7 @@ def open_board_dialog(board_name, session_idx):
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
+        # Dieser Button finalisiert das Ergebnis (Winner wird gesetzt)
         if st.button("Ergebnis abschließen", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
             if in_score1 == in_score2:
                 st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
@@ -488,7 +492,6 @@ def open_board_dialog(board_name, session_idx):
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
             st.rerun()
 
-# STREAMING_CHUNK:Defining dialog for session deletion...
 @st.dialog("🗑️ Session löschen (Passwortgeschützt)")
 def open_delete_dialog(session_idx):
     if session_idx >= len(st.session_state.sessions_list):
@@ -514,7 +517,6 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
-# STREAMING_CHUNK:Rendering main overview tab...
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
@@ -557,7 +559,7 @@ with tab_übersicht:
         session_stats = {p: {"legs_won": 0, "legs_lost": 0} for p in curr_sess.get("spieler", [])}
         for match in curr_sess.get("results", {}).values():
             if not match.get("winner"):
-                continue
+                continue # Zähle keine Legs von unfertigen/eingewechselten Matches
             
             s1 = match.get("s1", "")
             s2 = match.get("s2", "")
@@ -596,6 +598,7 @@ with tab_übersicht:
                                 ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
                                 st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
                                 
+                                # Wenn bereits eine Auswechslung gespeichert wurde, zeige diese im Live-Board an
                                 existing_match = res.get((next_r, b_name))
                                 if existing_match:
                                     p1 = existing_match.get("s1", "Offen")
@@ -649,7 +652,7 @@ with tab_übersicht:
         sess_date = sess.get("datum", "")
         for (round_num, board_name), m_info in sess.get("results", {}).items():
             if not m_info.get("winner"):
-                continue
+                continue # Verstecke reine Auswechslungs-Zwischenspeicher aus dem Archiv
             all_matches.append({
                 "Datum": sess_date,
                 "Runde": round_num,
@@ -665,7 +668,6 @@ with tab_übersicht:
     else:
         st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
-# STREAMING_CHUNK:Rendering roster and stats tab...
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler).")
@@ -729,7 +731,6 @@ with tab_kader:
         df_kader = df_kader[df_kader["Spieler"].str.contains(suche, case=False)]
     st.dataframe(df_kader, use_container_width=True, hide_index=True)
 
-# STREAMING_CHUNK:Rendering sessions tab...
 with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
@@ -776,7 +777,6 @@ with tab_session:
                             open_board_dialog(b_name, idx)
                 st.divider()
 
-# STREAMING_CHUNK:Rendering archive tab...
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Hier kannst du gespeicherte Sessions verwalten und bei Bedarf sicher löschen.")
@@ -795,4 +795,3 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
-```eof
