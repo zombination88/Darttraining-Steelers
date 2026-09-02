@@ -4,7 +4,6 @@ from datetime import date, timedelta
 import json
 import gspread
 from google.oauth2.service_account import Credentials
-import base64
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
@@ -127,7 +126,6 @@ def get_boards_list(session, round_num=None):
 def get_resting_player(session, round_num):
     spieler = session.get("spieler", [])
     K = session.get("boards_count", 4)
-    # Nur bei ungerader Spieleranzahl oder mehr Spielern als 2*K gibt es einen Pausierenden
     has_resting = (len(spieler) % 2 != 0) or (len(spieler) > 2 * K)
     if not has_resting:
         return None
@@ -244,10 +242,11 @@ def get_board_players(session, round_num, board_name):
     else:
         boards_count = session.get("boards_count", 6)
         if round_num == 1:
-            for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
-                pairs.append((spieler[i], spieler[i+1]))
+            active_sp = spieler[:2 * boards_count] if not has_resting else spieler[:2 * boards_count]
+            for i in range(0, min(boards_count * 2, len(active_sp) - len(active_sp) % 2), 2):
+                pairs.append((active_sp[i], active_sp[i+1]))
             while len(pairs) <= b_idx:
-                pairs.append((spieler[0] if spieler else "-", spieler[1] if len(spieler) > 1 else "-"))
+                pairs.append((active_sp[0] if active_sp else "-", active_sp[1] if len(active_sp) > 1 else "-"))
             return list(pairs[b_idx])
         
         prev_r = round_num - 1
@@ -996,15 +995,35 @@ with tab_übersicht:
             st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True)
         
     st.write("")
+    
+    # --- DYNAMISCHE METRIKEN FÜR DART-SPIELER ---
+    total_sessions_count = len(st.session_state.sessions_list)
+    total_180s_count = 0
+    active_kaiser_name = "Noch offen"
+    
+    target_sess_for_metrics = active_sessions_for_btn[0] if active_sessions_for_btn else (st.session_state.sessions_list[0] if st.session_state.sessions_list else None)
+    if target_sess_for_metrics:
+        res_m = target_sess_for_metrics.get("results", {})
+        completed_kaiser = [(r, m) for (r, b), m in res_m.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        if completed_kaiser:
+            completed_kaiser.sort(key=lambda x: x[0], reverse=True)
+            active_kaiser_name = completed_kaiser[0][1].get("winner", "Noch offen")
+            
+    for sess in st.session_state.sessions_list:
+        for m_inf in sess.get("results", {}).values():
+            total_180s_count += int(m_inf.get("180_s1", 0)) + int(m_inf.get("180_s2", 0))
+                
+    current_active_players_count = len(target_sess_for_metrics.get("spieler", kader)) if target_sess_for_metrics else len(kader)
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(label="Up & Down Abende", value=str(len(st.session_state.sessions_list)), delta="Runden pro Abend")
+        st.metric(label="Trainingsabende", value=str(total_sessions_count), delta="Gesamt")
     with col2:
-        st.metric(label="Gespielte Matches", value="Dynamisch", delta="siehe Kader")
+        st.metric(label="Team 180er", value=str(total_180s_count), delta="geworfen 🎯")
     with col3:
-        st.metric(label="Aktive Spieler", value="10", delta="im Kader")
+        st.metric(label="Anwesende Spieler", value=str(current_active_players_count), delta="heute" if active_sessions_for_btn else "im Kader")
     with col4:
-        st.metric(label="Aktueller Kaiser", value="Noch offen", delta="Training")
+        st.metric(label="Aktueller Kaiser 👑", value=active_kaiser_name, delta="Board 1")
         
     st.write("")
     
