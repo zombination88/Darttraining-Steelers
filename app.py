@@ -1,3 +1,4 @@
+# STREAMING_CHUNK:Importing required libraries and setting config...
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -29,6 +30,7 @@ def init_connection():
 
 sheet_conn = init_connection()
 
+# STREAMING_CHUNK:Defining data loading functions...
 def load_data():
     if not sheet_conn:
         return []
@@ -55,6 +57,7 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
+# STREAMING_CHUNK:Defining data saving functions...
 def save_data(sessions):
     if not sheet_conn:
         return
@@ -75,6 +78,7 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
+# STREAMING_CHUNK:Setting up layout and roster...
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -86,7 +90,7 @@ with col2:
 
 kader = [
     "Andreas Böhm",
-    "Andrino Czombera",
+    "Andrino Czombera (Teamcaptain)",
     "Dennis Güttner",
     "Marco Eser",
     "Maximilian Zientner",
@@ -100,8 +104,9 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
 
+# STREAMING_CHUNK:Defining helper functions for boards...
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
     modus = session.get("modus", "Up & Down")
@@ -258,6 +263,7 @@ def is_session_completed(sess):
                 return False
     return True
 
+# STREAMING_CHUNK:Defining substitution dialog...
 @st.dialog("🔄 Spieler auswechseln")
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
     sess = st.session_state.sessions_list[session_idx]
@@ -306,6 +312,7 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
             st.success("Spieler erfolgreich gewechselt!")
             st.rerun()
 
+# STREAMING_CHUNK:Defining session archive detail dialog...
 @st.dialog("📊 Spielablauf & Rundenübersicht")
 def open_session_archive_dialog(session_idx):
     sess = st.session_state.sessions_list[session_idx]
@@ -356,16 +363,34 @@ def open_session_archive_dialog(session_idx):
                 st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
                 standings_rows = []
                 singles_boards = get_boards_list(sess, singles_rounds)
+                
+                last_singles_res = {}
                 for b_name in singles_boards:
-                    p_list = get_board_players(sess, singles_rounds, b_name)
                     m_inf = res.get((singles_rounds, b_name))
-                    winner_str = m_inf.get("winner", "–") if m_inf else "–"
-                    standings_rows.append({
-                        "Board": b_name,
-                        "Spieler 1 (Heim)": p_list[0],
-                        "Spieler 2 (Gast)": p_list[1],
-                        "Sieger des Matches": winner_str
-                    })
+                    if m_inf and m_inf.get("winner"):
+                        last_singles_res[b_name] = {"winner": m_inf["winner"], "loser": m_inf["loser"]}
+                    else:
+                        p_list = get_board_players(sess, singles_rounds, b_name)
+                        last_singles_res[b_name] = {"winner": p_list[0], "loser": p_list[1]}
+                
+                for idx, b_name in enumerate(singles_boards):
+                    if idx == 0:
+                        w1 = last_singles_res.get(singles_boards[0], {}).get("winner", "–")
+                        w2 = last_singles_res.get(singles_boards[1], {}).get("winner", "–") if len(singles_boards) > 1 else "–"
+                        standings_rows.append({
+                            "Board": b_name,
+                            "1. Platz": w1,
+                            "2. Platz": w2
+                        })
+                    else:
+                        match_res = last_singles_res.get(b_name, {})
+                        p1_win = match_res.get("winner", "–")
+                        p2_los = match_res.get("loser", "–")
+                        standings_rows.append({
+                            "Board": b_name,
+                            "1. Platz": p1_win,
+                            "2. Platz": p2_los
+                        })
                 if standings_rows:
                     df_standings = pd.DataFrame(standings_rows)
                     st.dataframe(df_standings, use_container_width=True, hide_index=True)
@@ -375,6 +400,7 @@ def open_session_archive_dialog(session_idx):
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
+# STREAMING_CHUNK:Defining new session dialog...
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -448,6 +474,7 @@ def open_new_session_dialog():
             st.success("Session erfolgreich gestartet!")
             st.rerun()
 
+# STREAMING_CHUNK:Defining edit session dialog...
 @st.dialog("⚙️ Session bearbeiten (Passwortgeschützt)")
 def open_edit_session_dialog(session_idx):
     pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_input_{session_idx}")
@@ -537,6 +564,7 @@ def open_edit_session_dialog(session_idx):
             st.success("Session erfolgreich aktualisiert!")
             st.rerun()
 
+# STREAMING_CHUNK:Defining board dialog...
 @st.dialog("📋 Board-Erfassung & 180er/Average-Tracking")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
@@ -621,6 +649,7 @@ def open_board_dialog(board_name, session_idx):
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
             st.rerun()
 
+# STREAMING_CHUNK:Defining delete dialog...
 @st.dialog("🗑️ Session löschen (Passwortgeschützt)")
 def open_delete_dialog(session_idx):
     if session_idx >= len(st.session_state.sessions_list):
@@ -646,6 +675,7 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
+# STREAMING_CHUNK:Rendering overview tab...
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
@@ -863,6 +893,7 @@ with tab_übersicht:
     else:
         st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
+# STREAMING_CHUNK:Rendering kader tab...
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
     st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler) inklusive Legs, 180er, Match-Averages und Gesamtschnitt des Teams.")
@@ -1060,6 +1091,7 @@ with tab_kader:
     else:
         st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
 
+# STREAMING_CHUNK:Rendering sessions tab...
 with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
@@ -1105,6 +1137,7 @@ with tab_session:
                             open_board_dialog(b_name, idx)
                 st.divider()
 
+# STREAMING_CHUNK:Rendering archive tab...
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Klicke auf eine Session, um den detaillierten Spielablauf aller Runden einzusehen, oder verwalte/lösche sie bei Bedarf.")
@@ -1126,3 +1159,54 @@ with tab_archiv:
                     if st.button("🗑️ Session löschen", key=f"arch_del_btn_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
                 st.divider()
+
+# STREAMING_CHUNK:Rendering bdv tab...
+with tab_bdv:
+    st.subheader("Leitfaden Ligabetrieb BDV – Bezirk Schwaben")
+    st.markdown("""
+# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
+1.  Mannschaft & Meldung
+2.  Spielmodus & Ablauf (Liga und Pokal)
+3.  Spielbericht & Online-Meldung
+4.  Mannschaftsvorstellung (Kader)
+
+### 1. Mannschaft & Meldung
+- **Mannschaftsmeldung:** Erledigt.
+- **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
+
+### 2. Spielmodus & Ablauf (Liga und Pokal)
+- **Heimspieltag ist Dienstag**
+- **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
+- **Aufstellung (3 Blöcke):**
+  - **Block 1:** 4 Einzelspieler.
+  - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
+  - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
+- **Rahmenbedingungen:**
+  - **Spielzeit:** Mo–Do ab 20:00 Uhr.
+  - **Austragung:** Parallel auf zwei Boards.
+  - **Einwerfzeit:** 30 Minuten für Gäste.
+- **Board-Zuordnung & Schreiber:**
+  Die Heimmannschaft schreibt und beginnt auf Board 1.  
+  Die Gastmannschaft schreibt und beginnt auf Board 2.  
+- **Schwabenpokal:**
+  - Nur K.O. Runden
+  - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
+
+### 3. Spielbericht & Online-Meldung
+- **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
+- **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
+- **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
+- **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
+
+### 4. Mannschaftsvorstellung (Kader)
+- Andreas Böhm
+- Andrino Czombera (Teamcaptain)
+- Dennis Güttner
+- Marco Eser
+- Maximilian Zientner
+- Michael Kummer
+- Michael Mak
+- Michael Neumeier
+- Thomas Schaudt
+- Wolfgang Schneider
+    """)
