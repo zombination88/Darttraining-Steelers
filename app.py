@@ -442,7 +442,7 @@ def open_session_archive_dialog(session_idx):
                 
             st.divider()
             
-    if st.button("Schließen", use_container_width=True):
+    if st.button("Schließen", use_container_width=True, key=f"archive_close_{session_idx}"):
         st.rerun()
 
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
@@ -491,10 +491,10 @@ def open_new_session_dialog():
     
     col_b1, col_b2 = st.columns(2)
     with col_b1:
-        if st.button("Abbrechen", use_container_width=True):
+        if st.button("Abbrechen", use_container_width=True, key="new_sess_cancel"):
             st.rerun()
     with col_b2:
-        if st.button("Session starten", type="primary", use_container_width=True):
+        if st.button("Session starten", type="primary", use_container_width=True, key="new_sess_start"):
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
             aktive_spieler = anwesende + gaeste
             new_id = f"S-{len(st.session_state.sessions_list) + 1}"
@@ -618,7 +618,7 @@ def open_board_dialog(board_name, session_idx):
     
     if current_round > total_rounds:
         st.warning(f"{board_name} hat alle {total_rounds} Runden bereits beendet.")
-        if st.button("Schließen", use_container_width=True):
+        if st.button("Schließen", use_container_width=True, key=f"board_close_{board_name}_{session_idx}"):
             st.rerun()
         return
 
@@ -825,10 +825,10 @@ def open_delete_dialog(session_idx):
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Abbrechen", use_container_width=True):
+        if st.button("Abbrechen", use_container_width=True, key=f"del_cancel_{session_idx}"):
             st.rerun()
     with col2:
-        if st.button("Unwiderruflich löschen", type="primary", use_container_width=True):
+        if st.button("Unwiderruflich löschen", type="primary", use_container_width=True, key=f"del_confirm_{session_idx}"):
             if pwd == "1521":
                 st.session_state.sessions_list.pop(session_idx)
                 save_data(st.session_state.sessions_list)
@@ -842,15 +842,15 @@ with tab_übersicht:
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="quick_start_btn"):
+        if st.button("➕ Neue Session starten", type="primary", use_container_width=True, key="overview_quick_start_btn"):
             open_new_session_dialog()
     with col_btn2:
         active_sessions_for_btn = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
         if active_sessions_for_btn:
-            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="edit_active_btn"):
+            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="overview_edit_active_btn"):
                 open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_btn[0]))
         else:
-            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True)
+            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True, key="overview_edit_active_disabled_btn")
         
     st.write("")
     
@@ -1224,11 +1224,11 @@ with tab_session:
     for sess in st.session_state.sessions_list:
         res = sess.get("results", {})
         total_rounds = sess.get("total_rounds", 4)
-        k_rounds = [r for (r, b), m in res.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
-        if k_rounds:
-            max_r = max(k_rounds)
-            winner = res.get((max_r, "Kaiser B1"), {}).get("winner")
-            if winner:
+        final_round = total_rounds
+        m_info = res.get((final_round, "Kaiser B1"))
+        if m_info and m_info.get("winner"):
+            winner = m_info.get("winner")
+            if " & " not in winner:
                 kaiser_win_counts[winner] = kaiser_win_counts.get(winner, 0) + 1
     
     if kaiser_win_counts:
@@ -1274,10 +1274,10 @@ with tab_archiv:
     with col_arc2:
         active_sessions_for_arc = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
         if active_sessions_for_arc:
-            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="edit_active_arc_btn"):
+            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="archiv_edit_active_btn"):
                 open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_arc[0]))
         else:
-            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True)
+            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True, key="archiv_edit_active_disabled_btn")
         
     st.write("")
     if not st.session_state.sessions_list:
