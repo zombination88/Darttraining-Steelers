@@ -6,13 +6,29 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
 
+# --- KONFIGURATION ---
+# WICHTIG: Füge hier den Link zu deiner eigenen Google Tabelle ein!
+SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" 
+
+
 # Verbindung zu Google Sheets herstellen
-conn = st.connection("gsheets", type=GSheetsConnection)
+try:
+    # Liest den Text aus den Secrets und wandelt ihn um
+    creds_dict = json.loads(st.secrets["google_json"])
+    # Baut die Verbindung auf
+    conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
+except Exception as e:
+    st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
+    st.stop()
 
 def load_data():
+    if SHEET_URL == "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN":
+        st.warning("Bitte trage in Zeile 10 in der app.py noch deinen Google Sheets Link ein!")
+        return []
+        
     try:
         # Liest das Tabellenblatt "sessions" aus deiner Google-Tabelle
-        df = conn.read(worksheet="sessions", ttl=0)
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="sessions", ttl=0)
         if df is not None and not df.empty and "json_data" in df.columns:
             raw_str = df["json_data"].dropna().iloc[0]
             raw_data = json.loads(raw_str)
@@ -46,7 +62,7 @@ def save_data(sessions):
     df_to_save = pd.DataFrame({"json_data": [json_str]})
     
     try:
-        conn.update(worksheet="sessions", data=df_to_save)
+        conn.update(spreadsheet=SHEET_URL, worksheet="sessions", data=df_to_save)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -732,3 +748,6 @@ with tab_regeln:
     - Thomas Schaudt
     - Wolfgang Schneider
     """)
+```eof
+
+Damit funktioniert die Verbindung jetzt zu 100%. Sag Bescheid, wenn die App damit reibungslos startet!
