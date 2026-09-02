@@ -119,7 +119,7 @@ def get_boards_list(session, round_num=None):
 def get_board_players(session, round_num, board_name):
     boards = get_boards_list(session, round_num)
     if board_name not in boards:
-        return ["Offen", "Offen"]
+        return ["-", "-"]
     b_idx = boards.index(board_name)
     
     modus = session.get("modus", "Up & Down")
@@ -156,16 +156,16 @@ def get_board_players(session, round_num, board_name):
             prev_players_bottom_to_top = []
             for pb in reversed(prev_boards):
                 match_inf = prev_results.get((target_r, pb))
-                p1, p2 = "Offen", "Offen"
+                p1, p2 = "-", "-"
                 if match_inf:
-                    p1 = match_inf.get("s1", "Offen")
-                    p2 = match_inf.get("s2", "Offen")
+                    p1 = match_inf.get("s1", "-")
+                    p2 = match_inf.get("s2", "-")
                 else:
                     p_pair = get_board_players(prev_sess, target_r, pb)
                     p1, p2 = p_pair[0], p_pair[1]
-                if p2 != "Offen" and p2 not in prev_players_bottom_to_top:
+                if p2 != "-" and p2 not in prev_players_bottom_to_top:
                     prev_players_bottom_to_top.append(p2)
-                if p1 != "Offen" and p1 not in prev_players_bottom_to_top:
+                if p1 != "-" and p1 not in prev_players_bottom_to_top:
                     prev_players_bottom_to_top.append(p1)
             
             returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
@@ -199,14 +199,14 @@ def get_board_players(session, round_num, board_name):
         for i in range(0, len(spieler)-1, 2):
             teams.append(f"{spieler[i]} & {spieler[i+1]}")
         if len(spieler) % 2 != 0:
-            teams.append(f"{spieler[-1]} & Offen")
+            teams.append(f"{spieler[-1]} & -")
             
         coop_boards_cnt = 2
         for i in range(0, min(coop_boards_cnt * 2, len(teams) - len(teams) % 2), 2):
             pairs.append((teams[i], teams[i+1]))
         while len(pairs) <= b_idx:
-            t1 = teams[0] if len(teams) > 0 else "Offen"
-            t2 = teams[1] if len(teams) > 1 else "Offen"
+            t1 = teams[0] if len(teams) > 0 else "-"
+            t2 = teams[1] if len(teams) > 1 else "-"
             pairs.append((t1, t2))
         return list(pairs[b_idx])
     else:
@@ -215,7 +215,7 @@ def get_board_players(session, round_num, board_name):
             for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
                 pairs.append((spieler[i], spieler[i+1]))
             while len(pairs) <= b_idx:
-                pairs.append((spieler[0] if spieler else "Offen", spieler[1] if len(spieler) > 1 else "Offen"))
+                pairs.append((spieler[0] if spieler else "-", spieler[1] if len(spieler) > 1 else "-"))
             return list(pairs[b_idx])
         
         prev_r = round_num - 1
@@ -228,22 +228,23 @@ def get_board_players(session, round_num, board_name):
                 w[b] = match_info["winner"]
                 l[b] = match_info["loser"]
             else:
-                def_players = get_board_players(session, prev_r, b)
-                w[b] = def_players[0]
-                l[b] = def_players[1]
+                w[b] = "-"
+                l[b] = "-"
                 
         if b_idx == 0:
-            return [w["Kaiser B1"], w.get("Board 2", "Offen") if len(boards) > 1 else w["Kaiser B1"]]
+            p1 = w.get("Kaiser B1", "-")
+            p2 = w.get("Board 2", "-") if len(boards) > 1 else w.get("Kaiser B1", "-")
+            return [p1 if p1 else "-", p2 if p2 else "-"]
         
         if b_idx > 0:
             prev_board = boards[b_idx - 1]
             next_board = boards[b_idx + 1] if b_idx + 1 < len(boards) else None
             
-            loser_from_above = l.get(prev_board, "Offen")
-            winner_from_below = w.get(next_board, "Offen") if next_board else l.get(boards[b_idx], "Offen")
-            return [loser_from_above, winner_from_below]
+            loser_from_above = l.get(prev_board, "-")
+            winner_from_below = w.get(next_board, "-") if next_board else l.get(boards[b_idx], "-")
+            return [loser_from_above if loser_from_above else "-", winner_from_below if winner_from_below else "-"]
             
-    return ["Offen", "Offen"]
+    return ["-", "-"]
 
 def is_board_ready(session, board_name, next_r):
     if next_r == 1:
@@ -253,22 +254,12 @@ def is_board_ready(session, board_name, next_r):
     total_rounds = session.get("total_rounds", 4)
     singles_rounds = session.get("singles_rounds", total_rounds - 2 if modus == "Standard-Training (Einzel + Coop)" and total_rounds > 2 else total_rounds)
     
-    # Beim Übergang vom Einzel zum Coop im Standard-Training
     if modus == "Standard-Training (Einzel + Coop)" and next_r == singles_rounds + 1:
         res = session.get("results", {})
         for r in range(1, singles_rounds + 1):
             for b in get_boards_list(session, r):
                 if not res.get((r, b), {}).get("winner"):
                     return False
-        return True
-
-    # Innerhalb der Coop-Phase bei Standard-Training
-    if modus == "Standard-Training (Einzel + Coop)" and next_r > singles_rounds + 1:
-        prev_coop = next_r - 1
-        res = session.get("results", {})
-        for b in ["Kaiser B1", "Board 2"]:
-            if not res.get((prev_coop, b), {}).get("winner"):
-                return False
         return True
         
     boards = get_boards_list(session, next_r)
@@ -279,7 +270,6 @@ def is_board_ready(session, board_name, next_r):
     res = session.get("results", {})
     prev_r = next_r - 1
     
-    # Up & Down spezifische Vorrunden-Prüfung für dieses Board
     req_boards = []
     if b_idx == 0:
         req_boards.append(boards[0])
@@ -293,7 +283,8 @@ def is_board_ready(session, board_name, next_r):
             req_boards.append(boards[b_idx])
             
     for rb in req_boards:
-        if not res.get((prev_r, rb), {}).get("winner"):
+        match_inf = res.get((prev_r, rb))
+        if not match_inf or not match_inf.get("winner"):
             return False
             
     return True
@@ -313,8 +304,8 @@ def is_session_completed(sess):
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
     sess = st.session_state.sessions_list[session_idx]
     alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
-    if "Offen" not in alle_spieler:
-        alle_spieler.append("Offen")
+    if "-" not in alle_spieler:
+        alle_spieler.append("-")
     alle_spieler.sort()
 
     st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
@@ -589,25 +580,16 @@ def open_edit_session_dialog(session_idx):
             st.rerun()
 
 @st.dialog("📋 Board-Erfassung & 180er/Average-Tracking")
-def open_board_dialog(board_name, session_idx, target_round=None):
+def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
-    res = sess.get("results", {})
     
-    if target_round is None:
-        completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
-        current_round = max(completed_rounds) + 1 if completed_rounds else 1
-    else:
-        current_round = target_round
+    res = sess.get("results", {})
+    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
+    current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
     if current_round > total_rounds:
         st.warning(f"{board_name} hat alle {total_rounds} Runden bereits beendet.")
-        if st.button("Schließen", use_container_width=True):
-            st.rerun()
-        return
-
-    if not is_board_ready(sess, board_name, current_round):
-        st.warning(f"Dieses Board kann noch nicht bespielt werden, da die erforderlichen Vorrunden-Ergebnisse noch nicht vorliegen.")
         if st.button("Schließen", use_container_width=True):
             st.rerun()
         return
@@ -617,8 +599,8 @@ def open_board_dialog(board_name, session_idx, target_round=None):
     existing_match = res.get((current_round, board_name))
     
     if existing_match:
-        current_p1 = existing_match.get("s1", "Offen")
-        current_p2 = existing_match.get("s2", "Offen")
+        current_p1 = existing_match.get("s1", "-")
+        current_p2 = existing_match.get("s2", "-")
         try:
             score1 = int(existing_match.get("ergebnis", "0:0").split(":")[0])
             score2 = int(existing_match.get("ergebnis", "0:0").split(":")[1])
@@ -762,7 +744,7 @@ with tab_übersicht:
                     b_name = all_possible_boards[i + j]
                     with cols[j]:
                         with st.container(border=True):
-                            # Bestimme die aktuelle ungespielte Runde für DIESES specific Board
+                            # Bestimme die aktuelle Runde für dieses spezifische Board
                             board_active_round = 1
                             for r_chk in range(1, total_rounds + 1):
                                 session_boards_at_r = get_boards_list(curr_sess, r_chk)
@@ -791,8 +773,8 @@ with tab_übersicht:
                                     
                                     existing_match = res.get((next_r, b_name))
                                     if existing_match:
-                                        p1 = existing_match.get("s1", "Offen")
-                                        p2 = existing_match.get("s2", "Offen")
+                                        p1 = existing_match.get("s1", "-")
+                                        p2 = existing_match.get("s2", "-")
                                     else:
                                         players_now = get_board_players(curr_sess, next_r, b_name)
                                         p1, p2 = players_now[0], players_now[1]
@@ -822,7 +804,7 @@ with tab_übersicht:
                                     
                                     st.write("")
                                     if st.button("🎯 Ergebnis eintragen", key=f"live_btn_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
-                                        open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess), next_r)
+                                        open_board_dialog(b_name, st.session_state.sessions_list.index(curr_sess))
                             else:
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle {total_rounds} Runden beendet</p>", unsafe_allow_html=True)
                                 st.success("✅ Board abgeschlossen")
@@ -1178,7 +1160,7 @@ with tab_session:
                             label_btn = f"🏆 {b_name}\nBeendet"
                             
                         if st.button(label_btn, use_container_width=True, key=f"btn_{b_name}_{idx}"):
-                            open_board_dialog(b_name, idx, next_r)
+                            open_board_dialog(b_name, idx)
                 st.divider()
 
 with tab_archiv:
