@@ -80,12 +80,12 @@ st.markdown("<h1 style='margin: 0; padding-top: 5px; padding-bottom: 15px; font-
 top_c1, top_c2 = st.columns(2)
 with top_c1:
     try:
-        with st.popover("🎵 Vereinssong", use_container_width=True):
+        with st.popover("🎵", use_container_width=True):
             st.audio("vereinssong.mp3")
     except Exception:
         pass
 with top_c2:
-    if st.button("🔄 Cloud-Sync", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
+    if st.button("🔄", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
         st.session_state.sessions_list = load_data()
         st.rerun()
 
