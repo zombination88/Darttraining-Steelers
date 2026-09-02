@@ -15,6 +15,12 @@ SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN"
 try:
     # 1. Lade den kopierten Text aus den Secrets
     creds_dict = json.loads(st.secrets["google_json"])
+    
+    # --- FIX FÜR DEN PEM-FEHLER (MalformedFraming) ---
+    # Repariert die Zeilenumbrüche im privaten Schlüssel automatisch!
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
     # 2. Definiere die nötigen Google-Rechte
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
