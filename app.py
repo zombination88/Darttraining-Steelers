@@ -102,7 +102,7 @@ with c_mus:
     except Exception:
         pass
 with c_sync:
-    if st.button("🔄", help="Aktualisieren"):
+    if st.button("🔄", help="Manuell aktualisieren"):
         st.session_state.sessions_list = load_data()
         st.rerun()
 
@@ -149,7 +149,7 @@ def get_board_players(session, round_num, board_name):
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     
     total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
-    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+    singles_rounds = session.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else 4)
     in_coop_phase = is_standard_training and round_num > singles_rounds
     
     spieler = session["spieler"].copy()
@@ -204,6 +204,8 @@ def get_board_players(session, round_num, board_name):
                 shift = (chrono_s_idx * 2) % len(spieler)
                 spieler = spieler[shift:] + spieler[:shift]
 
+    pairs = []
+    
     if is_2v2 or in_coop_phase:
         teams = []
         all_sessions = st.session_state.sessions_list
@@ -221,7 +223,6 @@ def get_board_players(session, round_num, board_name):
         if len(spieler) % 2 != 0:
             teams.append(f"{spieler[-1]} & -")
             
-        pairs = []
         coop_boards_cnt = 2
         for i in range(0, min(coop_boards_cnt * 2, len(teams) - len(teams) % 2), 2):
             pairs.append((teams[i], teams[i+1]))
@@ -232,61 +233,75 @@ def get_board_players(session, round_num, board_name):
         return list(pairs[b_idx])
     else:
         boards_count = session.get("boards_count", 6)
-        pairs = []
+        active_boards = boards[:boards_count]
+        
+        # Nur so viele Spieler aktiv einteilen wie Boards * 2 (gerade Anzahl für Matches)
+        max_active_players = len(active_boards) * 2
+        active_spieler = spieler[:max_active_players]
+        pausen_spieler = spieler[max_active_players:] if len(spieler) > max_active_players else []
+        
         if round_num == 1:
-            for i in range(0, min(boards_count * 2, len(spieler) - len(spieler) % 2), 2):
-                pairs.append((spieler[i], spieler[i+1]))
+            for i in range(0, len(active_spieler), 2):
+                if i + 1 < len(active_spieler):
+                    pairs.append((active_spieler[i], active_spieler[i+1]))
+                else:
+                    pairs.append((active_spieler[i], "-"))
             while len(pairs) <= b_idx:
-                pairs.append((spieler[0] if spieler else "-", spieler[1] if len(spieler) > 1 else "-"))
-            
-            if len(spieler) % 2 != 0:
-                pairs[-1] = (spieler[-1], "-")
-
+                pairs.append(("-", "-"))
             return list(pairs[b_idx])
         
-        # Für Folgerunden (> 1): Up & Down Berechnung inklusive Verlierer vom letzten Board kriegt Freilos (-)
+        # Für Folgerunden (> 1): Up & Down Berechnung
         prev_r = round_num - 1
         res = session.get("results", {})
+        w = {}
+        l = {}
+        for b in active_boards:
+            match_info = res.get((prev_r, b))
+            if match_info and match_info.get("winner"):
+                w[b] = match_info["winner"]
+                l[b] = match_info["loser"]
+            else:
+                w[b] = "-"
+                l[b] = "-"
+                
+        # Wer hat in der Vorsaison/Vorrunde pausiert? Der wandert jetzt auf das letzte Board nach oben/rein
+        # Ermittlung des aktiven Pools der Vorrunde
         prev_boards = get_boards_list(session, prev_r)
-        
-        winners = []
-        losers = []
-        for pb in prev_boards:
-            match_info = res.get((prev_r, pb))
-            if match_info:
-                w = match_info.get("winner", "-")
-                l = match_info.get("loser", "-")
-                winners.append(w)
-                losers.append(l)
+        prev_active_players = []
+        for pb in prev_boards[:boards_count]:
+            m_inf = res.get((prev_r, pb))
+            if m_inf:
+                if m_inf.get("s1"): prev_active_players.append(m_inf["s1"])
+                if m_inf.get("s2"): prev_active_players.append(m_inf["s2"])
             else:
                 p_pair = get_board_players(session, prev_r, pb)
-                winners.append(p_pair[0])
-                losers.append(p_pair[1])
+                if p_pair[0] != "-": prev_active_players.append(p_pair[0])
+                if p_pair[1] != "-": prev_active_players.append(p_pair[1])
                 
-        active_winners = [w for w in winners if w != "-"]
-        active_losers = [l for l in losers if l != "-"]
+        # Wer war in der Pause?
+        current_pausen_spieler = [p for p in spieler if p not in prev_active_players]
         
-        freilos_player = None
-        if len(losers) > 0 and losers[-1] != "-":
-            freilos_player = losers[-1]
-            active_losers = [l for l in losers[:-1] if l != "-"]
+        # Up & Down Zuweisung
+        if b_idx == 0:
+            top_w = w.get("Kaiser B1", "-")
+            next_w = w.get("Board 2", "-") if len(active_boards) > 1 else top_w
+            return [top_w, next_w if next_w != "-" else "-"]
+        
+        if b_idx > 0:
+            prev_board = active_boards[b_idx - 1]
+            next_board = active_boards[b_idx + 1] if b_idx + 1 < len(active_boards) else None
             
-        combined = active_winners + active_losers
-        if freilos_player:
-            combined.append(freilos_player)
+            loser_from_above = l.get(prev_board, "-")
             
-        all_pairs = []
-        i = 0
-        while i < len(combined):
-            p1 = combined[i]
-            p2 = combined[i+1] if i + 1 < len(combined) else "-"
-            all_pairs.append((p1, p2))
-            i += 2
+            # Wenn wir auf dem allerletzten Board sind und es einen Pausenspieler gibt, ersetzt dieser den Verlierer von unten
+            if b_idx == len(active_boards) - 1 and current_pausen_spieler:
+                winner_from_below = current_pausen_spieler[0]
+            else:
+                winner_from_below = w.get(next_board, "-") if next_board else l.get(active_boards[b_idx], "-")
+                
+            return [loser_from_above if loser_from_above != "-" else "-", winner_from_below if winner_from_below != "-" else "-"]
             
-        while len(all_pairs) <= b_idx:
-            all_pairs.append(("-", "-"))
-            
-        return list(all_pairs[b_idx])
+    return ["-", "-"]
 
 def is_board_ready(session, board_name, next_r):
     if next_r == 1:
@@ -1152,11 +1167,11 @@ with tab_regeln:
         """)
 
     with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
+        st.markdown("### 👥 Was passiert bei einer ungeraden Spieleranzahl?")
         st.markdown("""
-        * Wenn wir z. B. zu neunt auf 4 Boards spielen, bekommt auf dem allerletzten Board (Board 4) der Verlierer in der nächsten Runde die Pause (er landet sozusagen auf dem Abstellgleis / kriegt das `-` als Gegner).
-        * Der Spieler, der zuvor in der Pause war / auf den Einsatz gewartet hat, steigt stattdessen auf Board 4 auf und spielt dort gegen den Verlierer von Board 3.
-        * Dadurch wechselt sich die Pause von Runde zu Runde automatisch ab, und das System hält exakt die richtige Reihenfolge ein!
+        * Wenn wir z. B. zu neunt auf 4 Boards spielen, können 8 Spieler spielen und 1 Spieler hat Pause (kommt auf das Abstellgleis).
+        * Wenn auf dem untersten Board (Board 4) ein Spieler verliert, geht dieser in der nächsten Runde auf das Abstellgleis. 
+        * Der Spieler, der zuvor auf dem Abstellgleis warten musste, steigt stattdessen auf Board 4 auf und spielt dort gegen den Verlierer von Board 3. Ansonsten bleibt alles wie gehabt!
         """)
 
     with st.container(border=True):
