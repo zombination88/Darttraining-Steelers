@@ -10,11 +10,16 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # WICHTIG: Füge hier den Link zu deiner eigenen Google Tabelle ein!
 SHEET_URL = "HIER_DEINEN_TABELLEN_LINK_EINFÜGEN" 
 
-
-# Verbindung zu Google Sheets herstellen
-try:
+# --- DATENBANKVERBINDUNG ---
+@st.cache_resource
+def init_connection():
+    # Lädt den Text aus den Secrets
     creds_dict = json.loads(st.secrets["google_json"])
-    conn = st.connection("gsheets", type=GSheetsConnection, **creds_dict)
+    # Baut die Verbindung direkt auf, um den Konflikt mit dem Wort "type" in der JSON zu umgehen
+    return GSheetsConnection("gsheets", **creds_dict)
+
+try:
+    conn = init_connection()
 except Exception as e:
     st.error(f"Fehler bei der Datenbankverbindung. Bitte Secrets prüfen: {e}")
     st.stop()
@@ -63,6 +68,7 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
+# --- UI SETUP ---
 col1, col2 = st.columns([1, 6])
 with col1:
     try:
@@ -88,9 +94,9 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-# Der BDV-Regeln Tab wurde hier entfernt
 tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
+# --- HILFSFUNKTIONEN ---
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
@@ -204,6 +210,7 @@ def is_session_completed(sess):
             return False
     return True
 
+# --- DIALOGE ---
 @st.dialog("➕ Neue Session starten (Passwortgeschützt)")
 def open_new_session_dialog():
     pwd = st.text_input("Passwort eingeben", type="password", key="dialog_pwd_input")
@@ -438,6 +445,7 @@ def open_delete_dialog(session_idx):
             elif pwd != "":
                 st.error("Falsches Passwort!")
 
+# --- TABS INHALTE ---
 with tab_übersicht:
     st.subheader("Übersicht & Live-Status")
     
