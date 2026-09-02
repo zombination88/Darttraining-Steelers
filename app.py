@@ -123,7 +123,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
+tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "Modus & Regeln"])
 
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
@@ -1143,3 +1143,37 @@ with tab_archiv:
                         smart_sync_and_save(st.session_state.sessions_list)
                         st.success("Session gelöscht!")
                         st.rerun()
+
+with tab_regeln:
+    st.subheader("🎯 Modus & Spielablauf (Up & Down)")
+    st.write("Wie funktioniert das System am Trainingsabend? Hier ist die Kurzanleitung für alle Spieler:")
+    
+    with st.container(border=True):
+        st.markdown("### 👑 Das Prinzip: 'Up & Down'")
+        st.markdown("""
+        * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
+        * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
+        """)
+        
+    with st.container(border=True):
+        st.markdown("### 🚦 Die Ampel-Anzeige")
+        st.markdown("""
+        * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen und eintragen!
+        * 🔴 **Wartet:** Ihr müsst noch kurz warten, bis die Spieler von den Nachbarboards fertig sind (da sich der Auf- und Absteiger erst entscheidet).
+        """)
+
+    with st.container(border=True):
+        st.markdown("### ⏱️ Der Ablauf an eurem Board")
+        st.markdown("""
+        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speichert ab.
+        2. **Automatische Weiterleitung:** Der Gewinner steigt automatisch eine Etage höher (oder bleibt Kaiser auf B1), der Verlierer rutscht eine Etage tiefer.
+        3. **Nächste Runde:** Sobald *alle* Boards ihre Ergebnisse eingetragen haben, schaltet die App vollautomatisch in die nächste Runde und setzt die neuen Paarungen zusammen.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
+        st.markdown("""
+        * Wenn wir z. B. zu neunt sind, setzt das System auf dem allerletzten Board einen **Platzhalter (`-`)** ein.
+        * Der Spieler, der gegen das `-` antritt, bekommt in dieser Runde eine kurze Pause (Freilos), steigt danach aber ganz normal wieder ins System ein. 
+        * Das System wechselt diesen Pausenplatz in den Runden automatisch durch, sodass jeder mal aussetzt!
+        """)
