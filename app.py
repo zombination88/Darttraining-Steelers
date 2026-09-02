@@ -75,16 +75,20 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-# --- KOPFZEILE (MOBIL OPTIMIERT) ---
-st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem; text-align: center;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
+# --- KOPFZEILE MIT KLEINEM SYNC-BUTTON ---
+st.markdown("<h1 style='margin: 0; padding-top: 4px; font-size: 2.0rem; text-align: center;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns([1, 1, 1])
-with col2:
+col_m, col_s = st.columns([1, 1])
+with col_m:
     try:
-        with st.popover("🎵", use_container_width=True):
+        with st.popover("🎵 Vereinssong", use_container_width=True):
             st.audio("vereinssong.mp3")
     except Exception:
         pass
+with col_s:
+    if st.button("🔄 Sync", use_container_width=True, help="Cloud-Daten jetzt frisch laden"):
+        st.session_state.sessions_list = load_data()
+        st.rerun()
 
 kader = [
     "Andreas Böhm",
@@ -230,7 +234,6 @@ def get_board_players(session, round_num, board_name):
         l = {}
         for b in boards:
             match_info = res.get((prev_r, b))
-            # HIER IST DER FIX FÜR DAS "-" PLATZHALTER-SYSTEM:
             if match_info and match_info.get("winner") and match_info.get("winner") != "-":
                 w[b] = match_info["winner"]
                 l[b] = match_info["loser"]
@@ -327,7 +330,6 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
         if st.button("Änderung speichern", type="primary", use_container_width=True, key=f"sub_save_{board_name}_{round_num}_{slot_num}"):
             final_name = new_txt.strip() if new_txt.strip() else new_sel
             
-            # SMART-SYNC: Immer frische Daten holen vor dem Speichern!
             frische_daten = load_data()
             target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
             
@@ -484,7 +486,6 @@ def open_new_session_dialog():
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
             aktive_spieler = anwesende + gaeste
             
-            # SMART-SYNC: Hole die Liste direkt vor dem Einfügen!
             frische_daten = load_data()
             new_id = f"S-{len(frische_daten) + 1}"
             boards_cnt = int(anzahl_boards.split()[0])
@@ -582,7 +583,6 @@ def open_edit_session_dialog(session_idx):
             aktive_spieler = anwesende + gaeste
             boards_cnt = int(anzahl_boards.split()[0])
             
-            # SMART-SYNC
             frische_daten = load_data()
             target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
             
@@ -674,7 +674,6 @@ def open_board_dialog(board_name, session_idx):
             if in_score1 == in_score2:
                 st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
             else:
-                # SMART-SYNC
                 frische_daten = load_data()
                 target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
                 
@@ -805,7 +804,6 @@ def open_quick_entry_dialog(session_idx):
                     winner = p1_val if n_s1 > n_s2 else p2_val
                     loser = p2_val if winner == p1_val else p1_val
                     
-                    # SMART-SYNC
                     frische_daten = load_data()
                     target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), session_idx)
                     
@@ -843,7 +841,6 @@ def open_delete_dialog(session_idx):
     with col2:
         if st.button("Unwiderruflich löschen", type="primary", use_container_width=True):
             if pwd == "1521":
-                # SMART-SYNC
                 frische_daten = load_data()
                 target_idx = next((i for i, s in enumerate(frische_daten) if s["id"] == sess["id"]), -1)
                 if target_idx != -1:
@@ -889,33 +886,9 @@ with tab_übersicht:
         
         res = curr_sess.get("results", {})
         
-        # Bestimme die niedrigste noch offene Runde, nur für die Überschrift
-        current_active_round_global = 1
-        for r_check in range(1, total_rounds + 1):
-            boards_in_r = get_boards_list(curr_sess, r_check)
-            round_complete = True
-            for b_n in boards_in_r:
-                if not res.get((r_check, b_n), {}).get("winner"):
-                    round_complete = False
-                    break
-            if not round_complete:
-                current_active_round_global = r_check
-                break
-            else:
-                if r_check == total_rounds:
-                    current_active_round_global = total_rounds
-                    
-        active_boards_list = get_boards_list(curr_sess, current_active_round_global)
-        
-        if is_standard_training and current_active_round_global > singles_rounds:
-            r_head_global = f"Doppelrunde {current_active_round_global - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
-        else:
-            r_head_global = f"Runde {current_active_round_global}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {current_active_round_global}/{total_rounds}"
-            
-        st.markdown(f"#### {r_head_global} ({len(active_boards_list)} Boards aktiv)")
-        
-        # BOARDS UNTEREINANDER (1 Spalte) FÜR HANDY
         cols_per_row = 1
+        active_boards_list = get_boards_list(curr_sess, 1)
+        
         for i in range(0, len(active_boards_list), cols_per_row):
             cols = st.columns(cols_per_row)
             for j in range(cols_per_row):
@@ -923,7 +896,6 @@ with tab_übersicht:
                     b_name = active_boards_list[i + j]
                     with cols[j]:
                         with st.container(border=True):
-                            # HIER DER FIX: Bestimme die Runde FÜR DIESES SPEZIFISCHE BOARD
                             completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
                             next_r_for_board = max(completed_r_for_board) + 1 if completed_r_for_board else 1
                             
