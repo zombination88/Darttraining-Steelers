@@ -101,7 +101,7 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv, tab_bdv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
@@ -1250,7 +1250,3 @@ with tab_archiv:
                 with col_btn3:
                     if st.button("🗑️ Löschen", key=f"arch_del_{idx}", use_container_width=True):
                         open_delete_dialog(idx)
-
-with tab_bdv:
-    st.subheader("Leitfaden Ligabetrieb BDV")
-    st.write("Der Reiter für die BDV-Regeln (wie gewünscht gekürzt bzw. entfernt).")
