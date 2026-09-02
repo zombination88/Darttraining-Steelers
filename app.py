@@ -1222,10 +1222,14 @@ with tab_session:
 
     kaiser_win_counts = {}
     for sess in st.session_state.sessions_list:
-        for (r, b), m_inf in sess.get("results", {}).items():
-            if b == "Kaiser B1" and m_inf.get("winner") and " & " not in m_inf.get("s1", "") and " & " not in m_inf.get("s2", ""):
-                w_name = m_inf.get("winner")
-                kaiser_win_counts[w_name] = kaiser_win_counts.get(w_name, 0) + 1
+        res = sess.get("results", {})
+        total_rounds = sess.get("total_rounds", 4)
+        k_rounds = [r for (r, b), m in res.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        if k_rounds:
+            max_r = max(k_rounds)
+            winner = res.get((max_r, "Kaiser B1"), {}).get("winner")
+            if winner:
+                kaiser_win_counts[winner] = kaiser_win_counts.get(winner, 0) + 1
     
     if kaiser_win_counts:
         top_kaiser = max(kaiser_win_counts, key=kaiser_win_counts.get)
@@ -1263,8 +1267,17 @@ with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.write("Hier kannst du vergangene Sessions nachtragen oder ältere Ergebnisse einsehen, bearbeiten und verwalten.")
     
-    if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_btn"):
-        open_new_session_dialog()
+    col_arc1, col_arc2 = st.columns(2)
+    with col_arc1:
+        if st.button("➕ Vergangene Session nachtragen", type="primary", use_container_width=True, key="retro_session_btn"):
+            open_new_session_dialog()
+    with col_arc2:
+        active_sessions_for_arc = [s for s in st.session_state.sessions_list if not is_session_completed(s)]
+        if active_sessions_for_arc:
+            if st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, key="edit_active_arc_btn"):
+                open_edit_session_dialog(st.session_state.sessions_list.index(active_sessions_for_arc[0]))
+        else:
+            st.button("⚙️ Aktive Session bearbeiten", use_container_width=True, disabled=True)
         
     st.write("")
     if not st.session_state.sessions_list:
