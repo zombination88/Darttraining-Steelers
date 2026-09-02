@@ -5,7 +5,7 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="centered")
+st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
@@ -75,7 +75,7 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
-col1, col2 = st.columns([1, 6])
+col1, col2, col3 = st.columns([1.5, 6, 2.5])
 with col1:
     try:
         with st.popover("🎵 ▾"):
@@ -83,7 +83,12 @@ with col1:
     except Exception:
         pass
 with col2:
-    st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.5rem;'>Wehringer Steelers - Teamtraining</h1>", unsafe_allow_html=True)
+with col3:
+    st.markdown("<div style='padding-top: 6px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Sync", key="sync_button", help="Zieht die neuesten Ergebnisse aus der Cloud", use_container_width=True):
+        st.session_state.sessions_list = load_data()
+        st.rerun()
 
 kader = [
     "Andreas Böhm",
