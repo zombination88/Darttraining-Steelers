@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -123,7 +123,7 @@ def get_boards_list(session, round_num=None):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     return all_boards[:boards_count]
 
-def get_waiting_player(session, round_num):
+def get_resting_player(session, round_num):
     spieler = session.get("spieler", [])
     K = session.get("boards_count", 4)
     has_resting = len(spieler) > 2 * K or (len(spieler) % 2 != 0 and len(spieler) > 1)
@@ -133,6 +133,7 @@ def get_waiting_player(session, round_num):
     if round_num == 1:
         return spieler[2 * K] if len(spieler) > 2 * K else (spieler[-1] if len(spieler) % 2 != 0 else None)
         
+    # For round > 1, the resting player is the loser of the last board in the previous round
     prev_r = round_num - 1
     boards = get_boards_list(session, prev_r)
     if not boards:
@@ -143,7 +144,11 @@ def get_waiting_player(session, round_num):
     if match_info and match_info.get("loser"):
         return match_info["loser"]
     else:
-        return get_waiting_player(session, prev_r)
+        def_players = get_board_players(session, prev_r, last_board)
+        return def_players[1] if len(def_players) > 1 else "-"
+
+def get_waiting_player(session, round_num):
+    return get_resting_player(session, round_num)
 
 def get_board_players(session, round_num, board_name):
     boards = get_boards_list(session, round_num)
@@ -250,7 +255,7 @@ def get_board_players(session, round_num, board_name):
             match_info = res.get((prev_r, b))
             if match_info and match_info.get("winner"):
                 w[b] = match_info["winner"]
-                l[b] = match_info["loser"]
+                l[b] = match_info.get("loser", "")
             else:
                 def_players = get_board_players(session, prev_r, b)
                 w[b] = def_players[0]
@@ -271,8 +276,9 @@ def get_board_players(session, round_num, board_name):
         if b_idx == len(boards) - 1:
             prev_board = boards[b_idx - 1]
             loser_from_above = l.get(prev_board, "-")
-            waiting_p = get_waiting_player(session, round_num)
-            return [loser_from_above, waiting_p if waiting_p else "-"]
+            # The second player on the last board in round > 1 is the player who rested in round_num - 1
+            resting_p_prev = get_resting_player(session, round_num - 1)
+            return [loser_from_above, resting_p_prev if resting_p_prev else "-"]
             
     return ["-", "-"]
 
@@ -520,8 +526,8 @@ def open_quick_entry_dialog(session_idx):
             t180_2 = st.number_input(f"180er ({p2})", min_value=0, max_value=10, value=def_180_2, key=f"qe_180_2_{session_idx}_{current_round}_{b_name}")
             
         ergebnis_str = f"{sc1}:{sc2}"
-        winner = p1 if sc1 > sc2 else (p2 if sc2 > sc1 else "")
-        loser = p2 if winner == p1 else (p1 if winner == p2 else "")
+        winner = p1 if sc1 > sc2 else (p2 if sc2 > sc1 else (p1 if sc1 >= sc2 else p2))
+        loser = p2 if winner == p1 else p1
         
         sess["results"][match_key] = {
             "s1": p1,
@@ -627,7 +633,7 @@ def open_retroactive_session_dialog():
             st.error("Falsches Passwort!")
         return
 
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = date.today() - timedelta(days=1) if 'timedelta' in globals() else date.today()
     session_datum = st.date_input("Datum der Session", yesterday, key="retro_date_input")
     leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], key="retro_leg_input")
     spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"], key="retro_mod_input")
@@ -845,8 +851,8 @@ def open_board_dialog(board_name, session_idx):
         in_avg_2 = st.number_input(f"📊 Match-Average {current_p2}", min_value=0.0, max_value=180.0, value=avg2, step=0.1, key=f"d_avg_2_{board_name}_{session_idx}")
         
     ergebnis = f"{in_score1}:{in_score2}"
-    winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else None)
-    loser = current_p2 if winner == current_p1 else (current_p1 if winner == current_p2 else None)
+    winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else (current_p1 if in_score1 >= in_score2 else current_p2))
+    loser = current_p2 if winner == current_p1 else current_p1
     
     st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Sieger: **{winner if winner else 'Unentschieden'}**")
     
