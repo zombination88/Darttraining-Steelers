@@ -88,7 +88,8 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
-tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "BDV-Regeln"])
+# Der BDV-Regeln Tab wurde hier entfernt
+tab_übersicht, tab_kader, tab_session, tab_archiv = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv"])
 
 def get_boards_list(boards_count):
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -704,55 +705,4 @@ with tab_archiv:
                     if st.button("🗑️ Löschen", key=f"arch_del_btn_{idx}"):
                         open_delete_dialog(idx)
                 st.divider()
-
-with tab_regeln:
-    st.markdown("""
-# **Leitfaden Ligabetrieb BDV – Bezirk Schwaben**
-1.  Mannschaft & Meldung
-2.  Spielmodus & Ablauf (Liga und Pokal)
-3.  Spielbericht & Online-Meldung
-4.  Mannschaftsvorstellung (Kader)
-
-### 1. Mannschaft & Meldung
-  - **Mannschaftsmeldung:** Erledigt.
-  - **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
-
-### 2. Spielmodus & Ablauf (Liga und Pokal)
-  - **Heimspieltag ist Dienstag **
-  - **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
-  - **Aufstellung (3 Blöcke):**
-      - **Block 1:** 4 Einzelspieler.
-      - **Block 2:** 4 Einzelspieler (Reihenfolge 1–4 fix, Wechseloption auf den Positionen möglich).
-      - **Block 3:** 2 Doppel (freie Aufstellung aus dem Tageskader von maximal 8 Spielern; Spieler aus den Einzeln können erneut eingesetzt werden).
-  - **Rahmenbedingungen:**
-      - **Spielzeit:** Mo–Do ab 20:00 Uhr.
-      - **Austragung:** Parallel auf zwei Boards.
-      - **Einwerfzeit:** 30 Minuten für Gäste.
-  - **Board-Zuordnung & Schreiber:**
-    - Die Heimmannschaft schreibt und beginnt auf Board 1.  
-    - Die Gastmannschaft schreibt und beginnt auf Board 2.  
-  - **Schwabenpokal:**
-    - Nur K.O. Runden
-    - Es können bis zu 4-5 Spiele mehr in der Session zur Liga sein (je nach Teamgröße)
-
-### 3. Spielbericht & Online-Meldung
-  - **Papier-Spielbericht:** Händische Führung; alle Sätze und Legs werden notiert und von beiden Kapitänen unterschrieben.
-  - **Ergebnismeldung:** Muss innerhalb von 6 Stunden nach Spielbeginn via Online-Schnellerfassung gemeldet werden.
-  - **Berichtsabgabe:** Vollständige Online-Eingabe innerhalb von 48 Stunden.
-  - **Aufbewahrung:** Die Originale müssen bis Saisonende im Verein aufbewahrt werden.
-
-### 4. Mannschaftsvorstellung (Kader)
-  - Andreas Böhm
-  - Andrino Czombera (Teamcaptain)
-  - Dennis Güttner
-  - Marco Eser
-  - Maximilian Zientner
-  - Michael Kummer
-  - Michael Mak
-  - Michael Neumeier
-  - Thomas Schaudt
-  - Wolfgang Schneider
-    """)
 ```eof
-
-Bitte kopiere den Code und tausche in Zeile 10 `"HIER_DEINEN_TABELLEN_LINK_EINFÜGEN"` durch deinen tatsächlichen Link aus (Achte darauf, dass die Anführungszeichen `"` am Anfang und am Ende des Links stehen bleiben).
