@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import base64
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -78,33 +77,14 @@ def save_data(sessions):
 
 col1, col2 = st.columns([1, 6])
 with col1:
-    logo_b64 = ""
     try:
-        with open("logo.png.png", "rb") as f:
-            logo_b64 = base64.b64encode(f.read()).decode()
+        st.image("logo.png.png", width=85)
     except Exception:
         pass
-        
-    audio_b64 = ""
     try:
-        with open("vereinssong.mp3", "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode()
+        st.audio("vereinssong.mp3")
     except Exception:
         pass
-    
-    if logo_b64:
-        audio_html = f"""
-        <div style="cursor: pointer; text-align: center;" onclick="document.getElementById('vereinssong').play()" title="Klicken für Vereinssong! 🎶">
-            <img src="data:image/png;base64,{logo_b64}" width="85" style="border-radius: 8px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1.0)'"/>
-        </div>
-        <audio id="vereinssong" src="data:audio/mp3;base64,{audio_b64}"></audio>
-        """
-        st.markdown(audio_html, unsafe_allow_html=True)
-    else:
-        try:
-            st.image("logo.png.png", width=85)
-        except Exception:
-            pass
 
 with col2:
     st.markdown("<h1 style='margin: 0; padding-top: 12px; font-size: 2.2rem;'>Wehringer Steeler - Teamtraining</h1>", unsafe_allow_html=True)
@@ -223,7 +203,6 @@ def get_board_players(session, round_num, board_name):
                 pairs.append(("-", "-"))
             return list(pairs[b_idx])
         
-        # Round > 1 Up & Down logic with strict feeder checks
         prev_r = round_num - 1
         res = session.get("results", {})
         w = {}
