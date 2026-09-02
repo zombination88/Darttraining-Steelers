@@ -423,7 +423,7 @@ def open_board_dialog(board_name, session_idx):
             new_p1_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx1, key=f"pop_s1_{board_name}")
             new_p1_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt1_{board_name}")
             
-            if st.button("Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
+            if st.button("🔄 Änderung speichern", key=f"save_s1_{board_name}", type="primary", use_container_width=True):
                 final_p1 = new_p1_txt if new_p1_txt.strip() else new_p1_sel
                 if "results" not in sess: sess["results"] = {}
                 sess["results"][(current_round, board_name)] = {
@@ -434,6 +434,7 @@ def open_board_dialog(board_name, session_idx):
                     "loser": ""
                 }
                 save_data(st.session_state.sessions_list)
+                st.success("Änderung gespeichert!")
                 st.rerun()
                 
         in_score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=score1, key=f"d_score1_{board_name}_{session_idx}")
@@ -449,7 +450,7 @@ def open_board_dialog(board_name, session_idx):
             new_p2_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx2, key=f"pop_s2_{board_name}")
             new_p2_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"pop_txt2_{board_name}")
             
-            if st.button("Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
+            if st.button("🔄 Änderung speichern", key=f"save_s2_{board_name}", type="primary", use_container_width=True):
                 final_p2 = new_p2_txt if new_p2_txt.strip() else new_p2_sel
                 if "results" not in sess: sess["results"] = {}
                 sess["results"][(current_round, board_name)] = {
@@ -460,6 +461,7 @@ def open_board_dialog(board_name, session_idx):
                     "loser": ""
                 }
                 save_data(st.session_state.sessions_list)
+                st.success("Änderung gespeichert!")
                 st.rerun()
                 
         in_score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=score2, key=f"d_score2_{board_name}_{session_idx}")
