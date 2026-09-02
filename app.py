@@ -10,7 +10,6 @@ st.set_page_config(page_title="Wehringer Steeler - Teamtraining", layout="center
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
-# --- DIREKTE DATENBANKVERBINDUNG (GSPREAD) ---
 @st.cache_resource
 def init_connection():
     try:
@@ -248,7 +247,11 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
                     "s2": auto_p[1],
                     "ergebnis": "0:0",
                     "winner": "",
-                    "loser": ""
+                    "loser": "",
+                    "180_s1": 0,
+                    "180_s2": 0,
+                    "avg_s1": 0.0,
+                    "avg_s2": 0.0
                 }
             
             if slot_num == 1:
@@ -397,7 +400,7 @@ def open_edit_session_dialog(session_idx):
             st.success("Session erfolgreich aktualisiert!")
             st.rerun()
 
-@st.dialog("📋 Board-Erfassung")
+@st.dialog("📋 Board-Erfassung & 180er/Average-Tracking")
 def open_board_dialog(board_name, session_idx):
     sess = st.session_state.sessions_list[session_idx]
     total_rounds = sess.get("total_rounds", 4)
@@ -424,20 +427,30 @@ def open_board_dialog(board_name, session_idx):
             score2 = int(existing_match.get("ergebnis", "3:0").split(":")[1])
         except:
             score1, score2 = 3, 0
+        t1_180 = int(existing_match.get("180_s1", 0))
+        t2_180 = int(existing_match.get("180_s2", 0))
+        avg1 = float(existing_match.get("avg_s1", 0.0))
+        avg2 = float(existing_match.get("avg_s2", 0.0))
     else:
         auto_players = get_board_players(sess, current_round, board_name)
         current_p1, current_p2 = auto_players[0], auto_players[1]
         score1, score2 = 3, 0
+        t1_180, t2_180 = 0, 0
+        avg1, avg2 = 0.0, 0.0
 
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(f"**Team / Spieler 1 (Heim):** `{current_p1}`")
+        st.markdown(f"**Heim:** `{current_p1}`")
         in_score1 = st.number_input(f"Legs Heim", min_value=0, max_value=5, value=score1, key=f"d_score1_{board_name}_{session_idx}")
+        in_180_1 = st.number_input(f"🎯 180er von {current_p1}", min_value=0, max_value=20, value=t1_180, key=f"d_180_1_{board_name}_{session_idx}")
+        in_avg_1 = st.number_input(f"📊 Match-Average {current_p1}", min_value=0.0, max_value=180.0, value=avg1, step=0.1, key=f"d_avg_1_{board_name}_{session_idx}")
         
     with col2:
-        st.markdown(f"**Team / Spieler 2 (Gast):** `{current_p2}`")
+        st.markdown(f"**Gast:** `{current_p2}`")
         in_score2 = st.number_input(f"Legs Gast", min_value=0, max_value=5, value=score2, key=f"d_score2_{board_name}_{session_idx}")
+        in_180_2 = st.number_input(f"🎯 180er von {current_p2}", min_value=0, max_value=20, value=t2_180, key=f"d_180_2_{board_name}_{session_idx}")
+        in_avg_2 = st.number_input(f"📊 Match-Average {current_p2}", min_value=0.0, max_value=180.0, value=avg2, step=0.1, key=f"d_avg_2_{board_name}_{session_idx}")
         
     ergebnis = f"{in_score1}:{in_score2}"
     winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else None)
@@ -458,10 +471,14 @@ def open_board_dialog(board_name, session_idx):
                     "s2": current_p2,
                     "ergebnis": ergebnis,
                     "winner": winner,
-                    "loser": loser
+                    "loser": loser,
+                    "180_s1": in_180_1,
+                    "180_s2": in_180_2,
+                    "avg_s1": in_avg_1,
+                    "avg_s2": in_avg_2
                 }
                 save_data(st.session_state.sessions_list)
-                st.success("Ergebnis abgeschlossen!")
+                st.success("Ergebnis und Statistiken erfolgreich gespeichert!")
                 st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
@@ -583,7 +600,6 @@ with tab_übersicht:
                                 
                                 st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Runde {next_r}/{total_rounds}</p>", unsafe_allow_html=True)
                                 
-                                # Spieler 1 mit Wechsel-Button daneben
                                 sc1, sc2 = st.columns([5, 2])
                                 sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
                                 with sc2:
@@ -592,7 +608,6 @@ with tab_übersicht:
                                 
                                 st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                 
-                                # Spieler 2 mit Wechsel-Button daneben
                                 sc3, sc4 = st.columns([5, 2])
                                 sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
                                 with sc4:
@@ -610,8 +625,48 @@ with tab_übersicht:
     col_l, col_r = st.columns(2)
     with col_l:
         st.markdown("### Letzte Session")
-        last_s = st.session_state.sessions_list[0] if st.session_state.sessions_list else {"datum": "–"}
-        st.info(f"**Datum:** {last_s.get('datum', '–')}\n\n**Kaiser B1:** Noch offen\n\n**Höchstes Finish:** – (Spieler offen)\n\n**Meiste 180er:** – (Spieler offen)\n\n**Fahrstuhl-Award:** Offen")
+        last_s = st.session_state.sessions_list[0] if st.session_state.sessions_list else None
+        
+        if last_s:
+            l_date = last_s.get('datum', '–')
+            l_results = last_s.get('results', {})
+            l_total_rounds = last_s.get('total_rounds', 4)
+            
+            kaiser_winner = "Noch offen"
+            final_match = l_results.get((l_total_rounds, "Kaiser B1"))
+            if final_match and final_match.get("winner"):
+                kaiser_winner = final_match.get("winner")
+            
+            count_180s = {}
+            match_avgs = []
+            for m in l_results.values():
+                s1_name = m.get("s1", "")
+                s2_name = m.get("s2", "")
+                c1 = int(m.get("180_s1", 0))
+                c2 = int(m.get("180_s2", 0))
+                a1 = float(m.get("avg_s1", 0.0))
+                a2 = float(m.get("avg_s2", 0.0))
+                
+                if s1_name: count_180s[s1_name] = count_180s.get(s1_name, 0) + c1
+                if s2_name: count_180s[s2_name] = count_180s.get(s2_name, 0) + c2
+                if a1 > 0: match_avgs.append((s1_name, a1))
+                if a2 > 0: match_avgs.append((s2_name, a2))
+            
+            most_180_text = "Keine"
+            if count_180s:
+                top_player = max(count_180s, key=count_180s.get)
+                if count_180s[top_player] > 0:
+                    most_180_text = f"{top_player} ({count_180s[top_player]}x)"
+            
+            best_avg_text = "–"
+            if match_avgs:
+                top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
+                best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
+            
+            st.info(f"**Datum:** {l_date}\n\n**Kaiser B1:** 👑 {kaiser_winner}\n\n**Höchster Match-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}\n\n**Fahrstuhl-Award:** Offen")
+        else:
+            st.info("**Datum:** –\n\n**Kaiser B1:** Noch offen\n\n**Höchster Match-Average:** –\n\n**Meiste 180er:** –\n\n**Fahrstuhl-Award:** Offen")
+
     with col_r:
         st.markdown("### Spitzenreiter & Formkurve")
         st.caption("Sortiert nach Siegquote und absolvierten Matches")
@@ -644,9 +699,9 @@ with tab_übersicht:
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
-    st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler).")
+    st.write("Live berechnete Bilanz des festen Stammkaders (exklusive Gastspieler) inklusive 180er und Match-Averages.")
     
-    stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0} for p in kader}
+    stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0} for p in kader}
     
     player_matches_played = 0
     total_wins = 0
@@ -656,6 +711,23 @@ with tab_kader:
         for match in sess.get("results", {}).values():
             winner = match.get("winner", "")
             loser = match.get("loser", "")
+            s1 = match.get("s1", "")
+            s2 = match.get("s2", "")
+            h1 = int(match.get("180_s1", 0))
+            h2 = int(match.get("180_s2", 0))
+            a1 = float(match.get("avg_s1", 0.0))
+            a2 = float(match.get("avg_s2", 0.0))
+            
+            if s1 in stats:
+                stats[s1]["180er"] += h1
+                if a1 > 0:
+                    stats[s1]["Avg_Sum"] += a1
+                    stats[s1]["Avg_Count"] += 1
+            if s2 in stats:
+                stats[s2]["180er"] += h2
+                if a2 > 0:
+                    stats[s2]["Avg_Sum"] += a2
+                    stats[s2]["Avg_Count"] += 1
             
             if winner:
                 for p in winner.split(" & "):
@@ -691,13 +763,18 @@ with tab_kader:
         m = stats[p]["Matches"]
         s = stats[p]["Siege"]
         n = stats[p]["Niederlagen"]
+        t180 = stats[p]["180er"]
+        acount = stats[p]["Avg_Count"]
+        avg_val = f"{(stats[p]['Avg_Sum'] / acount):.1f}" if acount > 0 else "–"
         quote = f"{(s / m * 100):.0f}%" if m > 0 else "0%"
         table_rows.append({
             "Spieler": p,
             "Matches": m,
             "Siege": s,
             "Niederlagen": n,
-            "Siegquote": quote
+            "Siegquote": quote,
+            "🎯 180er": t180,
+            "📊 Ø Average": avg_val
         })
         
     df_kader = pd.DataFrame(table_rows)
@@ -779,7 +856,7 @@ with tab_regeln:
   - **Spielerkader:** Besteht aus 10 Spielern. Die namentliche Meldung erfolgt bis zum 31. August in der Online-Software (nuLiga).
 
 ### 2. Spielmodus & Ablauf (Liga und Pokal)
-  - **Heimspieltag:** Dienstag.
+  - **Heimspieltag ist Dienstag.**
   - **Modus:** 4er-Team; ein Spieltag umfasst 8 Einzel und 2 Doppel (501 Steeldart, Best-of-5, Double-Out).
   - **Aufstellung (3 Blöcke):**
       - **Block 1:** 4 Einzelspieler.
