@@ -713,6 +713,7 @@ def open_board_dialog(board_name, session_idx):
         return
 
     modus = sess.get("modus", "Up & Down")
+    modus_leg = sess.get("modus_leg", "Best of 5")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
@@ -767,8 +768,29 @@ def open_board_dialog(board_name, session_idx):
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("Ergebnis abschließen", type="primary", use_container_width=True, key=f"d_save_{board_name}_{session_idx}"):
+            valid_score = True
+            error_msg = ""
+            
             if in_score1 == in_score2:
-                st.error("Ein Unentschieden ist im Up & Down nicht möglich.")
+                valid_score = False
+                error_msg = "Ein Unentschieden ist im Up & Down nicht möglich."
+            elif modus_leg == "Best of 3":
+                if max(in_score1, in_score2) != 2:
+                    valid_score = False
+                    error_msg = "Bei 'Best of 3' muss der Sieger genau 2 Legs haben (z.B. 2:0 oder 2:1)."
+                elif min(in_score1, in_score2) > 1:
+                     valid_score = False
+                     error_msg = "Bei 'Best of 3' kann der Verlierer maximal 1 Leg haben."
+            elif modus_leg == "Best of 5":
+                if max(in_score1, in_score2) != 3:
+                    valid_score = False
+                    error_msg = "Bei 'Best of 5' muss der Sieger genau 3 Legs haben (z.B. 3:0, 3:1 oder 3:2)."
+                elif min(in_score1, in_score2) > 2:
+                     valid_score = False
+                     error_msg = "Bei 'Best of 5' kann der Verlierer maximal 2 Legs haben."
+
+            if not valid_score:
+                st.error(error_msg)
             else:
                 if "results" not in sess:
                     sess["results"] = {}
@@ -1300,45 +1322,80 @@ with tab_archiv:
                                             smart_sync_and_save(st.session_state.sessions_list)
                                             st.success("Spielstand erfolgreich gelöscht!")
                             st.divider()
+                
+                with st.expander("⚡ Blitzeintrag & Korrektur (Admin)"):
+                    pwd_blitz = st.text_input("Passwort zur Freischaltung:", type="password", key=f"blitz_pwd_{sess['id']}")
+                    if pwd_blitz == "1521":
+                        st.success("Freigeschaltet")
+                        total_rounds = sess.get("total_rounds", 4)
+                        modus_leg = sess.get("modus_leg", "Best of 5")
+                        for r in range(1, total_rounds + 1):
+                            st.markdown(f"**Runde {r}**")
+                            boards_in_r = get_boards_list(sess, r)
+                            for b_name in boards_in_r:
+                                match_info = sess.get("results", {}).get((r, b_name), {})
+                                auto_p = get_board_players(sess, r, b_name)
+                                
+                                p1 = match_info.get("s1", auto_p[0])
+                                p2 = match_info.get("s2", auto_p[1])
+                                
+                                try:
+                                    s1, s2 = map(int, match_info.get("ergebnis", "0:0").split(":"))
+                                except:
+                                    s1, s2 = 0, 0
+                                    
+                                c_l, c_m, c_r = st.columns([4, 1, 4])
+                                with c_l:
+                                    sc1 = st.number_input(f"{p1}", min_value=0, max_value=5, value=s1, key=f"blitz_{sess['id']}_{r}_{b_name}_1")
+                                with c_m:
+                                    st.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
+                                with c_r:
+                                    sc2 = st.number_input(f"{p2}", min_value=0, max_value=5, value=s2, key=f"blitz_{sess['id']}_{r}_{b_name}_2")
+                                
+                                c_save, c_del = st.columns(2)
+                                with c_save:
+                                    if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                        valid_score = True
+                                        error_msg = ""
+                                        
+                                        if sc1 == sc2:
+                                            valid_score = False
+                                            error_msg = "Unentschieden ist ungültig!"
+                                        elif modus_leg == "Best of 3":
+                                            if max(sc1, sc2) != 2:
+                                                valid_score = False
+                                                error_msg = "Bei 'Best of 3' muss der Sieger genau 2 Legs haben."
+                                            elif min(sc1, sc2) > 1:
+                                                 valid_score = False
+                                                 error_msg = "Bei 'Best of 3' kann der Verlierer maximal 1 Leg haben."
+                                        elif modus_leg == "Best of 5":
+                                            if max(sc1, sc2) != 3:
+                                                valid_score = False
+                                                error_msg = "Bei 'Best of 5' muss der Sieger genau 3 Legs haben."
+                                            elif min(sc1, sc2) > 2:
+                                                 valid_score = False
+                                                 error_msg = "Bei 'Best of 5' kann der Verlierer maximal 2 Legs haben."
 
-with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
-    
-    with st.container(border=True):
-        st.markdown("### 👑 Das Prinzip: 'Up & Down'")
-        st.markdown("""
-        * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
-        * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
-        """)
-        
-    with st.container(border=True):
-        st.markdown("### 🚦 Die Ampel-Anzeige")
-        st.markdown("""
-        * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen und eintragen!
-        * 🔴 **Wartet:** Ihr müsst noch kurz warten, bis die Spieler von den Nachbarboards fertig sind (da sich der Auf- und Absteiger erst entscheidet).
-        """)
-
-    with st.container(border=True):
-        st.markdown("### ⏱️ Der Ablauf an eurem Board")
-        st.markdown("""
-        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speichert ab.
-        2. **Automatische Weiterleitung:** Der Gewinner steigt automatisch eine Etage höher (oder bleibt Kaiser auf B1), der Verlierer rutscht eine Etage tiefer.
-        3. **Nächste Runde:** Sobald *alle* Boards ihre Ergebnisse eingetragen haben, schaltet die App vollautomatisch in die nächste Runde und setzt die neuen Paarungen zusammen.
-        """)
-
-    with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
-        st.markdown("""
-        * Wenn wir z. B. zu neunt sind, setzt das System auf dem allerletzten Board einen **Platzhalter (`-`)** ein.
-        * Wer in der Runde zuvor auf dem allerletzten Board verloren hat, bekommt nun gegen diesen Platzhalter ein Freilos (die Pause).
-        * Da sich durch den Auf- und Abstieg in jeder Runde ein anderer Spieler auf dem allerletzten Board wiederfindet, wechselt sich das Freilos ganz automatisch ab, sodass im Laufe des Abends jeder einmal aussetzt!
-        """)
-
-    with st.container(border=True):
-        st.markdown("### 📋 Wie werden die Spieler für eine *neue* Session aufgestellt?")
-        st.markdown("""
-        * **Auswertung der Vorsession:** Für die 1. Runde einer neuen Session schaut das System nach, wie die Spieler am Ende der *letzten* Session platziert waren.
-        * **Bottom-to-Top Reihenfolge:** Die Spieler werden anhand des letzten Endstands von unten nach oben eingeteilt (wer am Ende ganz unten war, fängt in Runde 1 oben an, neue Spieler werden vorne einsortiert). 
-        * **Vollautomatisch:** Ihr müsst euch um die Aufstellung zu Beginn des Abends keine Gedanken machen – das System setzt sich beim Starten einer neuen Session selbstständig zusammen!
-        """)
+                                        if not valid_score:
+                                            st.error(error_msg)
+                                        else:
+                                            winner = p1 if sc1 > sc2 else p2
+                                            loser = p2 if sc1 > sc2 else p1
+                                            if "results" not in sess: sess["results"] = {}
+                                            # Alte Werte behalten falls vorhanden, sonst Null
+                                            old_180_1 = match_info.get("180_s1", 0)
+                                            old_180_2 = match_info.get("180_s2", 0)
+                                            old_avg_1 = match_info.get("avg_s1", 0.0)
+                                            old_avg_2 = match_info.get("avg_s2", 0.0)
+                                            
+                                            sess["results"][(r, b_name)] = {
+                                                "s1": p1, "s2": p2, "ergebnis": f"{sc1}:{sc2}",
+                                                "winner": winner, "loser": loser,
+                                                "180_s1": old_180_1, "180_s2": old_180_2,
+                                                "avg_s1": old_avg_1, "avg_s2": old_avg_2
+                                            }
+                                            st.session_state.sessions_list[orig_idx] = sess
+                                            smart_sync_and_save(st.session_state.sessions_list)
+                                            st.success("Ergebnis blitzschnell gespeichert!")
+                                with c_del:
+                                    if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
