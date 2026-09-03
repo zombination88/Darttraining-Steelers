@@ -100,7 +100,7 @@ def delete_session(session_id):
         save_data(fresh_data)
         st.session_state.sessions_list = fresh_data
     else:
-        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
+        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id"] != session_id]
         save_data(st.session_state.sessions_list)
 
 st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
@@ -346,8 +346,6 @@ def is_board_ready(session, board_name, next_r):
     total_rounds = session.get("total_rounds", 4)
     singles_rounds = session.get("singles_rounds", total_rounds - 2 if modus == "Standard-Training (Einzel + Coop)" and total_rounds > 2 else total_rounds)
     
-    # STRIKTE PRÜFUNG: Wenn Standard-Training und der Übergang zur Koop-Phase (Doppel) ansteht, 
-    # MÜSSEN ALLE EINZEL-RUNDEN KOMPLETT ABGESCHLOSSEN SEIN!
     if modus == "Standard-Training (Einzel + Coop)" and next_r == singles_rounds + 1:
         res = session.get("results", {})
         base_boards = get_boards_list(session, 1)
@@ -551,10 +549,11 @@ def open_session_summary_dialog(session_idx):
                         <p style='margin: 0; font-style: italic; color: #888;'>Match wurde nicht beendet.</p>
                     </div>
                     """, unsafe_allow_html=True)
+            st.divider()
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
-    # 2. Koop / Doppel-Phase anzeigen (falls vorhanden oder reiner Koop-Modus)
+    # 2. Koop / Doppel-Phase anzeigen (mit Platz 1, Platz 2 Format)
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
@@ -563,20 +562,27 @@ def open_session_summary_dialog(session_idx):
         coop_found = False
         for r in range(coop_start_round, total_rounds + 1):
             coop_boards = get_boards_list(sess, r)
+            r_num_display = r - singles_rounds if is_standard_training else r
             for b_name in coop_boards:
                 m_info = res.get((r, b_name))
                 if m_info and m_info.get("winner"):
                     coop_found = True
-                    r_num_display = r - singles_rounds if is_standard_training else r
-                    team1 = m_info.get("s1", "–")
-                    team2 = m_info.get("s2", "–")
+                    winner_team = m_info.get("winner", "–")
+                    loser_team = m_info.get("loser", "–")
                     ergebnis = m_info.get("ergebnis", "–")
-                    winner = m_info.get("winner", "–")
                     st.markdown(f"""
                     <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
                         <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>Runde {r_num_display} — {b_name}</h5>
-                        <p style='margin: 0; font-size: 0.95em;'>⚔️ {team1} vs {team2}</p>
-                        <p style='margin: 0; font-size: 0.95em;'>Ergebnis: <b>{ergebnis}</b> | Sieger: <b>{winner}</b></p>
+                        <p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz (Team): <b>{winner_team}</b></p>
+                        <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz (Team): <b>{loser_team}</b></p>
+                        <p style='margin: 0; font-size: 0.85em; color: #aaa; margin-top: 4px;'>Ergebnis: {ergebnis}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>Runde {r_num_display} — {b_name}</h5>
+                        <p style='margin: 0; font-style: italic; color: #888;'>Match wurde nicht beendet.</p>
                     </div>
                     """, unsafe_allow_html=True)
         if not coop_found:
@@ -927,7 +933,7 @@ with tab_übersicht:
         
         res = curr_sess.get("results", {})
         
-        # Board-Ansicht Logik: Bei Koop oder in der Coop-Phase nur Kaiser B1 und Board 2
+        # Board-Ansicht Logik: Bei Koop oder in der Coop-Phase NUR Kaiser B1 und Board 2
         if modus == "Koop 2vs2 (Up & Down)":
             active_boards_list = ["Kaiser B1", "Board 2"]
         elif is_standard_training:
@@ -1335,9 +1341,7 @@ def open_delete_session_dialog(session_id_to_delete):
     with col2:
         if st.button("Löschen bestätigen", type="primary", use_container_width=True):
             if del_pwd == "1521":
-                filtered_sessions = [s for s in st.session_state.sessions_list if s["id"] != session_id_to_delete]
-                st.session_state.sessions_list = filtered_sessions
-                save_data(st.session_state.sessions_list)
+                delete_session(session_id_to_delete)
                 st.success("Session wurde erfolgreich gelöscht!")
                 st.rerun()
             elif del_pwd:
