@@ -1110,16 +1110,29 @@ with tab_archiv:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        for idx, sess in enumerate(st.session_state.sessions_list):
+        # Sortiere nach Session-ID (die Zahl nach dem 'S-') absteigend, damit die neueste immer oben ist.
+        def get_session_num(sess):
+            try:
+                return int(sess['id'].split('-')[1])
+            except:
+                return 0
+                
+        sorted_indices = sorted(range(len(st.session_state.sessions_list)), key=lambda i: get_session_num(st.session_state.sessions_list[i]), reverse=True)
+        
+        for idx in sorted_indices:
+            sess = st.session_state.sessions_list[idx]
             with st.container(border=True):
                 status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
                 st.markdown(f"**{sess['id']}** — {sess['datum']} {status_text}")
                 
-                col_btn1, col_btn2 = st.columns(2)
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
                     if st.button("📊 Ansehen", key=f"arch_view_{idx}", use_container_width=True):
                         open_session_archive_dialog(idx)
                 with col_btn2:
+                    if st.button("⚙️ Bearbeiten", key=f"arch_edit_{idx}", use_container_width=True):
+                        open_edit_session_dialog(idx)
+                with col_btn3:
                     if st.button("🗑️ Löschen", key=f"arch_del_{idx}", use_container_width=True):
                         confirm_delete_session(idx)
                         
