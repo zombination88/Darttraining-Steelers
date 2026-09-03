@@ -553,39 +553,79 @@ def open_session_summary_dialog(session_idx):
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
-    # 2. Koop / Doppel-Phase anzeigen (mit Platz 1, Platz 2 Format)
+    # 2. Koop / Doppel-Phase Gesamtrangliste
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
     if has_coop:
-        st.markdown("#### 🤝 Koop / Doppel-Phase")
-        coop_found = False
+        st.markdown("#### 🤝 Koop / Doppel-Phase — Gesamtwertung")
+        teams = sess.get("coop_teams", [])
+        team_stats = {t: {"wins": 0, "losses": 0, "legs_won": 0, "legs_lost": 0, "matches": 0} for t in teams}
+        
         for r in range(coop_start_round, total_rounds + 1):
             coop_boards = get_boards_list(sess, r)
-            r_num_display = r - singles_rounds if is_standard_training else r
             for b_name in coop_boards:
                 m_info = res.get((r, b_name))
                 if m_info and m_info.get("winner"):
-                    coop_found = True
-                    winner_team = m_info.get("winner", "–")
-                    loser_team = m_info.get("loser", "–")
-                    ergebnis = m_info.get("ergebnis", "–")
-                    st.markdown(f"""
-                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>Runde {r_num_display} — {b_name}</h5>
-                        <p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz (Team): <b>{winner_team}</b></p>
-                        <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz (Team): <b>{loser_team}</b></p>
-                        <p style='margin: 0; font-size: 0.85em; color: #aaa; margin-top: 4px;'>Ergebnis: {ergebnis}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>Runde {r_num_display} — {b_name}</h5>
-                        <p style='margin: 0; font-style: italic; color: #888;'>Match wurde nicht beendet.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-        if not coop_found:
+                    winner = m_info.get("winner")
+                    ergebnis = m_info.get("ergebnis", "0:0")
+                    try:
+                        l1, l2 = map(int, ergebnis.split(":"))
+                    except:
+                        l1, l2 = 0, 0
+                    
+                    s1 = m_info.get("s1")
+                    s2 = m_info.get("s2")
+                    
+                    if winner == s1:
+                        w_legs, l_legs = l1, l2
+                    else:
+                        w_legs, l_legs = l2, l1
+                        
+                    if s1 in team_stats:
+                        team_stats[s1]["matches"] += 1
+                        if winner == s1:
+                            team_stats[s1]["wins"] += 1
+                            team_stats[s1]["legs_won"] += w_legs
+                            team_stats[s1]["legs_lost"] += l_legs
+                        else:
+                            team_stats[s1]["losses"] += 1
+                            team_stats[s1]["legs_won"] += l_legs
+                            team_stats[s1]["legs_lost"] += w_legs
+                            
+                    if s2 in team_stats:
+                        team_stats[s2]["matches"] += 1
+                        if winner == s2:
+                            team_stats[s2]["wins"] += 1
+                            team_stats[s2]["legs_won"] += w_legs
+                            team_stats[s2]["legs_lost"] += l_legs
+                        else:
+                            team_stats[s2]["losses"] += 1
+                            team_stats[s2]["legs_won"] += l_legs
+                            team_stats[s2]["legs_lost"] += w_legs
+
+        sorted_teams = sorted(
+            team_stats.items(), 
+            key=lambda x: (x[1]["wins"], x[1]["legs_won"] - x[1]["legs_lost"], x[1]["legs_won"]), 
+            reverse=True
+        )
+        
+        rank = 1
+        coop_found = False
+        for team_name, stats in sorted_teams:
+            if stats["matches"] > 0 or len(sorted_teams) <= 5:
+                coop_found = True
+                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
+                leg_diff = stats["legs_won"] - stats["legs_lost"]
+                diff_str = f"+{leg_diff}" if leg_diff > 0 else str(leg_diff)
+                st.markdown(f"""
+                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'>
+                    <p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p>
+                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Niederlagen: {stats['losses']} | Legs: {stats['legs_won']}:{stats['legs_lost']} ({diff_str})</p>
+                </div>
+                """, unsafe_allow_html=True)
+                rank += 1
+        if not coop_found or all(s["matches"] == 0 for _, s in sorted_teams):
             st.info("Es wurden noch keine Koop-Matches in dieser Session beendet.")
 
     if st.button("Schließen", use_container_width=True):
@@ -933,7 +973,6 @@ with tab_übersicht:
         
         res = curr_sess.get("results", {})
         
-        # Board-Ansicht Logik: Bei Koop oder in der Coop-Phase NUR Kaiser B1 und Board 2
         if modus == "Koop 2vs2 (Up & Down)":
             active_boards_list = ["Kaiser B1", "Board 2"]
         elif is_standard_training:
@@ -1374,7 +1413,6 @@ with tab_archiv:
 
                 st.divider()
                 
-                # RUNDEN-FÜR-RUNDEN BLITZEINTRAG WIZARD
                 is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
                 if is_checked:
                     blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
@@ -1457,14 +1495,14 @@ with tab_archiv:
                         st.error("Falsches Passwort!")
 
 with tab_regeln:
-    st.subheader("🎯 Modus, Regeln & WhatsApp-Ablauf")
+    st.subheader("🎯 Modus, Regeln & Ablauf")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den WhatsApp-Workflow, den Auf- und Abstieg sowie den Koop-Modus.")
     
     with st.container(border=True):
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
         * **Die Umfrage:** Der Teamcoach startet einmalig (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
-        * **Der Startschuss:** Sobald genügend Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
+        * **Der Startschuss:** Sobald die Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
     with st.container(border=True):
