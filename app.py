@@ -547,8 +547,38 @@ def open_session_archive_dialog(session_idx):
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
     
-    res = sess.get("results", {})
+    # Zeiterfassung & Durchschnittszeiten berechnen
+    start_t = sess.get("start_time")
+    end_t = sess.get("end_time")
     total_rounds = sess.get("total_rounds", 4)
+    res = sess.get("results", {})
+    
+    if start_t and end_t:
+        try:
+            t1 = datetime.strptime(start_t, "%H:%M")
+            t2 = datetime.strptime(end_t, "%H:%M")
+            diff_min = (t2 - t1).total_seconds() / 60
+            if diff_min > 0:
+                avg_min_round = diff_min / total_rounds if total_rounds > 0 else 0
+                total_legs = 0
+                for match in res.values():
+                    erg = match.get("ergebnis", "0:0")
+                    try:
+                        l1, l2 = map(int, erg.split(":"))
+                        total_legs += l1 + l2
+                    except:
+                        pass
+                avg_min_leg = diff_min / total_legs if total_legs > 0 else 0
+                
+                st.markdown(f"""
+                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 12px; background-color: #1e1e1e;'>
+                    <p style='margin: 0; font-size: 0.95em;'>⏱️ <b>Zeitmanagement:</b> {start_t} – {end_t} Uhr ({int(diff_min)} Min. Gesamt)</p>
+                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>🔄 Ø {avg_min_round:.1f} Min. pro Runde | 🎯 Ø {avg_min_leg:.1f} Min. pro Leg</p>
+                </div>
+                """, unsafe_allow_html=True)
+        except:
+            pass
+
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
@@ -618,7 +648,6 @@ def open_session_summary_dialog(session_idx):
             diff_min = (t2 - t1).total_seconds() / 60
             if diff_min > 0:
                 avg_min_round = diff_min / total_rounds if total_rounds > 0 else 0
-                
                 total_legs = 0
                 for match in res.values():
                     erg = match.get("ergebnis", "0:0")
