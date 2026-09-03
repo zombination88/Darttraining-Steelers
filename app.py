@@ -143,7 +143,6 @@ def get_or_create_teams(session, all_sessions):
     
     spieler = [p for p in session.get("spieler", []) if p != "-"]
     
-    # Finde die Paare der vorherigen Koop/2v2 Session
     prev_pairs = set()
     for s in all_sessions:
         if s["id"] != session["id"] and s.get("modus") in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]:
@@ -153,7 +152,6 @@ def get_or_create_teams(session, all_sessions):
                     if len(parts) == 2 and "-" not in t:
                         prev_pairs.add(frozenset([parts[0].strip(), parts[1].strip()]))
             else:
-                # Fallback aus Spielerliste rekonstruieren falls nötig
                 s_spiel = [p for p in s.get("spieler", []) if p != "-"]
                 for i in range(0, len(s_spiel)-1, 2):
                     prev_pairs.add(frozenset([s_spiel[i], s_spiel[i+1]]))
@@ -265,7 +263,6 @@ def get_board_players(session, round_num, board_name):
         teams = get_or_create_teams(session, st.session_state.sessions_list)
         n_teams = len(teams)
         
-        # Round-Robin Spielplan für 5 Teams auf 2 Boards
         if n_teams == 5:
             schedules = {
                 1: [(0, 1), (2, 3)],
@@ -569,7 +566,7 @@ def open_new_session_dialog():
     if spielmodus == "Standard-Training (Einzel + Coop)":
         st.write("### Runden-Aufteilung")
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 6)), index=4)
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1)
         total_rounds = singles_rounds + coop_rounds
         st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel + {coop_rounds} Runden Doppel (Coop).")
     elif spielmodus == "Koop 2vs2 (Up & Down)":
@@ -607,14 +604,13 @@ def open_new_session_dialog():
     gewaehlte_boards_zahl = int(anzahl_boards.split()[0])
     max_moegliche_boards = get_max_boards_for_players(len(aktive_spieler))
     
+    can_save = True
     if len(aktive_spieler) < 2:
         st.error("🚨 Fehler: Bitte wähle mindestens 2 Spieler aus!")
         can_save = False
     elif gewaehlte_boards_zahl > max_moegliche_boards:
         st.error(f"🚨 Fehler: Zu viele Boards! Für {len(aktive_spieler)} Spieler sind maximal {max_moegliche_boards} Boards möglich.")
         can_save = False
-    else:
-        can_save = True
 
     col_b1, col_b2 = st.columns(2)
     with col_b1:
@@ -623,7 +619,14 @@ def open_new_session_dialog():
     with col_b2:
         if st.button("Session starten", type="primary", use_container_width=True, disabled=not can_save):
             if can_save:
-                new_id = f"S-{len(st.session_state.sessions_list) + 1}"
+                max_id = 0
+                for s in st.session_state.sessions_list:
+                    try:
+                        num = int(s["id"].split("-")[1])
+                        if num > max_id: max_id = num
+                    except:
+                        pass
+                new_id = f"S-{max_id + 1}"
                 
                 new_session = {
                     "id": new_id,
@@ -638,7 +641,6 @@ def open_new_session_dialog():
                     "gaeste": gaeste,
                     "results": {}
                 }
-                # Generiere direkt die Teams für den Fall von Koop
                 if spielmodus in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]:
                     get_or_create_teams(new_session, st.session_state.sessions_list)
 
@@ -677,7 +679,7 @@ def open_edit_session_dialog(session_idx):
         curr_coop = curr_total - curr_singles
         
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1 if 1 <= curr_singles <= 10 else 3, key=f"edit_singles_{session_idx}")
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 6)), index=curr_coop-1 if 1 <= curr_coop <= 5 else 4, key=f"edit_coop_{session_idx}")
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=curr_coop-1 if 1 <= curr_coop <= 4 else 1, key=f"edit_coop_{session_idx}")
         total_rounds = singles_rounds + coop_rounds
     else:
         singles_rounds = 0
@@ -717,14 +719,13 @@ def open_edit_session_dialog(session_idx):
     gewaehlte_boards_zahl = int(anzahl_boards.split()[0])
     max_moegliche_boards = get_max_boards_for_players(len(aktive_spieler))
     
+    can_save = True
     if len(aktive_spieler) < 2:
         st.error("🚨 Fehler: Bitte wähle mindestens 2 Spieler aus!")
         can_save = False
     elif gewaehlte_boards_zahl > max_moegliche_boards:
         st.error(f"🚨 Fehler: Zu viele Boards! Für {len(aktive_spieler)} Spieler sind maximal {max_moegliche_boards} Boards möglich.")
         can_save = False
-    else:
-        can_save = True
 
     col_b1, col_b2 = st.columns(2)
     with col_b1:
@@ -1305,20 +1306,33 @@ with tab_archiv:
 
                 st.divider()
                 
+                # VERBesserter Blitzeintrag (Runde für Runde Modus)
                 is_checked = st.checkbox(f"⚡ Blitzeintrag & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
                 if is_checked:
                     blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
                     if blitz_pwd == "1521":
-                        st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
+                        st.markdown(f"#### ⚡ Runden-Schnellerfassung für {sess['id']}")
                         total_rounds = sess.get("total_rounds", 4)
                         leg_modus = sess.get("modus_leg", "Best of 5")
+                        req_win = 3 if leg_modus == "Best of 5" else 2
                         
-                        for r in range(1, total_rounds + 1):
-                            st.markdown(f"**Runde {r}**")
-                            boards_in_r = get_boards_list(sess, r)
+                        # Runden-Auswahl Tabs / Selectbox für besseres Handling
+                        round_options = [f"Runde {r}" for r in range(1, total_rounds + 1)]
+                        selected_round_label = st.selectbox("Wähle die Runde aus:", round_options, key=f"blitz_r_sel_{sess['id']}")
+                        selected_round_num = int(selected_round_label.split(" ")[1])
+                        
+                        st.markdown(f"---  \n**Ergebnisse für Runde {selected_round_num} eintragen:**")
+                        boards_in_r = get_boards_list(sess, selected_round_num)
+                        
+                        # Formular für die gesamte ausgewählte Runde
+                        with st.form(key=f"form_blitz_round_{sess['id']}_{selected_round_num}"):
+                            round_results_input = {}
+                            
                             for b_name in boards_in_r:
-                                m_info = sess.get("results", {}).get((r, b_name))
-                                p1, p2 = get_board_players(sess, r, b_name) if not m_info else (m_info.get("s1", "-"), m_info.get("s2", "-"))
+                                m_info = sess.get("results", {}).get((selected_round_num, b_name))
+                                auto_p = get_board_players(sess, selected_round_num, b_name)
+                                p1 = m_info.get("s1", auto_p[0]) if m_info else auto_p[0]
+                                p2 = m_info.get("s2", auto_p[1]) if m_info else auto_p[1]
                                 
                                 try:
                                     s1 = int(m_info.get("ergebnis", "0:0").split(":")[0]) if m_info else 0
@@ -1326,52 +1340,54 @@ with tab_archiv:
                                 except:
                                     s1, s2 = 0, 0
                                     
-                                with st.container(border=True):
-                                    st.write(f"*{b_name}*")
-                                    c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
-                                    c_p1.markdown(f"**{p1}**")
-                                    c_vs.markdown("vs")
-                                    c_p2.markdown(f"**{p2}**")
+                                st.markdown(f"**{b_name}**: `{p1}` vs `{p2}`")
+                                col_i1, col_i2 = st.columns(2)
+                                v1 = col_i1.number_input(f"Legs {p1}", min_value=0, max_value=5, value=s1, key=f"bf_l1_{sess['id']}_{selected_round_num}_{b_name}")
+                                v2 = col_i2.number_input(f"Legs {p2}", min_value=0, max_value=5, value=s2, key=f"bf_l2_{sess['id']}_{selected_round_num}_{b_name}")
+                                round_results_input[b_name] = (p1, p2, v1, v2)
+                                st.markdown("")
+                                
+                            submitted_round = st.form_submit_button(f"💾 Gesamte Runde {selected_round_num} speichern", use_container_width=True)
+                            
+                            if submitted_round:
+                                validation_error = False
+                                for b_name, (p1, p2, val1, val2) in round_results_input.items():
+                                    if p1 == "-" or p2 == "-":
+                                        continue
+                                    if val1 == val2:
+                                        st.error(f"🚨 Auf {b_name}: Ein Unentschieden ist nicht möglich.")
+                                        validation_error = True
+                                    elif val1 > req_win or val2 > req_win:
+                                        st.error(f"🚨 Auf {b_name}: Bei {leg_modus} kann niemand mehr als {req_win} Legs gewinnen.")
+                                        validation_error = True
+                                    elif val1 != req_win and val2 != req_win:
+                                        st.error(f"🚨 Auf {b_name}: Bei {leg_modus} muss der Sieger genau {req_win} Legs haben.")
+                                        validation_error = True
+                                        
+                                if not validation_error:
+                                    if "results" not in sess:
+                                        sess["results"] = {}
+                                    for b_name, (p1, p2, val1, val2) in round_results_input.items():
+                                        if p1 == "-" or p2 == "-":
+                                            continue
+                                        winner = p1 if val1 > val2 else p2
+                                        loser = p2 if val1 > val2 else p1
+                                        m_info = sess["results"].get((selected_round_num, b_name), {})
+                                        old_180_1 = m_info.get("180_s1", 0)
+                                        old_180_2 = m_info.get("180_s2", 0)
+                                        old_avg_1 = m_info.get("avg_s1", 0.0)
+                                        old_avg_2 = m_info.get("avg_s2", 0.0)
+                                        
+                                        sess["results"][(selected_round_num, b_name)] = {
+                                            "s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}",
+                                            "winner": winner, "loser": loser,
+                                            "180_s1": old_180_1, "180_s2": old_180_2,
+                                            "avg_s1": old_avg_1, "avg_s2": old_avg_2
+                                        }
+                                    smart_sync_and_save(st.session_state.sessions_list)
+                                    st.success(f"Runde {selected_round_num} erfolgreich gespeichert!")
+                                    st.rerun()
                                     
-                                    c_in1, c_in2 = st.columns(2)
-                                    val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
-                                    val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
-                                    
-                                    c_b1, c_b2 = st.columns(2)
-                                    with c_b1:
-                                        if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                                            req_win = 3 if leg_modus == "Best of 5" else 2
-                                            if p1 == "-" or p2 == "-":
-                                                pass
-                                            elif val1 == val2:
-                                                st.error("🚨 Unentschieden nicht möglich.")
-                                            elif val1 > req_win or val2 > req_win:
-                                                st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
-                                            elif val1 != req_win and val2 != req_win:
-                                                st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
-                                            else:
-                                                winner = p1 if val1 > val2 else p2
-                                                loser = p2 if val1 > val2 else p1
-                                                if "results" not in sess: sess["results"] = {}
-                                                
-                                                if m_info:
-                                                    sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
-                                                    sess["results"][(r, b_name)]["winner"] = winner
-                                                    sess["results"][(r, b_name)]["loser"] = loser
-                                                else:
-                                                    sess["results"][(r, b_name)] = {
-                                                        "s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}",
-                                                        "winner": winner, "loser": loser,
-                                                        "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0
-                                                    }
-                                                smart_sync_and_save(st.session_state.sessions_list)
-                                                st.rerun()
-                                    with c_b2:
-                                        if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                                            if (r, b_name) in sess["results"]:
-                                                del sess["results"][(r, b_name)]
-                                                smart_sync_and_save(st.session_state.sessions_list)
-                                                st.rerun()
                     elif blitz_pwd:
                         st.error("Falsches Passwort!")
 
@@ -1382,7 +1398,7 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
-        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
+        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) einmalig eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
         * **Der Startschuss:** Sobald genügend Rückmeldungen da sind, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
@@ -1396,9 +1412,9 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Jeder-gegen-Jeden)")
         st.markdown("""
-        * **Zufällige Teams für die Session:** Beim Modus **Koop 2vs2 (Up & Down)** werden zu Beginn feste 2er-Teams per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
+        * **Zufällige Teams für die Session:** Beim Modus **Koop 2vs2 (Up & Down)** oder im Standard-Training werden zu Beginn feste 2er-Paarungen per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
         * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das automatisch und würfelt neue Kombinationen.
-        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Bei z.B. 5 Teams (10 Spielern) geht das Turnier über **5 Runden**, sodass jeder gegen jedes andere Team antritt und exakt einmal pro Abend aussetzt.
+        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Es gibt so viele Runden, bis jedes Team gegen jedes andere Team angetreten ist (z.B. bei 5 Teams = 5 Runden). Ein Team pausiert pro Runde automatisch (Rotations-Freilos).
         """)
 
     with st.container(border=True):
