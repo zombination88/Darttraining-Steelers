@@ -1138,6 +1138,7 @@ with tab_session:
 
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
+    st.write("Die neueste Session steht hier immer ganz oben.")
     
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
@@ -1157,6 +1158,72 @@ with tab_archiv:
                         smart_sync_and_save(st.session_state.sessions_list)
                         st.success("Session gelöscht!")
                         st.rerun()
+                        
+                st.divider()
+                
+                # --- BLITZEINTRAG & KORREKTUR ---
+                if st.checkbox("⚡ Blitzeintrag & Korrektur (Admin)", key=f"bl_chk_{idx}"):
+                    pwd = st.text_input("Admin-Passwort", type="password", key=f"bl_pwd_{idx}")
+                    if pwd == "1521":
+                        st.markdown("##### Ergebnisse manuell eintragen oder komplett löschen")
+                        total_r = sess.get("total_rounds", 4)
+                        for r in range(1, total_r + 1):
+                            boards_r = get_boards_list(sess, r)
+                            for b in boards_r:
+                                match = sess.get("results", {}).get((r, b))
+                                
+                                if match:
+                                    s1, s2 = match.get("s1", "-"), match.get("s2", "-")
+                                    try:
+                                        sc1 = int(match.get("ergebnis", "0:0").split(":")[0])
+                                        sc2 = int(match.get("ergebnis", "0:0").split(":")[1])
+                                    except:
+                                        sc1, sc2 = 0, 0
+                                else:
+                                    auto_p = get_board_players(sess, r, b)
+                                    s1, s2 = auto_p[0], auto_p[1]
+                                    sc1, sc2 = 0, 0
+                                
+                                st.markdown(f"**Runde {r} - {b}**")
+                                c1, c2, c3, c4 = st.columns([4, 2, 2, 4])
+                                c1.caption(f"{s1} vs {s2}")
+                                new_sc1 = c2.number_input("Legs H", min_value=0, max_value=5, value=sc1, key=f"bl_sc1_{idx}_{r}_{b}", label_visibility="collapsed")
+                                new_sc2 = c3.number_input("Legs G", min_value=0, max_value=5, value=sc2, key=f"bl_sc2_{idx}_{r}_{b}", label_visibility="collapsed")
+                                
+                                with c4:
+                                    if not match:
+                                        if st.button("💾 Speichern", key=f"bl_sv_{idx}_{r}_{b}", use_container_width=True):
+                                            if new_sc1 == new_sc2:
+                                                st.error("Kein Remis")
+                                            else:
+                                                winner = s1 if new_sc1 > new_sc2 else (s2 if new_sc2 > new_sc1 else "-")
+                                                loser = s2 if winner == s1 else (s1 if winner == s2 else "-")
+                                                if "results" not in sess: sess["results"] = {}
+                                                sess["results"][(r, b)] = {
+                                                    "s1": s1, "s2": s2, "ergebnis": f"{new_sc1}:{new_sc2}",
+                                                    "winner": winner, "loser": loser,
+                                                    "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0
+                                                }
+                                                smart_sync_and_save(st.session_state.sessions_list)
+                                                st.rerun()
+                                    else:
+                                        btn1, btn2 = st.columns(2)
+                                        if btn1.button("💾", key=f"bl_sv_{idx}_{r}_{b}"):
+                                            if new_sc1 == new_sc2:
+                                                st.error("Kein Remis")
+                                            else:
+                                                winner = s1 if new_sc1 > new_sc2 else (s2 if new_sc2 > new_sc1 else "-")
+                                                loser = s2 if winner == s1 else (s1 if winner == s2 else "-")
+                                                sess["results"][(r, b)].update({
+                                                    "ergebnis": f"{new_sc1}:{new_sc2}",
+                                                    "winner": winner, "loser": loser
+                                                })
+                                                smart_sync_and_save(st.session_state.sessions_list)
+                                                st.rerun()
+                                        if btn2.button("🗑️", key=f"bl_rm_{idx}_{r}_{b}", help="Spielstand löschen"):
+                                            del sess["results"][(r, b)]
+                                            smart_sync_and_save(st.session_state.sessions_list)
+                                            st.rerun()
 
 with tab_regeln:
     st.subheader("🎯 Modus & Regeln")
