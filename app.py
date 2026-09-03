@@ -5,20 +5,18 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-"""
-=============================================================================
-🛡️ WEHRINGER STEELERS APP - CORE FEATURES & KI-REGELN
-(KI-INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN)
-=============================================================================
-1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
-2. JSON-EXPORT: Vor jedem `json.dumps()` MUSS die Hilfsfunktion `make_serializable()` aufgerufen werden, um Tupel abzufangen!
-3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
-4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
-5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
-6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
-7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
-=============================================================================
-"""
+# =============================================================================
+# 🛡️ WEHRINGER STEELERS APP - CORE FEATURES & KI-REGELN
+# (KI-INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN)
+# =============================================================================
+# 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
+# 2. JSON-EXPORT: Vor jedem `json.dumps()` MUSS die Hilfsfunktion `make_serializable()` aufgerufen werden, um Tupel abzufangen!
+# 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
+# 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+# 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
+# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
+# 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
+# =============================================================================
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
