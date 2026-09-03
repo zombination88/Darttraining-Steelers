@@ -1408,12 +1408,23 @@ with tab_kader:
         mvp_player = max(valid_players, key=lambda p: stats[p]["Siege"] / stats[p]["Matches"])
         mvp_rate = stats[mvp_player]["Siege"] / stats[mvp_player]["Matches"]
         mvp_text = f"{(mvp_rate*100):.0f}% Siege"
-        
-        active_player = max(valid_players, key=lambda p: stats[p]["Matches"])
-        active_count = f"{stats[active_player]['Matches']} Matches"
     else:
         mvp_player, mvp_text = "N/A", "Min. 3 Matches nötig"
+        
+    # --- DAUERBRENNER LOGIK ---
+    max_matches = max([stats[p]["Matches"] for p in kader], default=0)
+    if max_matches > 0:
+        top_active = [p for p in kader if stats[p]["Matches"] == max_matches]
+        if len(top_active) == len(kader):
+            active_player = "Alle gleichauf"
+        elif len(top_active) <= 2:
+            active_player = " & ".join(top_active)
+        else:
+            active_player = f"{len(top_active)} Spieler"
+        active_count = f"{max_matches} Matches"
+    else:
         active_player, active_count = "N/A", "0 Matches"
+    # --------------------------
         
     best_avg_player = "N/A"
     best_avg_val = 0.0
