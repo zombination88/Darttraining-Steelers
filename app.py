@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import math
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -485,6 +484,7 @@ def open_session_summary_dialog(session_idx):
         st.rerun()
 
 def get_max_boards_for_players(num_players):
+    import math
     if num_players < 2:
         return 0
     return math.floor(num_players / 2)
@@ -1311,12 +1311,27 @@ with tab_regeln:
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
-        st.markdown("### 👑 Das Prinzip: 'Up & Down'")
+        st.markdown("### 📱 1. Die WhatsApp-Abfrage & Coach-Start")
+        st.markdown("""
+        * **Die Umfrage:** Vor jedem Trainingsabend startet der Teamcoach eine Umfrage in der WhatsApp-Gruppe, wer anwesend ist und mitspielt.
+        * **Der Startschuss:** Sobald alle Rückmeldungen vorliegen und die Spieler feststehen, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 👑 2. Das Prinzip: 'Up & Down'")
         st.markdown("""
         * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
         * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
         """)
         
+    with st.container(border=True):
+        st.markdown("### 🤝 3. Der Ablauf beim Standard-Training (Einzel + Coop)")
+        st.markdown("""
+        * **Die Einzel-Runden:** Zuerst wird die normale Up & Down Einzel-Phase gespielt (z. B. 4 Runden), bei der sich jeder über die Boards kämpft.
+        * **Die Coop-Doppel-Phase:** Nach den Einzelrunden schaltet das System automatisch auf das **Doppel (Koop)** um. 
+        * **Die Doppel-Auswahl:** In der Coop-Phase spielen Teams (jeweils 2 Spieler zusammen) auf **Kaiser B1** und **Board 2**. Der Spielplan rotiert die Partner dabei automatisch von Runde zu Runde durch, sodass jeder mal mit jedem spielt.
+        """)
+
     with st.container(border=True):
         st.markdown("### 🚦 Die Ampel-Anzeige")
         st.markdown("""
