@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
-import random
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -159,6 +158,7 @@ def get_or_create_teams(session, all_sessions):
     best_teams = []
     for _ in range(50):
         shuffled = spieler.copy()
+        import random
         random.shuffle(shuffled)
         current_teams = []
         has_forbidden = False
@@ -209,7 +209,6 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
-    # Runde 1 Einzel: Vorsession-Auswertung (Bottom-to-Top)
     if round_num == 1 and not in_coop_phase and not is_2v2:
         all_sessions = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
         try:
@@ -886,7 +885,28 @@ with tab_übersicht:
         singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
         
         res = curr_sess.get("results", {})
-        active_boards_list = get_boards_list(curr_sess, 1)
+        
+        # NEU: Bestimme die aktiven Boards dynamisch (bei Koop oder Coop-Phase nur Kaiser B1 und Board 2)
+        if modus == "Koop 2vs2 (Up & Down)":
+            active_boards_list = ["Kaiser B1", "Board 2"]
+        elif is_standard_training:
+            bc = curr_sess.get("boards_count", 4)
+            all_b_names = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
+            base_boards = all_b_names[:bc]
+            
+            singles_complete = True
+            for b in base_boards:
+                board_completed_r = max([r for (r, board_n), v in res.items() if board_n == b and v.get("winner")], default=0)
+                if board_completed_r < singles_rounds:
+                    singles_complete = False
+                    break
+            
+            if singles_complete and singles_rounds > 0 and any(r <= singles_rounds for (r, b), v in res.items()):
+                active_boards_list = ["Kaiser B1", "Board 2"]
+            else:
+                active_boards_list = base_boards
+        else:
+            active_boards_list = get_boards_list(curr_sess, 1)
         
         for b_name in active_boards_list:
             completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
@@ -1274,7 +1294,9 @@ def open_delete_session_dialog(session_id_to_delete):
     with col2:
         if st.button("Löschen bestätigen", type="primary", use_container_width=True):
             if del_pwd == "1521":
-                delete_session(session_id_to_delete)
+                filtered_sessions = [s for s in st.session_state.sessions_list if s["id"] != session_id_to_delete]
+                st.session_state.sessions_list = filtered_sessions
+                save_data(st.session_state.sessions_list)
                 st.success("Session wurde erfolgreich gelöscht!")
                 st.rerun()
             elif del_pwd:
@@ -1289,6 +1311,7 @@ with tab_archiv:
     else:
         all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
         for idx, sess in enumerate(all_sessions_sorted):
+            orig_idx = st.session_state.sessions_list.index(sess)
             with st.container(border=True):
                 status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
                 st.markdown(f"**{sess['id']}** — {sess['datum']} {status_text}")
@@ -1306,28 +1329,25 @@ with tab_archiv:
 
                 st.divider()
                 
-                # VERBesserter Blitzeintrag (Runde für Runde Modus)
-                is_checked = st.checkbox(f"⚡ Blitzeintrag & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
+                # NEU: ÜBERSICHTLICHER RUNDEN-FÜR-RUNDEN BLITZEINTRAG WIZARD
+                is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
                 if is_checked:
                     blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
                     if blitz_pwd == "1521":
-                        st.markdown(f"#### ⚡ Runden-Schnellerfassung für {sess['id']}")
+                        st.success("Admin-Modus aktiv")
                         total_rounds = sess.get("total_rounds", 4)
                         leg_modus = sess.get("modus_leg", "Best of 5")
                         req_win = 3 if leg_modus == "Best of 5" else 2
                         
-                        # Runden-Auswahl Tabs / Selectbox für besseres Handling
                         round_options = [f"Runde {r}" for r in range(1, total_rounds + 1)]
                         selected_round_label = st.selectbox("Wähle die Runde aus:", round_options, key=f"blitz_r_sel_{sess['id']}")
                         selected_round_num = int(selected_round_label.split(" ")[1])
                         
-                        st.markdown(f"---  \n**Ergebnisse für Runde {selected_round_num} eintragen:**")
+                        st.markdown(f"**Ergebnisse für {selected_round_label} eintragen:**")
                         boards_in_r = get_boards_list(sess, selected_round_num)
                         
-                        # Formular für die gesamte ausgewählte Runde
                         with st.form(key=f"form_blitz_round_{sess['id']}_{selected_round_num}"):
                             round_results_input = {}
-                            
                             for b_name in boards_in_r:
                                 m_info = sess.get("results", {}).get((selected_round_num, b_name))
                                 auto_p = get_board_players(sess, selected_round_num, b_name)
@@ -1345,9 +1365,9 @@ with tab_archiv:
                                 v1 = col_i1.number_input(f"Legs {p1}", min_value=0, max_value=5, value=s1, key=f"bf_l1_{sess['id']}_{selected_round_num}_{b_name}")
                                 v2 = col_i2.number_input(f"Legs {p2}", min_value=0, max_value=5, value=s2, key=f"bf_l2_{sess['id']}_{selected_round_num}_{b_name}")
                                 round_results_input[b_name] = (p1, p2, v1, v2)
-                                st.markdown("")
+                                st.markdown("---")
                                 
-                            submitted_round = st.form_submit_button(f"💾 Gesamte Runde {selected_round_num} speichern", use_container_width=True)
+                            submitted_round = st.form_submit_button(f"💾 Gesamte {selected_round_label} speichern", use_container_width=True)
                             
                             if submitted_round:
                                 validation_error = False
@@ -1384,63 +1404,52 @@ with tab_archiv:
                                             "180_s1": old_180_1, "180_s2": old_180_2,
                                             "avg_s1": old_avg_1, "avg_s2": old_avg_2
                                         }
+                                    st.session_state.sessions_list[orig_idx] = sess
                                     smart_sync_and_save(st.session_state.sessions_list)
-                                    st.success(f"Runde {selected_round_num} erfolgreich gespeichert!")
+                                    st.success(f"{selected_round_label} erfolgreich gespeichert!")
                                     st.rerun()
-                                    
                     elif blitz_pwd:
                         st.error("Falsches Passwort!")
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Regeln & Ablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Team- und Umfrage-Regeln.")
+    st.subheader("🎯 Modus, Regeln & WhatsApp-Ablauf")
+    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den WhatsApp-Workflow, den Auf- und Abstieg sowie den Koop-Modus.")
     
     with st.container(border=True):
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
         * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) einmalig eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
-        * **Der Startschuss:** Sobald genügend Rückmeldungen da sind, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
+        * **Der Startschuss:** Sobald genügend Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
     with st.container(border=True):
-        st.markdown("### 👑 Das Prinzip: 'Up & Down'")
+        st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
         * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
         * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
         """)
-        
+
     with st.container(border=True):
         st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Jeder-gegen-Jeden)")
         st.markdown("""
-        * **Zufällige Teams für die Session:** Beim Modus **Koop 2vs2 (Up & Down)** oder im Standard-Training werden zu Beginn feste 2er-Paarungen per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
-        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das automatisch und würfelt neue Kombinationen.
-        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Es gibt so viele Runden, bis jedes Team gegen jedes andere Team angetreten ist (z.B. bei 5 Teams = 5 Runden). Ein Team pausiert pro Runde automatisch (Rotations-Freilos).
+        * **Zufällige Teams:** Beim Modus **Koop 2vs2 (Up & Down)** oder in der Doppelphase des Standard-Trainings werden zu Beginn feste 2er-Paarungen per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
+        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das vollautomatisch.
+        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Es gibt so viele Runden, bis jedes Team gegen jedes andere Team angetreten ist (z.B. bei 5 Teams = 5 Runden). 
+        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) pausiert pro Runde automatisch ein Team (Rotations-Freilos), das in der nächsten Runde wieder einsteigt.
         """)
 
     with st.container(border=True):
-        st.markdown("### 🚦 Die Ampel-Anzeige")
+        st.markdown("### 🚦 Die Ampel-Anzeige & Board-Begrenzung")
         st.markdown("""
-        * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen und eintragen!
-        * 🔴 **Wartet:** Ihr müsst noch kurz warten, bis die Spieler von den Nachbarboards fertig sind (da sich der Auf- und Absteiger erst entscheidet).
+        * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen!
+        * 🔴 **Wartet:** Ihr müsst noch kurz auf die Nachbarboards warten.
+        * **Keine leeren Boards:** Die App sperrt bei der Erfassung von zu vielen Boards automatisch, wenn nicht genügend Spieler für volle Paarungen da sind.
         """)
 
     with st.container(border=True):
-        st.markdown("### ⏱️ Der Ablauf an eurem Board")
+        st.markdown("### ⏱️ Leg-Modus Validierung")
         st.markdown("""
-        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1 bei Best of 5) und speichert ab.
-        2. **Validierung:** Die App achtet streng darauf, dass das Ergebnis zum Leg-Modus passt (z. B. bei Best of 5 braucht der Sieger exakt 3 Legs).
-        """)
-
-    with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl im Einzel?")
-        st.markdown("""
-        * Wenn wir z. B. zu neunt sind, lässt das System keine zu hohen Boardanzahlen zu. Auf dem letzten Board wird ein **Platzhalter (`-`)** eingesetzt.
-        * Wer gegen das `-` antritt, erhält ein Freilos (Pause), das in den Runden automatisch durchgewechselt wird.
-        """)
-
-    with st.container(border=True):
-        st.markdown("### 📋 Wie werden die Spieler für eine *neue* Session aufgestellt?")
-        st.markdown("""
-        * **Auswertung der Vorsession:** Für die 1. Runde einer neuen Session schaut das System nach, wie die Spieler am Ende der letzten Session platziert waren.
-        * **Bottom-to-Top Reihenfolge:** Der *Kaiser* der Vorsession fängt ganz unten an, der *Verlierer* vom letzten Board ganz oben. Neue Spieler werden vorne einsortiert. Vollautomatisch!
+        * Bei **Best of 5** benötigt der Sieger exakt **3 Legs** (Ergebnisse wie 3:0, 3:1 oder 3:2).
+        * Bei **Best of 3** benötigt der Sieger exakt **2 Legs** (Ergebnisse wie 2:0 oder 2:1).
+        * Unentschieden sind im Up & Down nicht möglich.
         """)
