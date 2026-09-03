@@ -105,6 +105,16 @@ def smart_sync_and_save(updated_sessions):
         save_data(updated_sessions)
         st.session_state.sessions_list = updated_sessions
 
+def delete_session(session_id):
+    fresh_data = load_data()
+    if fresh_data:
+        fresh_data = [s for s in fresh_data if s.get("id") != session_id]
+        save_data(fresh_data)
+        st.session_state.sessions_list = fresh_data
+    else:
+        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
+        save_data(st.session_state.sessions_list)
+
 st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
 c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
@@ -751,7 +761,7 @@ def open_new_session_dialog():
                 new_session = {
                     "id": new_id,
                     "datum": session_datum.strftime("%d.%m.%Y"),
-                    "start_time": None,  # Startet erst bei Klick auf "Teamtraining starten"
+                    "start_time": None,
                     "end_time": None,
                     "modus": spielmodus,
                     "boards_count": gewaehlte_boards_zahl,
@@ -1003,7 +1013,14 @@ with tab_übersicht:
     if not active_sessions_for_btn:
         st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Übersicht zu sehen.")
     else:
-        curr_sess = active_sessions_for_btn[0]
+        if len(active_sessions_for_btn) > 1:
+            st.warning(f"⚠️ Achtung: Es sind {len(active_sessions_for_btn)} unvollständige Sessions vorhanden. Bitte wähle hier, welche Session bearbeitet werden soll:")
+            session_options = {f"{s['id']} ({s['datum']} – {s['modus']})": s for s in active_sessions_for_btn}
+            selected_label = st.selectbox("Aktive Session wählen:", list(session_options.keys()), key="select_active_session_dropdown")
+            curr_sess = session_options[selected_label]
+        else:
+            curr_sess = active_sessions_for_btn[0]
+
         start_t = curr_sess.get("start_time")
         
         # 2-Schritt Workflow: Wenn noch nicht gestartet, Info + Start-Button anzeigen
@@ -1435,9 +1452,7 @@ def open_delete_session_dialog(session_id_to_delete):
     with col2:
         if st.button("Löschen bestätigen", type="primary", use_container_width=True):
             if del_pwd == "1521":
-                filtered_sessions = [s for s in st.session_state.sessions_list if s["id"] != session_id_to_delete]
-                st.session_state.sessions_list = filtered_sessions
-                save_data(st.session_state.sessions_list)
+                delete_session(session_id_to_delete)
                 st.success("Session wurde erfolgreich gelöscht!")
                 st.rerun()
             elif del_pwd:
