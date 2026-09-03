@@ -93,6 +93,16 @@ def smart_sync_and_save(updated_sessions):
         save_data(updated_sessions)
         st.session_state.sessions_list = updated_sessions
 
+def delete_session(session_id):
+    fresh_data = load_data()
+    if fresh_data:
+        fresh_data = [s for s in fresh_data if s["id"] != session_id]
+        save_data(fresh_data)
+        st.session_state.sessions_list = fresh_data
+    else:
+        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
+        save_data(st.session_state.sessions_list)
+
 st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
 c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
@@ -583,7 +593,6 @@ def open_edit_session_dialog(session_idx):
 
     all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
     sess = all_sessions_sorted[session_idx]
-    
     real_idx = st.session_state.sessions_list.index(sess)
     
     try:
@@ -679,7 +688,6 @@ def open_edit_session_dialog(session_idx):
 def open_board_dialog(board_name, session_idx):
     all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
     sess = all_sessions_sorted[session_idx]
-    
     real_idx = st.session_state.sessions_list.index(sess)
     
     total_rounds = sess.get("total_rounds", 4)
@@ -1311,25 +1319,25 @@ with tab_regeln:
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
     
     with st.container(border=True):
-        st.markdown("### 📱 1. Die WhatsApp-Abfrage & Coach-Start")
+        st.markdown("### 📱 Die WhatsApp-Abfrage & Coach-Start")
         st.markdown("""
-        * **Die Umfrage:** Vor jedem Trainingsabend startet der Teamcoach eine Umfrage in der WhatsApp-Gruppe, wer anwesend ist und mitspielt.
+        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer anwesend ist und mitspielt.
         * **Der Startschuss:** Sobald alle Rückmeldungen vorliegen und die Spieler feststehen, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
     with st.container(border=True):
-        st.markdown("### 👑 2. Das Prinzip: 'Up & Down'")
+        st.markdown("### 👑 Das Prinzip: 'Up & Down'")
         st.markdown("""
         * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
         * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
         """)
         
     with st.container(border=True):
-        st.markdown("### 🤝 3. Der Ablauf beim Standard-Training (Einzel + Coop)")
+        st.markdown("### 🤝 Der Ablauf beim Standard-Training (Einzel + Coop)")
         st.markdown("""
         * **Die Einzel-Runden:** Zuerst wird die normale Up & Down Einzel-Phase gespielt (z. B. 4 Runden), bei der sich jeder über die Boards kämpft.
-        * **Die Coop-Doppel-Phase:** Nach den Einzelrunden schaltet das System automatisch auf das **Doppel (Koop)** um. 
-        * **Die Doppel-Auswahl:** In der Coop-Phase spielen Teams (jeweils 2 Spieler zusammen) auf **Kaiser B1** und **Board 2**. Der Spielplan rotiert die Partner dabei automatisch von Runde zu Runde durch, sodass jeder mal mit jedem spielt.
+        * **Die Coop-Doppel-Phase (2vs2):** Nach den Einzelrunden schaltet das System automatisch auf das Doppel um. 
+        * **Auswahl & Rotation in der Coop-Phase:** In dieser Phase spielen Teams (jeweils 2 Spieler zusammen) auf **Kaiser B1** und **Board 2**. Der Spielplan rotiert die Partner dabei automatisch von Runde zu Runde durch, sodass im Laufe des Abends jeder mal mit jedem als Team antritt. Für die nächste Session dient die Einzelphase als Grundlage für die Startaufstellung.
         """)
 
     with st.container(border=True):
