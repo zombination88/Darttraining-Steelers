@@ -1,3 +1,12 @@
+# INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN
+# 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
+# 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel abzufangen!
+# 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
+# 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+# 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
+# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
+# 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
+
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
@@ -5,23 +14,21 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-# =============================================================================
-# 🛡️ WEHRINGER STEELERS APP - CORE FEATURES & KI-REGELN
-# (KI-INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN)
-# =============================================================================
-# 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
-# 2. JSON-EXPORT: Vor jedem `json.dumps()` MUSS die Hilfsfunktion `make_serializable()` aufgerufen werden, um Tupel abzufangen!
-# 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
-# 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
-# 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
-# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
-# 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
-# =============================================================================
-
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
+
+def make_serializable(data):
+    """Wandelt Tupel und Datumsformate sicher um, damit JSON nicht abstürzt."""
+    if isinstance(data, dict):
+        return {str(k): make_serializable(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [make_serializable(i) for i in data]
+    elif hasattr(data, 'isoformat'):
+        return data.isoformat()
+    else:
+        return data
 
 @st.cache_resource
 def init_connection():
@@ -41,21 +48,6 @@ def init_connection():
         return None
 
 sheet_conn = init_connection()
-
-def make_serializable(sessions):
-    """Konvertiert Tupel-Schlüssel in den Ergebnissen in Strings für JSON-Export und Speicherung."""
-    serializable_sessions = []
-    for sess in sessions:
-        sess_copy = sess.copy()
-        fixed_results = {}
-        for k, v in sess.get("results", {}).items():
-            if isinstance(k, tuple):
-                fixed_results[f"{k[0]}_{k[1]}"] = v
-            else:
-                fixed_results[k] = v
-        sess_copy["results"] = fixed_results
-        serializable_sessions.append(sess_copy)
-    return serializable_sessions
 
 def load_data():
     if not sheet_conn:
@@ -84,7 +76,7 @@ def load_data():
     return []
 
 def save_backup_to_cloud(serializable_sessions):
-    """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt."""
+    """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt (Rolling: max 20 Einträge)."""
     try:
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict:
@@ -96,10 +88,11 @@ def save_backup_to_cloud(serializable_sessions):
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_url(SHEET_URL)
+        
         try:
             backup_ws = spreadsheet.worksheet("backups")
         except:
-            backup_ws = spreadsheet.add_worksheet(title="backups", rows=1000, cols=2)
+            backup_ws = spreadsheet.add_worksheet(title="backups", rows=100, cols=2)
             backup_ws.append_row(["Timestamp", "JSON_Data"])
         
         from zoneinfo import ZoneInfo
@@ -107,16 +100,15 @@ def save_backup_to_cloud(serializable_sessions):
         json_str = json.dumps(serializable_sessions, ensure_ascii=False)
         backup_ws.append_row([ts, json_str])
         
-        # --- WICHTIG: ROLLING BACKUP (max. 20 Einträge) ---
         try:
             all_vals = backup_ws.get_all_values()
             if len(all_vals) > 21: # 1 Kopfzeile + 20 Backups
                 rows_to_delete = len(all_vals) - 21
                 for _ in range(rows_to_delete):
                     try:
-                        backup_ws.delete_rows(2) # Löscht immer die älteste Zeile (nach der Kopfzeile)
+                        backup_ws.delete_rows(2) # Neuere gspread Versionen
                     except AttributeError:
-                        backup_ws.delete_row(2)  # Für ältere gspread-Versionen
+                        backup_ws.delete_row(2)  # Ältere gspread Versionen
         except Exception:
             pass
             
@@ -127,7 +119,18 @@ def save_data(sessions):
     if not sheet_conn:
         return
         
-    serializable_sessions = make_serializable(sessions)
+    # 1. Daten durch den Filter schicken
+    sichere_sessions = make_serializable(sessions)
+    
+    serializable_sessions = []
+    for sess in sichere_sessions:
+        sess_copy = sess.copy()
+        fixed_results = {}
+        for (r_num, b_name), v in sess.get("results", {}).items():
+            fixed_results[f"{r_num}_{b_name}"] = v
+        sess_copy["results"] = fixed_results
+        serializable_sessions.append(sess_copy)
+    
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
     try:
         sheet_conn.clear()
@@ -144,22 +147,14 @@ def get_local_time_str():
     except Exception:
         return datetime.now().strftime("%H:%M")
 
-def is_session_completed(sess):
-    total_rounds = sess.get("total_rounds", 4)
-    res = sess.get("results", {})
-    for r in range(1, total_rounds + 1):
-        boards_in_round = get_boards_list(sess, r)
-        for b_name in boards_in_round:
-            match_info = res.get((r, b_name))
-            if not match_info or not match_info.get("winner"):
-                return False
-    return True
-
 def check_session_completion_time(sess):
-    """Setzt bei Abschluss automatisch die Enduhrzeit, sofern noch nicht vorhanden."""
+    """Prüft, ob die Session komplett beendet ist und setzt ggf. die Enduhrzeit."""
     if is_session_completed(sess):
         if not sess.get("end_time"):
             sess["end_time"] = get_local_time_str()
+    else:
+        if "end_time" in sess:
+            sess["end_time"] = None
 
 def smart_sync_and_save(updated_sessions):
     for sess in updated_sessions:
@@ -192,19 +187,15 @@ def delete_session(session_id):
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
 
-c_logo, c_title = st.columns([1, 4])
-with c_logo:
-    logo_loaded = False
-    for logo_path in ["logo.png.png", "logo.png"]:
-        try:
-            st.image(logo_path, width=80)
-            logo_loaded = True
-            break
-        except:
-            pass
-
-with c_title:
-    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
+        <img src="https://raw.githubusercontent.com/zombination88/Darttraining-Steelers/main/logo.png.png" alt="Logo" width="60" onerror="this.src='https://raw.githubusercontent.com/zombination88/Darttraining-Steelers/main/logo.png'">
+        <h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 
 c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
 with c_mus:
@@ -237,8 +228,8 @@ if "sessions_list" not in st.session_state:
 tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "Modus & Regeln"])
 
 def get_or_create_teams(session, all_sessions):
-    """Generiert zufällige 2v2 Teams mit Schutz vor identischen Paaren der Vorsession 
-    sowie Anti-Doppel-Pause Schutz für Spieler, die in der Vorwoche als Letztes pausieren mussten."""
+    """Generiert zufällige 2v2 Teams für die Session, verbietet identische Paare aus der Vorsession 
+    und verhindert, dass Spieler, die in der Vorsession als Letztes pausiert haben, in Runde 1 erneut pausieren."""
     if "coop_teams" in session and session["coop_teams"]:
         return session["coop_teams"]
     
@@ -261,10 +252,11 @@ def get_or_create_teams(session, all_sessions):
                 prev_modus = prev_sess.get("modus", "Up & Down")
                 prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
                 prev_singles = prev_sess.get("singles_rounds", prev_total - 2 if prev_is_std and prev_total > 2 else prev_total)
+                prev_coop_start = prev_singles + 1 if prev_is_std else 1
                 prev_teams = prev_sess.get("coop_teams", [])
                 if len(prev_teams) % 2 != 0:
                     n_prev = len(prev_teams)
-                    last_rel_round = prev_total - (prev_singles if prev_is_std else 0)
+                    last_rel_round = prev_total - prev_coop_start + 1
                     resting_idx = (last_rel_round - 1) % n_prev
                     resting_team_str = prev_teams[resting_idx]
                     for p in resting_team_str.split("&"):
@@ -341,7 +333,7 @@ def get_board_players(session, round_num, board_name):
     spieler = session["spieler"].copy()
     
     if round_num == 1 and not in_coop_phase and not is_2v2:
-        all_sessions = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+        all_sessions = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         try:
             s_idx = all_sessions.index(session)
         except:
@@ -392,6 +384,7 @@ def get_board_players(session, round_num, board_name):
     if is_2v2 or in_coop_phase:
         teams = get_or_create_teams(session, st.session_state.sessions_list)
         n_teams = len(teams)
+        coop_start_round = singles_rounds + 1 if is_standard_training else 1
         rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
         
         resting_team_idx = (rel_round - 1) % n_teams if n_teams % 2 != 0 else -1
@@ -520,9 +513,20 @@ def is_board_ready(session, board_name, next_r):
             
     return True
 
+def is_session_completed(sess):
+    total_rounds = sess.get("total_rounds", 4)
+    res = sess.get("results", {})
+    for r in range(1, total_rounds + 1):
+        boards_in_round = get_boards_list(sess, r)
+        for b_name in boards_in_round:
+            match_info = res.get((r, b_name))
+            if not match_info or not match_info.get("winner"):
+                return False
+    return True
+
 @st.dialog("🔄 Spieler auswechseln")
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
     alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
     if "-" not in alle_spieler:
@@ -570,45 +574,16 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
 
 @st.dialog("📊 Spielablauf & Rundenübersicht")
 def open_session_archive_dialog(session_idx):
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
+    start_t = sess.get("start_time", "–")
+    end_t = sess.get("end_time", "–")
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
+    st.caption(f"⏱️ Start: {start_t} Uhr | Ende: {end_t} Uhr")
     
-    # Zeitmanagement Anzeige im Dialog
-    start_t = sess.get("start_time")
-    end_t = sess.get("end_time")
-    total_rounds = sess.get("total_rounds", 4)
     res = sess.get("results", {})
-    
-    if start_t and end_t:
-        try:
-            t1 = datetime.strptime(start_t, "%H:%M")
-            t2 = datetime.strptime(end_t, "%H:%M")
-            diff_min = (t2 - t1).total_seconds() / 60
-            if diff_min < 0: diff_min += 24 * 60
-            
-            if diff_min > 0:
-                avg_min_round = diff_min / total_rounds if total_rounds > 0 else 0
-                total_legs = 0
-                for match in res.values():
-                    erg = match.get("ergebnis", "0:0")
-                    try:
-                        l1, l2 = map(int, erg.split(":"))
-                        total_legs += l1 + l2
-                    except:
-                        pass
-                avg_min_leg = diff_min / total_legs if total_legs > 0 else 0
-                
-                st.markdown(f"""
-                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 12px; background-color: #1e1e1e;'>
-                    <p style='margin: 0; font-size: 0.95em;'>⏱️ <b>Zeitmanagement:</b> {start_t} – {end_t} Uhr ({int(diff_min)} Min. Gesamt)</p>
-                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>🔄 Ø {avg_min_round:.1f} Min. pro Runde | 🎯 Ø {avg_min_leg:.1f} Min. pro Leg</p>
-                </div>
-                """, unsafe_allow_html=True)
-        except:
-            pass
-
+    total_rounds = sess.get("total_rounds", 4)
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
@@ -659,51 +634,24 @@ def open_session_archive_dialog(session_idx):
 
 @st.dialog("📊 Session Endstand & Zusammenfassung")
 def open_session_summary_dialog(session_idx):
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
     
+    start_t = sess.get("start_time", "–")
+    end_t = sess.get("end_time", "–")
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
+    st.caption(f"⏱️ Start: {start_t} Uhr | Ende: {end_t} Uhr")
     
-    # Zeitmanagement Anzeige im Dialog
-    start_t = sess.get("start_time")
-    end_t = sess.get("end_time")
     total_rounds = sess.get("total_rounds", 4)
-    res = sess.get("results", {})
-    
-    if start_t and end_t:
-        try:
-            t1 = datetime.strptime(start_t, "%H:%M")
-            t2 = datetime.strptime(end_t, "%H:%M")
-            diff_min = (t2 - t1).total_seconds() / 60
-            if diff_min < 0: diff_min += 24 * 60
-            
-            if diff_min > 0:
-                avg_min_round = diff_min / total_rounds if total_rounds > 0 else 0
-                total_legs = 0
-                for match in res.values():
-                    erg = match.get("ergebnis", "0:0")
-                    try:
-                        l1, l2 = map(int, erg.split(":"))
-                        total_legs += l1 + l2
-                    except:
-                        pass
-                avg_min_leg = diff_min / total_legs if total_legs > 0 else 0
-                
-                st.markdown(f"""
-                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 12px; background-color: #1e1e1e;'>
-                    <p style='margin: 0; font-size: 0.95em;'>⏱️ <b>Zeitmanagement:</b> {start_t} – {end_t} Uhr ({int(diff_min)} Min. Gesamt)</p>
-                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>🔄 Ø {avg_min_round:.1f} Min. pro Runde | 🎯 Ø {avg_min_leg:.1f} Min. pro Leg</p>
-                </div>
-                """, unsafe_allow_html=True)
-        except:
-            pass
-
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     is_pure_coop = (modus == "Koop 2vs2 (Up & Down)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
+    res = sess.get("results", {})
+    
+    # 1. Einzel-Phase anzeigen
     if singles_rounds > 0 and not is_pure_coop:
         last_played_round = 0
         for (r, b), info in res.items():
@@ -737,6 +685,7 @@ def open_session_summary_dialog(session_idx):
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
+    # 2. Koop / Doppel-Phase Gesamtrangliste
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
@@ -925,7 +874,7 @@ def open_edit_session_dialog(session_idx):
             st.error("Falsches Passwort!")
         return
 
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
     real_idx = st.session_state.sessions_list.index(sess)
     
@@ -1030,9 +979,27 @@ def open_edit_session_dialog(session_idx):
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
 
+@st.dialog("🗑️ Session Löschen (Admin)")
+def open_delete_session_dialog(session_id):
+    st.warning(f"Willst du die Session **{session_id}** wirklich unwiderruflich löschen?")
+    pwd = st.text_input("Passwort zur Bestätigung:", type="password", key=f"del_pwd_{session_id}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col2:
+        if st.button("🗑️ Unwiderruflich löschen", type="primary", use_container_width=True):
+            if pwd == "1521":
+                delete_session(session_id)
+                st.success("Session wurde erfolgreich gelöscht!")
+                st.rerun()
+            else:
+                st.error("Falsches Passwort!")
+
 @st.dialog("📋 Board-Erfassung & Tracking")
 def open_board_dialog(board_name, session_idx):
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
     real_idx = st.session_state.sessions_list.index(sess)
     
@@ -1145,7 +1112,7 @@ with tab_übersicht:
         if st.button("➕ Neue Session", type="primary", use_container_width=True, key="quick_start_btn"):
             open_new_session_dialog()
     with col_btn2:
-        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         active_sessions_for_btn = [s for s in all_sessions_sorted if not is_session_completed(s)]
         if active_sessions_for_btn:
             if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
@@ -1266,7 +1233,7 @@ with tab_übersicht:
     anwesende_count = 0
     
     display_sess = None
-    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+    all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     for s in all_sessions_sorted:
         if is_session_completed(s) or s.get("results"):
             display_sess = s
@@ -1367,7 +1334,7 @@ with tab_übersicht:
 
     with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
         all_matches = []
-        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         for sess in all_sessions_sorted:
             sess_date = sess.get("datum", "")
             for (round_num, board_name), m_info in sess.get("results", {}).items():
@@ -1392,9 +1359,6 @@ with tab_kader:
     st.write("Live berechnete Bilanz des festen Stammkaders.")
     
     stats = {p: {"Matches": 0, "Siege": 0, "Niederlagen": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0} for p in kader}
-    player_matches_played = 0
-    total_wins = 0
-    total_losses = 0
     
     for sess in st.session_state.sessions_list:
         for match in sess.get("results", {}).values():
@@ -1432,30 +1396,51 @@ with tab_kader:
                     if p in stats:
                         stats[p]["Matches"] += 1
                         stats[p]["Siege"] += 1
-                        player_matches_played += 1
-                        total_wins += 1
             if loser and " & " not in loser:
                 for p in loser.split(" & "):
                     if p in stats:
                         stats[p]["Matches"] += 1
                         stats[p]["Niederlagen"] += 1
-                        player_matches_played += 1
-                        total_losses += 1
 
-    total_games = total_wins + total_losses
-    avg_win_rate = f"{(total_wins / total_games * 100):.0f}%" if total_games > 0 else "0%"
-
-    all_team_avgs = [stats[p]["Avg_Sum"] / stats[p]["Avg_Count"] for p in kader if stats[p]["Avg_Count"] > 0]
-    overall_team_avg = f"{(sum(all_team_avgs) / len(all_team_avgs)):.1f}" if all_team_avgs else "–"
+    valid_players = [p for p in kader if stats[p]["Matches"] >= 3] # MVP nur ab 3 Spielen
+    
+    if valid_players:
+        mvp_player = max(valid_players, key=lambda p: stats[p]["Siege"] / stats[p]["Matches"])
+        mvp_rate = stats[mvp_player]["Siege"] / stats[mvp_player]["Matches"]
+        mvp_text = f"{(mvp_rate*100):.0f}% Siege"
+        
+        active_player = max(valid_players, key=lambda p: stats[p]["Matches"])
+        active_count = f"{stats[active_player]['Matches']} Matches"
+    else:
+        mvp_player, mvp_text = "N/A", "Min. 3 Matches nötig"
+        active_player, active_count = "N/A", "0 Matches"
+        
+    best_avg_player = "N/A"
+    best_avg_val = 0.0
+    for p in kader:
+        if stats[p]["Avg_Count"] > 0:
+            p_avg = stats[p]["Avg_Sum"] / stats[p]["Avg_Count"]
+            if p_avg > best_avg_val:
+                best_avg_val = p_avg
+                best_avg_player = p
+    avg_text = f"Ø {best_avg_val:.1f}" if best_avg_val > 0 else "Kein Avg erfasst"
+    
+    max_180_player = max(kader, key=lambda p: stats[p]["180er"])
+    max_180_count = stats[max_180_player]["180er"]
+    if max_180_count > 0:
+        machine_player = max_180_player
+        machine_text = f"{max_180_count}x geworfen"
+    else:
+        machine_player, machine_text = "N/A", "0 geworfen"
 
     with st.container(border=True):
         c1, c2 = st.columns(2)
-        with c1: st.metric(label="Aktive Spieler", value=len(kader), delta="im Kader")
-        with c2: st.metric(label="Matches", value=str(player_matches_played), delta="aus Sessions")
+        with c1: st.metric(label="🏆 MVP (Siegquote)", value=mvp_player, delta=mvp_text, delta_color="normal")
+        with c2: st.metric(label="🔥 Dauerbrenner", value=active_player, delta=active_count, delta_color="off")
         st.divider()
         c3, c4 = st.columns(2)
-        with c3: st.metric(label="Ø Siegquote", value=avg_win_rate, delta="gesamt")
-        with c4: st.metric(label="Team Average", value=overall_team_avg, delta="Ø Gesamt")
+        with c3: st.metric(label="📊 Bester Gesamt-Avg", value=best_avg_player, delta=avg_text, delta_color="off")
+        with c4: st.metric(label="🎯 180er Maschine", value=machine_player, delta=machine_text, delta_color="off")
         
     st.write("### Spielerübersicht & Rangliste")
     table_rows = []
@@ -1609,7 +1594,7 @@ with tab_session:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         for idx, sess in enumerate(all_sessions_sorted):
             with st.container(border=True):
                 gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
@@ -1628,9 +1613,10 @@ with tab_archiv:
     st.caption("Die neueste Session steht hier immer ganz oben. Inklusive automatischem Cloud-Backup und lokalem JSON-Download.")
     
     if st.session_state.sessions_list:
-        # Hier wird die sichere Serialisierung beim JSON Download Button genutzt!
-        safe_data_for_export = make_serializable(st.session_state.sessions_list)
-        backup_json_str = json.dumps(safe_data_for_export, ensure_ascii=False, indent=2)
+        # 1. Sichere Serialisierung (Tupel-Schutz)
+        sichere_sessions = make_serializable(st.session_state.sessions_list)
+        backup_json_str = json.dumps(sichere_sessions, ensure_ascii=False, indent=2)
+        
         st.download_button(
             label="📥 Backup als JSON herunterladen",
             data=backup_json_str,
@@ -1643,7 +1629,7 @@ with tab_archiv:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
+        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         for idx, sess in enumerate(all_sessions_sorted):
             with st.container(border=True):
                 status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
@@ -1728,7 +1714,7 @@ with tab_archiv:
                                                 st.rerun()
                                     with c_b2:
                                         if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                                            if (r, b_name) in sess["results"]:
+                                            if (r, b_name) in sess.get("results", {}):
                                                 del sess["results"][(r, b_name)]
                                                 smart_sync_and_save(st.session_state.sessions_list)
                                                 st.rerun()
