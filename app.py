@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import json
+import random
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -135,6 +136,51 @@ if "sessions_list" not in st.session_state:
 
 tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "Modus & Regeln"])
 
+def get_or_create_teams(session, all_sessions):
+    """Generiert zufällige 2v2 Teams für die Session, verbietet aber identische Paare aus der Vorsession."""
+    if "coop_teams" in session and session["coop_teams"]:
+        return session["coop_teams"]
+    
+    spieler = [p for p in session.get("spieler", []) if p != "-"]
+    
+    # Finde die Paare der vorherigen Koop/2v2 Session
+    prev_pairs = set()
+    for s in all_sessions:
+        if s["id"] != session["id"] and s.get("modus") in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]:
+            if "coop_teams" in s:
+                for t in s["coop_teams"]:
+                    parts = t.split("&")
+                    if len(parts) == 2 and "-" not in t:
+                        prev_pairs.add(frozenset([parts[0].strip(), parts[1].strip()]))
+            else:
+                # Fallback aus Spielerliste rekonstruieren falls nötig
+                s_spiel = [p for p in s.get("spieler", []) if p != "-"]
+                for i in range(0, len(s_spiel)-1, 2):
+                    prev_pairs.add(frozenset([s_spiel[i], s_spiel[i+1]]))
+
+    best_teams = []
+    for _ in range(50):
+        shuffled = spieler.copy()
+        random.shuffle(shuffled)
+        current_teams = []
+        has_forbidden = False
+        for i in range(0, len(shuffled)-1, 2):
+            p1, p2 = shuffled[i], shuffled[i+1]
+            pair = frozenset([p1, p2])
+            if pair in prev_pairs:
+                has_forbidden = True
+                break
+            current_teams.append(f"{p1} & {p2}")
+        if len(shuffled) % 2 != 0:
+            current_teams.append(f"{shuffled[-1]} & -")
+        
+        best_teams = current_teams
+        if not has_forbidden:
+            break
+            
+    session["coop_teams"] = best_teams
+    return best_teams
+
 def get_boards_list(session, round_num=None):
     boards_count = session.get("boards_count", 6)
     modus = session.get("modus", "Up & Down")
@@ -143,7 +189,7 @@ def get_boards_list(session, round_num=None):
     singles_rounds = session.get("singles_rounds", total_rounds - 2 if total_rounds > 2 else 4)
     in_coop_phase = is_standard_training and round_num is not None and round_num > singles_rounds
     
-    if in_coop_phase:
+    if in_coop_phase or modus == "Koop 2vs2 (Up & Down)":
         return ["Kaiser B1", "Board 2"]
         
     all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
@@ -165,7 +211,8 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
-    if round_num == 1 and not in_coop_phase:
+    # Runde 1 Einzel: Vorsession-Auswertung (Bottom-to-Top)
+    if round_num == 1 and not in_coop_phase and not is_2v2:
         all_sessions = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
         try:
             s_idx = all_sessions.index(session)
@@ -211,34 +258,42 @@ def get_board_players(session, round_num, board_name):
                 if p not in ordered_players:
                     ordered_players.append(p)
             spieler = ordered_players[:len(spieler)]
-        else:
-            chrono_s_idx = len(all_sessions) - 1 - s_idx
-            if spieler:
-                shift = (chrono_s_idx * 2) % len(spieler)
-                spieler = spieler[shift:] + spieler[:shift]
 
     pairs = []
     
     if is_2v2 or in_coop_phase:
-        teams = []
-        all_sessions = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
-        try:
-            s_idx = all_sessions.index(session)
-        except:
-            s_idx = 0
-            
-        if in_coop_phase:
-            coop_shift = (s_idx + (round_num - singles_rounds)) % len(spieler)
-            spieler = spieler[coop_shift:] + spieler[:coop_shift]
-            
-        for i in range(0, len(spieler)-1, 2):
-            teams.append(f"{spieler[i]} & {spieler[i+1]}")
-        if len(spieler) % 2 != 0:
-            teams.append(f"{spieler[-1]} & -")
-            
-        coop_boards_cnt = len(get_boards_list(session, round_num))
-        for i in range(0, min(coop_boards_cnt * 2, len(teams) - len(teams) % 2), 2):
-            pairs.append((teams[i], teams[i+1]))
+        teams = get_or_create_teams(session, st.session_state.sessions_list)
+        n_teams = len(teams)
+        
+        # Round-Robin Spielplan für 5 Teams auf 2 Boards
+        if n_teams == 5:
+            schedules = {
+                1: [(0, 1), (2, 3)],
+                2: [(0, 2), (3, 4)],
+                3: [(0, 3), (1, 4)],
+                4: [(0, 4), (1, 2)],
+                5: [(1, 3), (2, 4)]
+            }
+            r_idx = ((round_num - 1) % 5) + 1
+            current_pairs_idx = schedules[r_idx]
+            for idx1, idx2 in current_pairs_idx:
+                if idx1 < len(teams) and idx2 < len(teams):
+                    pairs.append((teams[idx1], teams[idx2]))
+        elif n_teams == 4:
+            schedules = {
+                1: [(0, 1), (2, 3)],
+                2: [(0, 2), (1, 3)],
+                3: [(0, 3), (1, 2)]
+            }
+            r_idx = ((round_num - 1) % 3) + 1
+            current_pairs_idx = schedules[r_idx]
+            for idx1, idx2 in current_pairs_idx:
+                if idx1 < len(teams) and idx2 < len(teams):
+                    pairs.append((teams[idx1], teams[idx2]))
+        else:
+            for i in range(0, min(2, len(teams) - len(teams)%2), 2):
+                pairs.append((teams[i], teams[i+1]))
+                
         while len(pairs) <= b_idx:
             t1 = teams[0] if len(teams) > 0 else "-"
             t2 = teams[1] if len(teams) > 1 else "-"
@@ -514,9 +569,13 @@ def open_new_session_dialog():
     if spielmodus == "Standard-Training (Einzel + Coop)":
         st.write("### Runden-Aufteilung")
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1)
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 6)), index=4)
         total_rounds = singles_rounds + coop_rounds
         st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel + {coop_rounds} Runden Doppel (Coop).")
+    elif spielmodus == "Koop 2vs2 (Up & Down)":
+        singles_rounds = 0
+        coop_rounds = 5
+        total_rounds = st.selectbox("Anzahl Runden (Jeder gegen Jeden)", [3, 4, 5, 6], index=2)
     else:
         singles_rounds = 0
         coop_rounds = 0
@@ -579,6 +638,10 @@ def open_new_session_dialog():
                     "gaeste": gaeste,
                     "results": {}
                 }
+                # Generiere direkt die Teams für den Fall von Koop
+                if spielmodus in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]:
+                    get_or_create_teams(new_session, st.session_state.sessions_list)
+
                 st.session_state.sessions_list.append(new_session)
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
@@ -614,7 +677,7 @@ def open_edit_session_dialog(session_idx):
         curr_coop = curr_total - curr_singles
         
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1 if 1 <= curr_singles <= 10 else 3, key=f"edit_singles_{session_idx}")
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=curr_coop-1 if 1 <= curr_coop <= 4 else 1, key=f"edit_coop_{session_idx}")
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 6)), index=curr_coop-1 if 1 <= curr_coop <= 5 else 4, key=f"edit_coop_{session_idx}")
         total_rounds = singles_rounds + coop_rounds
     else:
         singles_rounds = 0
@@ -1210,9 +1273,7 @@ def open_delete_session_dialog(session_id_to_delete):
     with col2:
         if st.button("Löschen bestätigen", type="primary", use_container_width=True):
             if del_pwd == "1521":
-                filtered_sessions = [s for s in st.session_state.sessions_list if s["id"] != session_id_to_delete]
-                st.session_state.sessions_list = filtered_sessions
-                save_data(st.session_state.sessions_list)
+                delete_session(session_id_to_delete)
                 st.success("Session wurde erfolgreich gelöscht!")
                 st.rerun()
             elif del_pwd:
@@ -1315,14 +1376,14 @@ with tab_archiv:
                         st.error("Falsches Passwort!")
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Board-Verteilung.")
+    st.subheader("🎯 Modus & Regeln & Ablauf")
+    st.write("Hier findet ihr die Anleitung für den Trainingsabend, den Auf- und Abstieg sowie die Team- und Umfrage-Regeln.")
     
     with st.container(border=True):
-        st.markdown("### 📱 Die WhatsApp-Abfrage & Coach-Start")
+        st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
-        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer anwesend ist und mitspielt.
-        * **Der Startschuss:** Sobald alle Rückmeldungen vorliegen und die Spieler feststehen, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
+        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
+        * **Der Startschuss:** Sobald genügend Rückmeldungen da sind, startet der Coach (oder Admin) den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
     with st.container(border=True):
@@ -1333,11 +1394,11 @@ with tab_regeln:
         """)
         
     with st.container(border=True):
-        st.markdown("### 🤝 Der Ablauf beim Standard-Training (Einzel + Coop)")
+        st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Jeder-gegen-Jeden)")
         st.markdown("""
-        * **Die Einzel-Runden:** Zuerst wird die normale Up & Down Einzel-Phase gespielt (z. B. 4 Runden), bei der sich jeder über die Boards kämpft.
-        * **Die Coop-Doppel-Phase (2vs2):** Nach den Einzelrunden schaltet das System automatisch auf das Doppel um. 
-        * **Auswahl & Rotation in der Coop-Phase:** In dieser Phase spielen Teams (jeweils 2 Spieler zusammen) auf **Kaiser B1** und **Board 2**. Der Spielplan rotiert die Partner dabei automatisch von Runde zu Runde durch, sodass im Laufe des Abends jeder mal mit jedem als Team antritt. Für die nächste Session dient die Einzelphase als Grundlage für die Startaufstellung.
+        * **Zufällige Teams für die Session:** Beim Modus **Koop 2vs2 (Up & Down)** werden zu Beginn feste 2er-Teams per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
+        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das automatisch und würfelt neue Kombinationen.
+        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Bei z.B. 5 Teams (10 Spielern) geht das Turnier über **5 Runden**, sodass jeder gegen jedes andere Team antritt und exakt einmal pro Abend aussetzt.
         """)
 
     with st.container(border=True):
@@ -1350,23 +1411,20 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### ⏱️ Der Ablauf an eurem Board")
         st.markdown("""
-        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1) und speichert ab.
-        2. **Automatische Weiterleitung:** Der Gewinner steigt automatisch eine Etage höher (oder bleibt Kaiser auf B1), der Verlierer rutscht eine Etage tiefer.
-        3. **Nächste Runde:** Sobald *alle* Boards ihre Ergebnisse eingetragen haben, schaltet die App vollautomatisch in die nächste Runde und setzt die neuen Paarungen zusammen.
+        1. **Ergebnis eintragen:** Sobald euer Match vorbei ist, tippt am Handy auf **🎯 Eintragen**, tragt das Leg-Ergebnis ein (z. B. 3:1 bei Best of 5) und speichert ab.
+        2. **Validierung:** Die App achtet streng darauf, dass das Ergebnis zum Leg-Modus passt (z. B. bei Best of 5 braucht der Sieger exakt 3 Legs).
         """)
 
     with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl?")
+        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl im Einzel?")
         st.markdown("""
-        * Wenn wir z. B. zu neunt sind, setzt das System auf dem allerletzten Board einen **Platzhalter (`-`)** ein.
-        * Der Spieler, der gegen das `-` antritt, bekommt in dieser Runde eine kurze Pause (Freilos), steigt danach aber ganz normal wieder ins System ein. 
-        * Das System wechselt diesen Pausenplatz in den Runden automatisch durch, sodass jeder mal aussetzt!
+        * Wenn wir z. B. zu neunt sind, lässt das System keine zu hohen Boardanzahlen zu. Auf dem letzten Board wird ein **Platzhalter (`-`)** eingesetzt.
+        * Wer gegen das `-` antritt, erhält ein Freilos (Pause), das in den Runden automatisch durchgewechselt wird.
         """)
 
     with st.container(border=True):
         st.markdown("### 📋 Wie werden die Spieler für eine *neue* Session aufgestellt?")
         st.markdown("""
-        * **Auswertung der Vorsession:** Für die 1. Runde einer neuen Session schaut das System nach, wie die Spieler am Ende der *letzten* Session platziert waren.
-        * **Bottom-to-Top Reihenfolge:** Die Spieler werden anhand des letzten Endstands von unten nach oben eingeteilt. Der *Kaiser* der Vorsession fängt ganz unten an, der *Verlierer* vom letzten Board ganz oben. Neue Spieler werden vorne einsortiert. 
-        * **Vollautomatisch:** Ihr müsst euch um die Aufstellung zu Beginn des Abends keine Gedanken machen – das System setzt sich beim Starten einer neuen Session selbstständig zusammen!
+        * **Auswertung der Vorsession:** Für die 1. Runde einer neuen Session schaut das System nach, wie die Spieler am Ende der letzten Session platziert waren.
+        * **Bottom-to-Top Reihenfolge:** Der *Kaiser* der Vorsession fängt ganz unten an, der *Verlierer* vom letzten Board ganz oben. Neue Spieler werden vorne einsortiert. Vollautomatisch!
         """)
