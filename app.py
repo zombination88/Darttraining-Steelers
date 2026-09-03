@@ -270,7 +270,6 @@ def get_board_players(session, round_num, board_name):
                 4: [(0, 4), (1, 2)],
                 5: [(1, 3), (2, 4)]
             }
-            # Bei Standard-Training beginnt die Koop-Phase bei round_num - singles_rounds
             rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
             r_idx = ((rel_round - 1) % 5) + 1
             current_pairs_idx = schedules[r_idx]
@@ -506,7 +505,7 @@ def open_session_archive_dialog(session_idx):
     if st.button("Schließen", use_container_width=True):
         st.rerun()
 
-@st.dialog("📊 Session Endstand (Zusammenfassung)")
+@st.dialog("📊 Session Endstand & Zusammenfassung")
 def open_session_summary_dialog(session_idx):
     all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
     sess = all_sessions_sorted[session_idx]
@@ -517,41 +516,71 @@ def open_session_summary_dialog(session_idx):
     total_rounds = sess.get("total_rounds", 4)
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    is_pure_coop = (modus == "Koop 2vs2 (Up & Down)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
     res = sess.get("results", {})
     
-    last_played_round = 0
-    for (r, b), info in res.items():
-        if info.get("winner") and r <= singles_rounds:
-            if r > last_played_round:
-                last_played_round = r
-                
-    if last_played_round == 0:
-        st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
-    else:
-        st.markdown(f"#### 🎯 Endstand nach Runde {last_played_round}/{singles_rounds} (Einzel)")
-        boards_in_r = get_boards_list(sess, last_played_round)
-        
-        for b_name in boards_in_r:
-            match_info = res.get((last_played_round, b_name))
-            if match_info and match_info.get("winner"):
-                winner = match_info.get("winner")
-                loser = match_info.get("loser")
-                st.markdown(f"""
-                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                    <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
-                    <p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{winner}</b></p>
-                    <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{loser}</b></p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                    <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
-                    <p style='margin: 0; font-style: italic; color: #888;'>Match wurde nicht beendet.</p>
-                </div>
-                """, unsafe_allow_html=True)
+    # 1. Einzel-Phase anzeigen (falls vorhanden)
+    if singles_rounds > 0 and not is_pure_coop:
+        last_played_round = 0
+        for (r, b), info in res.items():
+            if info.get("winner") and r <= singles_rounds:
+                if r > last_played_round:
+                    last_played_round = r
+                    
+        if last_played_round > 0:
+            st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
+            boards_in_r = get_boards_list(sess, last_played_round)
+            for b_name in boards_in_r:
+                match_info = res.get((last_played_round, b_name))
+                if match_info and match_info.get("winner"):
+                    winner = match_info.get("winner")
+                    loser = match_info.get("loser")
+                    st.markdown(f"""
+                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
+                        <p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{winner}</b></p>
+                        <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{loser}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
+                        <p style='margin: 0; font-style: italic; color: #888;'>Match wurde nicht beendet.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
+            
+    # 2. Koop / Doppel-Phase anzeigen (falls vorhanden oder reiner Koop-Modus)
+    coop_start_round = singles_rounds + 1 if is_standard_training else 1
+    has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
+    
+    if has_coop:
+        st.markdown("#### 🤝 Koop / Doppel-Phase")
+        coop_found = False
+        for r in range(coop_start_round, total_rounds + 1):
+            coop_boards = get_boards_list(sess, r)
+            for b_name in coop_boards:
+                m_info = res.get((r, b_name))
+                if m_info and m_info.get("winner"):
+                    coop_found = True
+                    r_num_display = r - singles_rounds if is_standard_training else r
+                    team1 = m_info.get("s1", "–")
+                    team2 = m_info.get("s2", "–")
+                    ergebnis = m_info.get("ergebnis", "–")
+                    winner = m_info.get("winner", "–")
+                    st.markdown(f"""
+                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>Runde {r_num_display} — {b_name}</h5>
+                        <p style='margin: 0; font-size: 0.95em;'>⚔️ {team1} vs {team2}</p>
+                        <p style='margin: 0; font-size: 0.95em;'>Ergebnis: <b>{ergebnis}</b> | Sieger: <b>{winner}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        if not coop_found:
+            st.info("Es wurden noch keine Koop-Matches in dieser Session beendet.")
 
     if st.button("Schließen", use_container_width=True):
         st.rerun()
