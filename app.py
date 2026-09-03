@@ -167,11 +167,12 @@ def delete_session(session_id):
 
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
-    try:
-        st.image("logo.png.png", width=80)
-    except:
+    logo_loaded = False
+    for logo_path in ["logo.png.png", "logo.png"]:
         try:
-            st.image("logo.png", width=80)
+            st.image(logo_path, width=80)
+            logo_loaded = True
+            break
         except:
             pass
 
@@ -547,7 +548,7 @@ def open_session_archive_dialog(session_idx):
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
     
-    # Zeiterfassung & Durchschnittszeiten berechnen
+    # Zeitmanagement & Durchschnittszeiten berechnen
     start_t = sess.get("start_time")
     end_t = sess.get("end_time")
     total_rounds = sess.get("total_rounds", 4)
@@ -635,7 +636,7 @@ def open_session_summary_dialog(session_idx):
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
     
-    # Zeiterfassung & Durchschnittszeiten berechnen
+    # Zeitmanagement & Durchschnittszeiten berechnen
     start_t = sess.get("start_time")
     end_t = sess.get("end_time")
     total_rounds = sess.get("total_rounds", 4)
@@ -1406,6 +1407,27 @@ with tab_session:
                 time_str = f" | ⏱️ {start_t} Uhr" + (f" – {end_t} Uhr" if end_t else " (laufend)") if start_t else " | ⏱️ (noch nicht gestartet)"
                 total_rounds = sess.get("total_rounds", 4)
                 st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['id']}{time_str}{gaeste_text}*{status_text}")
+                
+                # Zeitmanagement-Anzeige auf der Karte, falls vorhanden
+                if start_t and end_t:
+                    try:
+                        t1 = datetime.strptime(start_t, "%H:%M")
+                        t2 = datetime.strptime(end_t, "%H:%M")
+                        diff_min = (t2 - t1).total_seconds() / 60
+                        if diff_min > 0:
+                            avg_min_round = diff_min / total_rounds if total_rounds > 0 else 0
+                            total_legs = 0
+                            for match in sess.get("results", {}).values():
+                                erg = match.get("ergebnis", "0:0")
+                                try:
+                                    l1, l2 = map(int, erg.split(":"))
+                                    total_legs += l1 + l2
+                                except:
+                                    pass
+                            avg_min_leg = diff_min / total_legs if total_legs > 0 else 0
+                            st.caption(f"⏱️ {int(diff_min)} Min. Gesamt | 🔄 Ø {avg_min_round:.1f} Min./Runde | 🎯 Ø {avg_min_leg:.1f} Min./Leg")
+                    except:
+                        pass
                 
                 if st.button("📊 Spielablauf ansehen", key=f"sess_view_{sess['id']}", use_container_width=True):
                     open_session_archive_dialog(idx)
