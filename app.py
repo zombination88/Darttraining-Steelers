@@ -775,7 +775,6 @@ def open_board_dialog(board_name, session_idx):
                     "avg_s2": in_avg_2
                 }
                 smart_sync_and_save(st.session_state.sessions_list)
-                st.success("Ergebnis und Statistiken erfolgreich gespeichert!")
                 st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
