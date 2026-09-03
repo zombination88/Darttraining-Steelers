@@ -248,7 +248,7 @@ def get_board_players(session, round_num, board_name):
             prev_players_bottom_to_top = list(reversed(prev_players_top_to_bottom))
             
             returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
-            new_players = [p for p in spieler if p not in prev_players_bottom_to_top]
+            new_players = [p for p in spieler if p not in prev_players_top_to_bottom]
             
             ordered_players = new_players + returning_players
             for p in spieler:
@@ -270,7 +270,9 @@ def get_board_players(session, round_num, board_name):
                 4: [(0, 4), (1, 2)],
                 5: [(1, 3), (2, 4)]
             }
-            r_idx = ((round_num - 1) % 5) + 1
+            # Bei Standard-Training beginnt die Koop-Phase bei round_num - singles_rounds
+            rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
+            r_idx = ((rel_round - 1) % 5) + 1
             current_pairs_idx = schedules[r_idx]
             for idx1, idx2 in current_pairs_idx:
                 if idx1 < len(teams) and idx2 < len(teams):
@@ -281,7 +283,8 @@ def get_board_players(session, round_num, board_name):
                 2: [(0, 2), (1, 3)],
                 3: [(0, 3), (1, 2)]
             }
-            r_idx = ((round_num - 1) % 3) + 1
+            rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
+            r_idx = ((rel_round - 1) % 3) + 1
             current_pairs_idx = schedules[r_idx]
             for idx1, idx2 in current_pairs_idx:
                 if idx1 < len(teams) and idx2 < len(teams):
@@ -344,7 +347,16 @@ def is_board_ready(session, board_name, next_r):
     total_rounds = session.get("total_rounds", 4)
     singles_rounds = session.get("singles_rounds", total_rounds - 2 if modus == "Standard-Training (Einzel + Coop)" and total_rounds > 2 else total_rounds)
     
+    # STRIKTE PRÜFUNG: Wenn Standard-Training und der Übergang zur Koop-Phase (Doppel) ansteht, 
+    # MÜSSEN ALLE EINZEL-RUNDEN KOMPLETT ABGESCHLOSSEN SEIN!
     if modus == "Standard-Training (Einzel + Coop)" and next_r == singles_rounds + 1:
+        res = session.get("results", {})
+        base_boards = get_boards_list(session, 1)
+        for r in range(1, singles_rounds + 1):
+            for rb in base_boards:
+                match_info = res.get((r, rb))
+                if not match_info or not match_info.get("winner"):
+                    return False
         return True
         
     boards = get_boards_list(session, next_r)
@@ -886,7 +898,7 @@ with tab_übersicht:
         
         res = curr_sess.get("results", {})
         
-        # NEU: Bestimme die aktiven Boards dynamisch (bei Koop oder Coop-Phase nur Kaiser B1 und Board 2)
+        # Board-Ansicht Logik: Bei Koop oder in der Coop-Phase nur Kaiser B1 und Board 2
         if modus == "Koop 2vs2 (Up & Down)":
             active_boards_list = ["Kaiser B1", "Board 2"]
         elif is_standard_training:
@@ -1329,7 +1341,7 @@ with tab_archiv:
 
                 st.divider()
                 
-                # NEU: ÜBERSICHTLICHER RUNDEN-FÜR-RUNDEN BLITZEINTRAG WIZARD
+                # RUNDEN-FÜR-RUNDEN BLITZEINTRAG WIZARD
                 is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
                 if is_checked:
                     blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
@@ -1418,7 +1430,7 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
-        * **Die Umfrage:** Der Teamcoach startet im Vorfeld (z. B. am Freitag oder Samstag) einmalig eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
+        * **Die Umfrage:** Der Teamcoach startet einmalig (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
         * **Der Startschuss:** Sobald genügend Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
@@ -1435,7 +1447,8 @@ with tab_regeln:
         * **Zufällige Teams:** Beim Modus **Koop 2vs2 (Up & Down)** oder in der Doppelphase des Standard-Trainings werden zu Beginn feste 2er-Paarungen per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
         * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das vollautomatisch.
         * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Es gibt so viele Runden, bis jedes Team gegen jedes andere Team angetreten ist (z.B. bei 5 Teams = 5 Runden). 
-        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) pausiert pro Runde automatisch ein Team (Rotations-Freilos), das in der nächsten Runde wieder einsteigt.
+        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass jeder im Laufe des Abends gleich oft pausiert.
+        * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst dann freigeschaltet und angezeigt, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
         """)
 
     with st.container(border=True):
