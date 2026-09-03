@@ -806,6 +806,13 @@ def open_edit_session_dialog(session_idx):
         curr_date = date.today()
 
     session_datum = st.date_input("Datum", curr_date, key=f"edit_date_{session_idx}")
+    
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        edit_start_time = st.text_input("Startzeit (HH:MM)", value=sess.get("start_time") or "", key=f"edit_start_t_{session_idx}")
+    with col_t2:
+        edit_end_time = st.text_input("Endzeit (HH:MM)", value=sess.get("end_time") or "", key=f"edit_end_t_{session_idx}")
+
     leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], index=["Best of 5", "Best of 3"].index(sess.get("modus_leg", "Best of 5")), key=f"edit_leg_{session_idx}")
     
     modi_list = ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)", "Liga (4er-Team)"]
@@ -879,6 +886,8 @@ def open_edit_session_dialog(session_idx):
         if st.button("Änderungen speichern", type="primary", use_container_width=True, key=f"edit_save_{session_idx}", disabled=not can_save):
             if can_save:
                 sess["datum"] = session_datum.strftime("%d.%m.%Y")
+                sess["start_time"] = edit_start_time.strip() if edit_start_time.strip() else None
+                sess["end_time"] = edit_end_time.strip() if edit_end_time.strip() else None
                 sess["modus"] = spielmodus
                 sess["boards_count"] = gewaehlte_boards_zahl
                 sess["singles_rounds"] = singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds
@@ -1031,7 +1040,6 @@ with tab_übersicht:
 
         start_t = curr_sess.get("start_time")
         
-        # 2-Schritt Workflow: Wenn noch nicht gestartet, Info + Start-Button anzeigen
         if not start_t:
             st.info(f"Session **{curr_sess['id']}** wurde erstellt für den **{curr_sess['datum']}**.")
             st.write(f"👥 **Gemeldete Spieler:** {', '.join(curr_sess.get('spieler', []))}")
