@@ -553,7 +553,7 @@ def open_session_summary_dialog(session_idx):
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
-    # 2. Koop / Doppel-Phase Gesamtrangliste
+    # 2. Koop / Doppel-Phase Gesamtrangliste (Kompakt: Platz 1, Platz 2, Platz 3...)
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
@@ -616,12 +616,10 @@ def open_session_summary_dialog(session_idx):
             if stats["matches"] > 0 or len(sorted_teams) <= 5:
                 coop_found = True
                 medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
-                leg_diff = stats["legs_won"] - stats["legs_lost"]
-                diff_str = f"+{leg_diff}" if leg_diff > 0 else str(leg_diff)
                 st.markdown(f"""
                 <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'>
                     <p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p>
-                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Niederlagen: {stats['losses']} | Legs: {stats['legs_won']}:{stats['legs_lost']} ({diff_str})</p>
+                    <p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 rank += 1
@@ -1508,8 +1506,9 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
-        * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
-        * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
+        * **Das Ziel:** Aufstieg nach ganz oben auf **Kaiser B1**.
+        * **Der Auf- und Abstieg:** Nach jedem Match steigen die Gewinner eine Etage nach oben, während die Verlierer eine Etage nach unten wandern.
+        * **Das Kaiser-Duell:** Auf Board 1 (Kaiser B1) verteidigt der König seinen Thron gegen den Aufsteiger von Board 2.
         """)
 
     with st.container(border=True):
