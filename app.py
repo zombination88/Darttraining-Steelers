@@ -29,6 +29,21 @@ def init_connection():
 
 sheet_conn = init_connection()
 
+def make_serializable(sessions):
+    """Konvertiert Tupel-Schlüssel in den Ergebnissen in Strings für JSON-Export."""
+    serializable_sessions = []
+    for sess in sessions:
+        sess_copy = sess.copy()
+        fixed_results = {}
+        for k, v in sess.get("results", {}).items():
+            if isinstance(k, tuple):
+                fixed_results[f"{k[0]}_{k[1]}"] = v
+            else:
+                fixed_results[k] = v
+        sess_copy["results"] = fixed_results
+        serializable_sessions.append(sess_copy)
+    return serializable_sessions
+
 def load_data():
     if not sheet_conn:
         return []
@@ -55,7 +70,8 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
-def save_backup_to_cloud(sessions):
+def save_backup_to_cloud(serializable_sessions):
+    """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt."""
     try:
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict:
@@ -73,9 +89,10 @@ def save_backup_to_cloud(sessions):
             backup_ws = spreadsheet.add_worksheet(title="backups", rows=1000, cols=2)
             backup_ws.append_row(["Timestamp", "JSON_Data"])
         
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        json_str = json.dumps(sessions, ensure_ascii=False)
-        backup_ws.append_row([timestamp, json_str])
+        from zoneinfo import ZoneInfo
+        ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
+        json_str = json.dumps(serializable_sessions, ensure_ascii=False)
+        backup_ws.append_row([ts, json_str])
     except Exception as e:
         pass
 
@@ -83,15 +100,7 @@ def save_data(sessions):
     if not sheet_conn:
         return
         
-    serializable_sessions = []
-    for sess in sessions:
-        sess_copy = sess.copy()
-        fixed_results = {}
-        for (r_num, b_name), v in sess.get("results", {}).items():
-            fixed_results[f"{r_num}_{b_name}"] = v
-        sess_copy["results"] = fixed_results
-        serializable_sessions.append(sess_copy)
-    
+    serializable_sessions = make_serializable(sessions)
     json_str = json.dumps(serializable_sessions, ensure_ascii=False)
     try:
         sheet_conn.clear()
@@ -108,8 +117,19 @@ def get_local_time_str():
     except Exception:
         return datetime.now().strftime("%H:%M")
 
+def is_session_completed(sess):
+    total_rounds = sess.get("total_rounds", 4)
+    res = sess.get("results", {})
+    for r in range(1, total_rounds + 1):
+        boards_in_round = get_boards_list(sess, r)
+        for b_name in boards_in_round:
+            match_info = res.get((r, b_name))
+            if not match_info or not match_info.get("winner"):
+                return False
+    return True
+
 def check_session_completion_time(sess):
-    """Prüft, ob die Session komplett beendet ist und setzt ggf. die Enduhrzeit."""
+    """Setzt bei Abschluss automatisch die Enduhrzeit, sofern noch nicht vorhanden."""
     if is_session_completed(sess):
         if not sess.get("end_time"):
             sess["end_time"] = get_local_time_str()
@@ -181,8 +201,8 @@ if "sessions_list" not in st.session_state:
 tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "Modus & Regeln"])
 
 def get_or_create_teams(session, all_sessions):
-    """Generiert zufällige 2v2 Teams für die Session, verbietet identische Paare aus der Vorsession 
-    und verhindert, dass Spieler, die in der Vorsession als Letztes pausiert haben, in Runde 1 erneut pausieren."""
+    """Generiert zufällige 2v2 Teams mit Schutz vor identischen Paaren der Vorsession 
+    sowie Anti-Doppel-Pause Schutz für Spieler, die in der Vorwoche als Letztes pausieren mussten."""
     if "coop_teams" in session and session["coop_teams"]:
         return session["coop_teams"]
     
@@ -205,11 +225,10 @@ def get_or_create_teams(session, all_sessions):
                 prev_modus = prev_sess.get("modus", "Up & Down")
                 prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
                 prev_singles = prev_sess.get("singles_rounds", prev_total - 2 if prev_is_std and prev_total > 2 else prev_total)
-                prev_coop_start = prev_singles + 1 if prev_is_std else 1
                 prev_teams = prev_sess.get("coop_teams", [])
                 if len(prev_teams) % 2 != 0:
                     n_prev = len(prev_teams)
-                    last_rel_round = prev_total - prev_coop_start + 1
+                    last_rel_round = prev_total - (prev_singles if prev_is_std else 0)
                     resting_idx = (last_rel_round - 1) % n_prev
                     resting_team_str = prev_teams[resting_idx]
                     for p in resting_team_str.split("&"):
@@ -337,7 +356,6 @@ def get_board_players(session, round_num, board_name):
     if is_2v2 or in_coop_phase:
         teams = get_or_create_teams(session, st.session_state.sessions_list)
         n_teams = len(teams)
-        coop_start_round = singles_rounds + 1 if is_standard_training else 1
         rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
         
         resting_team_idx = (rel_round - 1) % n_teams if n_teams % 2 != 0 else -1
@@ -466,17 +484,6 @@ def is_board_ready(session, board_name, next_r):
             
     return True
 
-def is_session_completed(sess):
-    total_rounds = sess.get("total_rounds", 4)
-    res = sess.get("results", {})
-    for r in range(1, total_rounds + 1):
-        boards_in_round = get_boards_list(sess, r)
-        for b_name in boards_in_round:
-            match_info = res.get((r, b_name))
-            if not match_info or not match_info.get("winner"):
-                return False
-    return True
-
 @st.dialog("🔄 Spieler auswechseln")
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
     all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
@@ -598,7 +605,6 @@ def open_session_summary_dialog(session_idx):
     
     res = sess.get("results", {})
     
-    # 1. Einzel-Phase anzeigen (falls vorhanden)
     if singles_rounds > 0 and not is_pure_coop:
         last_played_round = 0
         for (r, b), info in res.items():
@@ -632,7 +638,6 @@ def open_session_summary_dialog(session_idx):
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
-    # 2. Koop / Doppel-Phase Gesamtrangliste (Platz 1, Platz 2, Platz 3...)
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
@@ -1194,94 +1199,6 @@ with tab_übersicht:
         c3, c4 = st.columns(2)
         with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
         with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
-        
-    st.write("")
-    with st.expander("Letzte Session & Spitzenreiter", expanded=False):
-        col_l, col_r = st.columns(2)
-        with col_l:
-            st.markdown("### Letzte Session")
-            if display_sess:
-                l_date = display_sess.get('datum', '–')
-                count_180s = {}
-                match_avgs = []
-                for m in display_sess.get('results', {}).values():
-                    s1_name = m.get("s1", "")
-                    s2_name = m.get("s2", "")
-                    if s1_name and " & " not in s1_name:
-                        count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
-                        if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
-                    if s2_name and " & " not in s2_name:
-                        count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
-                        if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
-                
-                most_180_text = "Keine"
-                if count_180s and max(count_180s.values()) > 0:
-                    top_player = max(count_180s, key=count_180s.get)
-                    most_180_text = f"{top_player} ({count_180s[top_player]}x)"
-                
-                best_avg_text = "–"
-                if match_avgs:
-                    top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
-                    best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
-                
-                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
-            else:
-                st.info("Keine Daten vorhanden.")
-
-        with col_r:
-            st.markdown("### Spitzenreiter")
-            stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
-            for sess in st.session_state.sessions_list:
-                for match in sess.get("results", {}).values():
-                    winner = match.get("winner", "")
-                    loser = match.get("loser", "")
-                    if winner and " & " not in winner:
-                        for p in winner.split(" & "):
-                            if p in stats_temp:
-                                stats_temp[p]["Matches"] += 1
-                                stats_temp[p]["Siege"] += 1
-                    if loser and " & " not in loser:
-                        for p in loser.split(" & "):
-                            if p in stats_temp:
-                                stats_temp[p]["Matches"] += 1
-
-            best_p = "Keiner"
-            best_q = 0.0
-            best_m = 0
-            for p in kader:
-                m = stats_temp[p]["Matches"]
-                s = stats_temp[p]["Siege"]
-                if m > 0:
-                    q = s / m
-                    if q > best_q or (q == best_q and m > best_m):
-                        best_q = q
-                        best_m = m
-                        best_p = p
-
-            st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
-            st.progress(best_q)
-
-    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
-        all_matches = []
-        all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
-        for sess in all_sessions_sorted:
-            sess_date = sess.get("datum", "")
-            for (round_num, board_name), m_info in sess.get("results", {}).items():
-                if not m_info.get("winner"): continue
-                all_matches.append({
-                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
-                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
-                })
-                
-        if all_matches:
-            for m in reversed(all_matches):
-                with st.container(border=True):
-                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
-                    st.caption(f"⚔️ {m['Spieler']}")
-                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
-        else:
-            st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz")
@@ -1377,61 +1294,6 @@ with tab_kader:
             st.markdown(f"**{row['Spieler']}** — Quote: **{row['Siegquote']}**")
             st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 📊 Avg: {row['📊 Ø Average']} | 🎯 180er: {row['🎯 180er']} | Legs: {row['Legs Gewonnen']}:{row['Legs Verloren']}")
 
-    with st.expander("🤝 Doppel-Paarungen (Coop-Statistik)", expanded=False):
-        pair_stats = {}
-        for sess in st.session_state.sessions_list:
-            for match in sess.get("results", {}).values():
-                winner = match.get("winner", "")
-                s1 = match.get("s1", "")
-                s2 = match.get("s2", "")
-                try: l1, l2 = map(int, match.get("ergebnis", "0:0").split(":"))
-                except: l1, l2 = 0, 0
-                
-                h1, h2 = int(match.get("180_s1", 0)), int(match.get("180_s2", 0))
-                a1, a2 = float(match.get("avg_s1", 0.0)), float(match.get("avg_s2", 0.0))
-                
-                def process_pair(pair_str, is_won, won_legs, lost_legs, h_count, avg_val):
-                    if " & " in pair_str:
-                        p_members = sorted([p.strip() for p in pair_str.split("&")])
-                        pair_key = " & ".join(p_members)
-                        if pair_key not in pair_stats:
-                            pair_stats[pair_key] = {"Matches": 0, "Siege": 0, "Niederlagen": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "Avg_Sum": 0.0, "Avg_Count": 0}
-                        pair_stats[pair_key]["Matches"] += 1
-                        if is_won: pair_stats[pair_key]["Siege"] += 1
-                        else: pair_stats[pair_key]["Niederlagen"] += 1
-                        pair_stats[pair_key]["Legs_Won"] += won_legs
-                        pair_stats[pair_key]["Legs_Lost"] += lost_legs
-                        pair_stats[pair_key]["180er"] += h_count
-                        if avg_val > 0:
-                            pair_stats[pair_key]["Avg_Sum"] += avg_val
-                            pair_stats[pair_key]["Avg_Count"] += 1
-
-                if " & " in s1: process_pair(s1, (winner == s1), l1, l2, h1, a1)
-                if " & " in s2: process_pair(s2, (winner == s2), l2, l1, h2, a2)
-
-        pair_rows = []
-        for pair_name, p_data in pair_stats.items():
-            m = p_data["Matches"]
-            s = p_data["Siege"]
-            n = p_data["Niederlagen"]
-            quote = f"{(s / m * 100):.0f}%" if m > 0 else "0%"
-            acount = p_data["Avg_Count"]
-            avg_val = f"{(p_data['Avg_Sum'] / acount):.1f}" if acount > 0 else "–"
-            pair_rows.append({
-                "Doppel-Team": pair_name, "Matches": m, "Siege": s, "Niederlagen": n,
-                "Siegquote": quote, "Legs Gewonnen": p_data["Legs_Won"], "Legs Verloren": p_data["Legs_Lost"],
-                "🎯 180er": p_data["180er"], "📊 Ø Average": avg_val
-            })
-            
-        if pair_rows:
-            sorted_pairs = sorted(pair_rows, key=lambda x: (x["Siege"], x["Legs Gewonnen"]), reverse=True)
-            for row in sorted_pairs:
-                with st.container(border=True):
-                    st.markdown(f"**{row['Doppel-Team']}** — Quote: **{row['Siegquote']}**")
-                    st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 📊 Avg: {row['📊 Ø Average']} | 🎯 180er: {row['🎯 180er']} | Legs: {row['Legs Gewonnen']}:{row['Legs Verloren']}")
-        else:
-            st.info("Bisher wurden keine Doppel- oder Koop-Matches ausgetragen.")
-
 with tab_session:
     st.subheader("Up & Down Sessions")
     st.write("Aufstieg Richtung B1 und Abstieg Richtung B6.")
@@ -1481,12 +1343,31 @@ with tab_session:
                 if st.button("📊 Spielablauf ansehen", key=f"sess_view_{sess['id']}", use_container_width=True):
                     open_session_archive_dialog(idx)
 
+@st.dialog("🗑️ Session endgültig löschen")
+def open_delete_session_dialog(session_id_to_delete):
+    st.warning(f"Willst du die Session {session_id_to_delete} wirklich unwiderruflich löschen?")
+    del_pwd = st.text_input("Admin-Passwort zum Löschen:", type="password", key=f"del_pwd_{session_id_to_delete}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True):
+            st.rerun()
+    with col2:
+        if st.button("Löschen bestätigen", type="primary", use_container_width=True):
+            if del_pwd == "1521":
+                delete_session(session_id_to_delete)
+                st.success("Session wurde erfolgreich gelöscht!")
+                st.rerun()
+            elif del_pwd:
+                st.error("Falsches Passwort!")
+
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
     st.caption("Die neueste Session steht hier immer ganz oben. Inklusive automatischem Cloud-Backup und lokalem JSON-Download.")
     
     if st.session_state.sessions_list:
-        backup_json_str = json.dumps(st.session_state.sessions_list, ensure_ascii=False, indent=2)
+        serializable_all = make_serializable(st.session_state.sessions_list)
+        backup_json_str = json.dumps(serializable_all, ensure_ascii=False, indent=2)
         st.download_button(
             label="📥 Backup als JSON herunterladen",
             data=backup_json_str,
@@ -1605,7 +1486,8 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
-        * **Das Prinzip:** Wer auf Kaiser B1 gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten. Wer ganz unten gewinnt, steigt nach oben auf.
+        * **Das Prinzip:** Gespielt wird auf mehreren Boards (B1 bis B6). Wer auf einem Board gewinnt, steigt ein Board nach oben (Richtung Kaiser B1). Wer verliert, wandert ein Board nach unten.
+        * **Der Kaiser:** Wer auf Kaiser B1 gewinnt, bleibt König (Kaiser). Wer dort verliert, steigt nach Board 2 ab. Wer ganz unten (z.B. B6) verliert, steigt nach B1 auf.
         """)
 
     with st.container(border=True):
