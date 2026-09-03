@@ -133,9 +133,6 @@ def check_session_completion_time(sess):
     if is_session_completed(sess):
         if not sess.get("end_time"):
             sess["end_time"] = get_local_time_str()
-    else:
-        if "end_time" in sess and sess.get("end_time") and not is_session_completed(sess):
-            pass
 
 def smart_sync_and_save(updated_sessions):
     for sess in updated_sessions:
@@ -168,7 +165,18 @@ def delete_session(session_id):
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
 
-st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>", unsafe_allow_html=True)
+c_logo, c_title = st.columns([1, 4])
+with c_logo:
+    try:
+        st.image("logo.png.png", width=80)
+    except:
+        try:
+            st.image("logo.png", width=80)
+        except:
+            pass
+
+with c_title:
+    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>", unsafe_allow_html=True)
 
 c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
 with c_mus:
@@ -1486,7 +1494,7 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
-        * **Das System:** Gespielt wird auf mehreren Boards (B1 bis B6). Wer gewinnt, steigt ein Board nach oben (Richtung Kaiser B1). Wer verliert, wandert ein Board nach unten. Auf Kaiser B1 bleibt der Sieger König, der Verlierer steigt nach Board 2 ab.
+        * **Das Prinzip:** Wer auf Kaiser B1 gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten. Wer ganz unten gewinnt, steigt nach oben auf.
         """)
 
     with st.container(border=True):
