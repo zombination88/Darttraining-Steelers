@@ -166,16 +166,21 @@ def get_board_players(session, round_num, board_name):
     spieler = session["spieler"].copy()
     
     if round_num == 1 and not in_coop_phase:
-        all_sessions = st.session_state.sessions_list
-        try:
-            s_idx = all_sessions.index(session)
-        except:
-            s_idx = 0
+        # Finde die chronologisch vorherige Session
+        sorted_all = sorted(
+            st.session_state.sessions_list, 
+            key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0
+        )
+        
+        curr_id_num = int(session["id"].split("-")[1]) if "id" in session and "-" in session["id"] else 0
         
         prev_sess = None
-        if s_idx + 1 < len(all_sessions):
-            prev_sess = all_sessions[s_idx + 1]
-            
+        for s in reversed(sorted_all):
+            s_num = int(s["id"].split("-")[1]) if "id" in s and "-" in s["id"] else 0
+            if s_num < curr_id_num:
+                prev_sess = s
+                break
+                
         if prev_sess and "results" in prev_sess:
             prev_total = prev_sess.get("total_rounds", 4)
             prev_modus = prev_sess.get("modus", "Up & Down")
@@ -189,31 +194,36 @@ def get_board_players(session, round_num, board_name):
             prev_players_bottom_to_top = []
             for pb in reversed(prev_boards):
                 match_inf = prev_results.get((target_r, pb))
-                p1, p2 = "-", "-"
-                if match_inf:
-                    p1 = match_inf.get("s1", "-")
-                    p2 = match_inf.get("s2", "-")
+                if match_inf and match_inf.get("winner"):
+                    w = match_inf.get("winner")
+                    l = match_inf.get("loser")
+                    # Der Verlierer war schlechter, also weiter oben anstellen in der neuen Liste
+                    if l != "-" and l not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(l)
+                    if w != "-" and w not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(w)
                 else:
+                    # Falls kein Ergebnis vorliegt, nehmen wir die gesetzten Spieler
                     p_pair = get_board_players(prev_sess, target_r, pb)
                     p1, p2 = p_pair[0], p_pair[1]
-                if p2 != "-" and p2 not in prev_players_bottom_to_top:
-                    prev_players_bottom_to_top.append(p2)
-                if p1 != "-" and p1 not in prev_players_bottom_to_top:
-                    prev_players_bottom_to_top.append(p1)
+                    if p2 != "-" and p2 not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(p2)
+                    if p1 != "-" and p1 not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(p1)
             
+            # Neue Spieler (die letzte Session nicht dabei waren)
             returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
-            new_players = [p for p in spieler if p not in prev_players_bottom_to_top]
+            new_players = [p for p in spieler if p not in returning_players and p != "-"]
             
+            # Neue Spieler kommen ganz nach oben (Board 1 abwärts), danach die alten von unten nach oben
             ordered_players = new_players + returning_players
+            
+            # Fallback für Leute, die aus irgendeinem Grund fehlen
             for p in spieler:
-                if p not in ordered_players:
+                if p not in ordered_players and p != "-":
                     ordered_players.append(p)
+                    
             spieler = ordered_players[:len(spieler)]
-        else:
-            chrono_s_idx = len(all_sessions) - 1 - s_idx
-            if spieler:
-                shift = (chrono_s_idx * 2) % len(spieler)
-                spieler = spieler[shift:] + spieler[:shift]
 
     pairs = []
     
