@@ -100,7 +100,7 @@ def delete_session(session_id):
         save_data(fresh_data)
         st.session_state.sessions_list = fresh_data
     else:
-        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id"] != session_id]
+        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
 
 st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
