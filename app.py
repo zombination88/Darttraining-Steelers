@@ -136,13 +136,15 @@ if "sessions_list" not in st.session_state:
 tab_übersicht, tab_kader, tab_session, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Match-Archiv", "Modus & Regeln"])
 
 def get_or_create_teams(session, all_sessions):
-    """Generiert zufällige 2v2 Teams für die Session, verbietet aber identische Paare aus der Vorsession."""
+    """Generiert zufällige 2v2 Teams für die Session, verbietet identische Paare aus der Vorsession 
+    und verhindert, dass Spieler, die in der Vorsession als Letztes pausiert haben, in Runde 1 erneut pausieren."""
     if "coop_teams" in session and session["coop_teams"]:
         return session["coop_teams"]
     
     spieler = [p for p in session.get("spieler", []) if p != "-"]
     
     prev_pairs = set()
+    prev_resting_players = set()
     all_sorted = sorted(all_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     try:
         s_idx = all_sorted.index(session)
@@ -153,6 +155,23 @@ def get_or_create_teams(session, all_sessions):
                     parts = t.split("&")
                     if len(parts) == 2 and "-" not in t:
                         prev_pairs.add(frozenset([parts[0].strip(), parts[1].strip()]))
+                
+                # Finde heraus, wer in der letzten Runde der Vorsession pausiert hat
+                prev_total = prev_sess.get("total_rounds", 4)
+                prev_modus = prev_sess.get("modus", "Up & Down")
+                prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
+                prev_singles = prev_sess.get("singles_rounds", prev_total - 2 if prev_is_std and prev_total > 2 else prev_total)
+                prev_coop_start = prev_singles + 1 if prev_is_std else 1
+                prev_teams = prev_sess.get("coop_teams", [])
+                if len(prev_teams) % 2 != 0:
+                    n_prev = len(prev_teams)
+                    last_rel_round = prev_total - prev_coop_start + 1
+                    resting_idx = (last_rel_round - 1) % n_prev
+                    resting_team_str = prev_teams[resting_idx]
+                    for p in resting_team_str.split("&"):
+                        p_clean = p.strip()
+                        if p_clean and p_clean != "-":
+                            prev_resting_players.add(p_clean)
             else:
                 prev_spiel = [p for p in prev_sess.get("spieler", []) if p != "-"]
                 for i in range(0, len(prev_spiel)-1, 2):
@@ -181,6 +200,15 @@ def get_or_create_teams(session, all_sessions):
         if not has_forbidden:
             break
             
+    # Anti-Doppel-Pause: Verschiebe das Team mit Spielern aus der Vorsessions-Pause von Index 0 weg
+    if len(best_teams) % 2 != 0 and prev_resting_players:
+        for _ in range(len(best_teams)):
+            t0_players = [p.strip() for p in best_teams[0].split("&") if p.strip() != "-"]
+            has_resting = any(p in prev_resting_players for p in t0_players)
+            if not has_resting or len(best_teams) == 1:
+                break
+            best_teams = best_teams[1:] + [best_teams[0]]
+
     session["coop_teams"] = best_teams
     return best_teams
 
@@ -268,12 +296,10 @@ def get_board_players(session, round_num, board_name):
         n_teams = len(teams)
         rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
         
-        # Pausierendes Team bei ungerader Teamanzahl (Rotations-Freilos)
         resting_team_idx = (rel_round - 1) % n_teams if n_teams % 2 != 0 else -1
         active_teams = [t for i, t in enumerate(teams) if i != resting_team_idx]
         
         if rel_round == 1:
-            # Runde 1: Zufällige Paarungen auf die Boards verteilen
             if b_idx < len(active_teams) // 2:
                 t1 = active_teams[b_idx * 2]
                 t2 = active_teams[b_idx * 2 + 1] if b_idx * 2 + 1 < len(active_teams) else "-"
@@ -281,7 +307,6 @@ def get_board_players(session, round_num, board_name):
             else:
                 return ["-", "-"]
         else:
-            # Ab Runde 2: Up & Down System für Teams auf Kaiser B1 und Board 2
             prev_r = round_num - 1
             res = session.get("results", {})
             w = {}
@@ -1531,8 +1556,8 @@ with tab_regeln:
         * **Zufällige Teams:** Es werden feste 2er-Paarungen per Zufall gebildet, die für die gesamte Session so zusammenbleiben.
         * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der Vorsession zusammen spielen (wird automatisch geprüft).
         * **Up & Down für Teams:** Gespielt wird auf Kaiser B1 und Board 2 im gewohnten Up & Down System (Gewinner steigen auf, Verlierer steigen ab).
-        * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden, genau wie im Einzel).
-        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass jeder im Laufe des Abends gleich oft pausiert.
+        * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden).
+        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass im Laufe des Abends jeder gleich oft pausiert. Niemand pausiert zweimal hintereinander (Anti-Doppel-Pause-Schutz).
         * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst freigeschaltet, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
         """)
 
