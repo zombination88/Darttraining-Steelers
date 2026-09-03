@@ -75,11 +75,19 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
+def get_local_time_str():
+    """Gibt die aktuelle Uhrzeit in deutscher Ortszeit (Europe/Berlin) zurück."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%H:%M")
+    except Exception:
+        return datetime.now().strftime("%H:%M")
+
 def check_session_completion_time(sess):
     """Prüft, ob die Session komplett beendet ist und setzt ggf. die Enduhrzeit."""
     if is_session_completed(sess):
         if not sess.get("end_time"):
-            sess["end_time"] = datetime.now().strftime("%H:%M")
+            sess["end_time"] = get_local_time_str()
     else:
         if "end_time" in sess:
             sess["end_time"] = None
@@ -1029,7 +1037,7 @@ with tab_übersicht:
             st.write(f"👥 **Gemeldete Spieler:** {', '.join(curr_sess.get('spieler', []))}")
             st.write("")
             if st.button("🚀 Teamtraining starten", type="primary", use_container_width=True, key="start_training_btn"):
-                curr_sess["start_time"] = datetime.now().strftime("%H:%M")
+                curr_sess["start_time"] = get_local_time_str()
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
         else:
