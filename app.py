@@ -143,22 +143,27 @@ def get_or_create_teams(session, all_sessions):
     spieler = [p for p in session.get("spieler", []) if p != "-"]
     
     prev_pairs = set()
-    for s in all_sessions:
-        if s["id"] != session["id"] and s.get("modus") in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]:
-            if "coop_teams" in s:
-                for t in s["coop_teams"]:
+    all_sorted = sorted(all_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    try:
+        s_idx = all_sorted.index(session)
+        if s_idx + 1 < len(all_sorted):
+            prev_sess = all_sorted[s_idx + 1]
+            if "coop_teams" in prev_sess:
+                for t in prev_sess["coop_teams"]:
                     parts = t.split("&")
                     if len(parts) == 2 and "-" not in t:
                         prev_pairs.add(frozenset([parts[0].strip(), parts[1].strip()]))
             else:
-                s_spiel = [p for p in s.get("spieler", []) if p != "-"]
-                for i in range(0, len(s_spiel)-1, 2):
-                    prev_pairs.add(frozenset([s_spiel[i], s_spiel[i+1]]))
+                prev_spiel = [p for p in prev_sess.get("spieler", []) if p != "-"]
+                for i in range(0, len(prev_spiel)-1, 2):
+                    prev_pairs.add(frozenset([prev_spiel[i], prev_spiel[i+1]]))
+    except:
+        pass
 
+    import random
     best_teams = []
     for _ in range(50):
         shuffled = spieler.copy()
-        import random
         random.shuffle(shuffled)
         current_teams = []
         has_forbidden = False
@@ -261,42 +266,47 @@ def get_board_players(session, round_num, board_name):
     if is_2v2 or in_coop_phase:
         teams = get_or_create_teams(session, st.session_state.sessions_list)
         n_teams = len(teams)
+        rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
         
-        if n_teams == 5:
-            schedules = {
-                1: [(0, 1), (2, 3)],
-                2: [(0, 2), (3, 4)],
-                3: [(0, 3), (1, 4)],
-                4: [(0, 4), (1, 2)],
-                5: [(1, 3), (2, 4)]
-            }
-            rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
-            r_idx = ((rel_round - 1) % 5) + 1
-            current_pairs_idx = schedules[r_idx]
-            for idx1, idx2 in current_pairs_idx:
-                if idx1 < len(teams) and idx2 < len(teams):
-                    pairs.append((teams[idx1], teams[idx2]))
-        elif n_teams == 4:
-            schedules = {
-                1: [(0, 1), (2, 3)],
-                2: [(0, 2), (1, 3)],
-                3: [(0, 3), (1, 2)]
-            }
-            rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
-            r_idx = ((rel_round - 1) % 3) + 1
-            current_pairs_idx = schedules[r_idx]
-            for idx1, idx2 in current_pairs_idx:
-                if idx1 < len(teams) and idx2 < len(teams):
-                    pairs.append((teams[idx1], teams[idx2]))
+        # Pausierendes Team bei ungerader Teamanzahl (Rotations-Freilos)
+        resting_team_idx = (rel_round - 1) % n_teams if n_teams % 2 != 0 else -1
+        active_teams = [t for i, t in enumerate(teams) if i != resting_team_idx]
+        
+        if rel_round == 1:
+            # Runde 1: Zufällige Paarungen auf die Boards verteilen
+            if b_idx < len(active_teams) // 2:
+                t1 = active_teams[b_idx * 2]
+                t2 = active_teams[b_idx * 2 + 1] if b_idx * 2 + 1 < len(active_teams) else "-"
+                return [t1, t2]
+            else:
+                return ["-", "-"]
         else:
-            for i in range(0, min(2, len(teams) - len(teams)%2), 2):
-                pairs.append((teams[i], teams[i+1]))
-                
-        while len(pairs) <= b_idx:
-            t1 = teams[0] if len(teams) > 0 else "-"
-            t2 = teams[1] if len(teams) > 1 else "-"
-            pairs.append((t1, t2))
-        return list(pairs[b_idx])
+            # Ab Runde 2: Up & Down System für Teams auf Kaiser B1 und Board 2
+            prev_r = round_num - 1
+            res = session.get("results", {})
+            w = {}
+            l = {}
+            for b in boards:
+                match_info = res.get((prev_r, b))
+                if match_info and match_info.get("winner"):
+                    w[b] = match_info["winner"]
+                    l[b] = match_info["loser"]
+                else:
+                    w[b] = "-"
+                    l[b] = "-"
+                    
+            if b_idx == 0:
+                top_w = w.get("Kaiser B1", "-")
+                next_w = w.get("Board 2", "-")
+                return [top_w if top_w != "-" else (active_teams[0] if active_teams else "-"), 
+                        next_w if next_w != "-" else (active_teams[1] if len(active_teams) > 1 else "-")]
+            elif b_idx == 1 and len(boards) > 1:
+                top_l = l.get("Kaiser B1", "-")
+                next_l = l.get("Board 2", "-")
+                return [top_l if top_l != "-" else (active_teams[2] if len(active_teams) > 2 else "-"), 
+                        next_l if next_l != "-" else (active_teams[3] if len(active_teams) > 3 else "-")]
+            
+        return ["-", "-"]
     else:
         boards_count = session.get("boards_count", 6)
         if round_num == 1:
@@ -553,7 +563,7 @@ def open_session_summary_dialog(session_idx):
         else:
             st.info("Es wurden noch keine Einzel-Matches in dieser Session beendet.")
             
-    # 2. Koop / Doppel-Phase Gesamtrangliste (Kompakt: Platz 1, Platz 2, Platz 3...)
+    # 2. Koop / Doppel-Phase Gesamtrangliste (Platz 1, Platz 2, Platz 3...)
     coop_start_round = singles_rounds + 1 if is_standard_training else 1
     has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
     
@@ -650,13 +660,13 @@ def open_new_session_dialog():
     if spielmodus == "Standard-Training (Einzel + Coop)":
         st.write("### Runden-Aufteilung")
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=1)
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=1)
         total_rounds = singles_rounds + coop_rounds
         st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel + {coop_rounds} Runden Doppel (Coop).")
     elif spielmodus == "Koop 2vs2 (Up & Down)":
         singles_rounds = 0
-        coop_rounds = 5
-        total_rounds = st.selectbox("Anzahl Runden (Jeder gegen Jeden)", [3, 4, 5, 6], index=2)
+        coop_rounds = st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=1)
+        total_rounds = coop_rounds
     else:
         singles_rounds = 0
         coop_rounds = 0
@@ -763,8 +773,12 @@ def open_edit_session_dialog(session_idx):
         curr_coop = curr_total - curr_singles
         
         singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1 if 1 <= curr_singles <= 10 else 3, key=f"edit_singles_{session_idx}")
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 5)), index=curr_coop-1 if 1 <= curr_coop <= 4 else 1, key=f"edit_coop_{session_idx}")
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=curr_coop-1 if 1 <= curr_coop <= 10 else 1, key=f"edit_coop_{session_idx}")
         total_rounds = singles_rounds + coop_rounds
+    elif spielmodus == "Koop 2vs2 (Up & Down)":
+        singles_rounds = 0
+        coop_rounds = st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=sess.get("total_rounds", 2)-1, key=f"edit_coop_pure_{session_idx}")
+        total_rounds = coop_rounds
     else:
         singles_rounds = 0
         coop_rounds = 0
@@ -1493,32 +1507,33 @@ with tab_archiv:
                         st.error("Falsches Passwort!")
 
 with tab_regeln:
-    st.subheader("🎯 Modus, Regeln & Ablauf")
+    st.subheader("🎯 Modus & Regeln")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, den WhatsApp-Workflow, den Auf- und Abstieg sowie den Koop-Modus.")
     
     with st.container(border=True):
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
-        * **Die Umfrage:** Der Teamcoach startet einmalig (z. B. am Freitag oder Samstag) eine Umfrage in der WhatsApp-Gruppe, wer an den kommenden Trainingsabenden dabei ist.
+        * **Die Umfrage:** Der Teamcoach startet vor jedem Teamtraining eine Umfrage in der WhatsApp-Gruppe, wer an diesem Abend dabei ist.
         * **Der Startschuss:** Sobald die Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
         """)
 
     with st.container(border=True):
         st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
-        * **Das Ziel:** Aufstieg nach ganz oben auf **Kaiser B1**.
-        * **Der Auf- und Abstieg:** Nach jedem Match steigen die Gewinner eine Etage nach oben, während die Verlierer eine Etage nach unten wandern.
-        * **Das Kaiser-Duell:** Auf Board 1 (Kaiser B1) verteidigt der König seinen Thron gegen den Aufsteiger von Board 2.
+        * **Das Prinzip:** Wer gewinnt, steigt auf (Richtung Kaiser B1); wer verliert, steigt ab. 
+        * **Kaiser B1:** Der Sieger bleibt König oder verteidigt den Thron. Der Verlierer wandert ein Board nach unten.
+        * **Unterstes Board:** Der Sieger steigt nach oben; der Verlierer wandert ganz nach unten.
         """)
 
     with st.container(border=True):
-        st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Jeder-gegen-Jeden)")
+        st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Up & Down)")
         st.markdown("""
-        * **Zufällige Teams:** Beim Modus **Koop 2vs2 (Up & Down)** oder in der Doppelphase des Standard-Trainings werden zu Beginn feste 2er-Paarungen per Zufall gebildet, die für den gesamten Abend so zusammengestellt bleiben.
-        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der vorherigen Session zusammen spielen! Die App prüft das vollautomatisch.
-        * **Jeder-gegen-Jeden (Round-Robin):** Gespielt wird auf **Kaiser B1** und **Board 2**. Es gibt so viele Runden, bis jedes Team gegen jedes andere Team angetreten ist (z.B. bei 5 Teams = 5 Runden). 
+        * **Zufällige Teams:** Es werden feste 2er-Paarungen per Zufall gebildet, die für die gesamte Session so zusammenbleiben.
+        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der Vorsession zusammen spielen (wird automatisch geprüft).
+        * **Up & Down für Teams:** Gespielt wird auf Kaiser B1 und Board 2 im gewohnten Up & Down System (Gewinner steigen auf, Verlierer steigen ab).
+        * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden, genau wie im Einzel).
         * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass jeder im Laufe des Abends gleich oft pausiert.
-        * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst dann freigeschaltet und angezeigt, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
+        * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst freigeschaltet, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
         """)
 
     with st.container(border=True):
@@ -1526,13 +1541,12 @@ with tab_regeln:
         st.markdown("""
         * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen!
         * 🔴 **Wartet:** Ihr müsst noch kurz auf die Nachbarboards warten.
-        * **Keine leeren Boards:** Die App sperrt bei der Erfassung von zu vielen Boards automatisch, wenn nicht genügend Spieler für volle Paarungen da sind.
+        * **Keine leeren Boards:** Die App sperrt zu viele Boards automatisch, wenn nicht genügend Spieler da sind.
         """)
 
     with st.container(border=True):
         st.markdown("### ⏱️ Leg-Modus Validierung")
         st.markdown("""
-        * Bei **Best of 5** benötigt der Sieger exakt **3 Legs** (Ergebnisse wie 3:0, 3:1 oder 3:2).
-        * Bei **Best of 3** benötigt der Sieger exakt **2 Legs** (Ergebnisse wie 2:0 oder 2:1).
-        * Unentschieden sind im Up & Down nicht möglich.
+        * Bei **Best of 5** benötigt der Sieger exakt **3 Legs** (3:0, 3:1, 3:2).
+        * Bei **Best of 3** benötigt der Sieger exakt **2 Legs** (2:0, 2:1).
         """)
