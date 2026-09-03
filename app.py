@@ -55,6 +55,30 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
+def save_backup_to_cloud(sessions):
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_url(SHEET_URL)
+        try:
+            backup_ws = spreadsheet.worksheet("backups")
+        except:
+            backup_ws = spreadsheet.add_worksheet(title="backups", rows=1000, cols=2)
+            backup_ws.append_row(["Timestamp", "JSON_Data"])
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        json_str = json.dumps(sessions, ensure_ascii=False)
+        backup_ws.append_row([timestamp, json_str])
+    except Exception as e:
+        pass
+
 def save_data(sessions):
     if not sheet_conn:
         return
@@ -72,6 +96,7 @@ def save_data(sessions):
     try:
         sheet_conn.clear()
         sheet_conn.update([["json_data"], [json_str]])
+        save_backup_to_cloud(serializable_sessions)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -1456,28 +1481,21 @@ with tab_session:
                 if st.button("📊 Spielablauf ansehen", key=f"sess_view_{sess['id']}", use_container_width=True):
                     open_session_archive_dialog(idx)
 
-@st.dialog("🗑️ Session endgültig löschen")
-def open_delete_session_dialog(session_id_to_delete):
-    st.warning(f"Willst du die Session {session_id_to_delete} wirklich unwiderruflich löschen?")
-    del_pwd = st.text_input("Admin-Passwort zum Löschen:", type="password", key=f"del_pwd_{session_id_to_delete}")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Abbrechen", use_container_width=True):
-            st.rerun()
-    with col2:
-        if st.button("Löschen bestätigen", type="primary", use_container_width=True):
-            if del_pwd == "1521":
-                delete_session(session_id_to_delete)
-                st.success("Session wurde erfolgreich gelöscht!")
-                st.rerun()
-            elif del_pwd:
-                st.error("Falsches Passwort!")
-
 with tab_archiv:
     st.subheader("Match-Archiv & Session-Verwaltung")
-    st.caption("Die neueste Session steht hier immer ganz oben.")
+    st.caption("Die neueste Session steht hier immer ganz oben. Inklusive automatischem Cloud-Backup und lokalem JSON-Download.")
     
+    if st.session_state.sessions_list:
+        backup_json_str = json.dumps(st.session_state.sessions_list, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="📥 Backup als JSON herunterladen",
+            data=backup_json_str,
+            file_name=f"steelers_backup_{date.today().strftime('%Y-%m-%d')}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        st.write("")
+
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
@@ -1598,7 +1616,15 @@ with tab_regeln:
         * **Up & Down für Teams:** Gespielt wird auf Kaiser B1 und Board 2 im gewohnten Up & Down System (Gewinner steigen auf, Verlierer steigen ab).
         * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden).
         * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass im Laufe des Abends jeder gleich oft pausiert.
+        * **Anti-Doppel-Pause Schutz:** Spieler, die in der letzten Session als Letztes pausieren mussten, sind in der neuen Session in Runde 1 garantiert im Einsatz.
         * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst freigeschaltet, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 💾 Automatisches Cloud-Backup & JSON-Download")
+        st.markdown("""
+        * **Cloud-Audit-Trail:** Nach jeder Änderung, jedem Spielerwechsel und jedem eingetragenen Match-Ergebnis speichert die App vollautomatisch einen vollständigen Zeit-Snapshot in einem separaten Backup-Blatt (`backups`) in unserer Google-Tabelle.
+        * **Lokales JSON-Backup:** Im Reiter **Match-Archiv** könnt ihr jederzeit per Klick ein aktuelles Backup aller Sessions als JSON-Datei auf euer Endgerät herunterladen.
         """)
 
     with st.container(border=True):
@@ -1612,6 +1638,6 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### ⏱️ Leg-Modus Validierung")
         st.markdown("""
-        * Bei **Best of 5** benötigt der Sieger exakt **3 Legs** (3:0, 3:1, 3:2).
-        * Bei **Best of 3** benötigt der Sieger exakt **2 Legs** (2:0, 2:1).
+        * **Best of 5:** Der Sieger benötigt exakt 3 Legs (3:0, 3:1, 3:2).
+        * **Best of 3:** Der Sieger benötigt exakt 2 Legs (2:0, 2:1).
         """)
