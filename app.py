@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -75,7 +75,19 @@ def save_data(sessions):
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
+def check_session_completion_time(sess):
+    """Prüft, ob die Session komplett beendet ist und setzt ggf. die Enduhrzeit."""
+    if is_session_completed(sess):
+        if not sess.get("end_time"):
+            sess["end_time"] = datetime.now().strftime("%H:%M")
+    else:
+        if "end_time" in sess:
+            sess["end_time"] = None
+
 def smart_sync_and_save(updated_sessions):
+    for sess in updated_sessions:
+        check_session_completion_time(sess)
+        
     fresh_data = load_data()
     if fresh_data:
         existing_ids = {s["id"] for s in fresh_data}
@@ -92,16 +104,6 @@ def smart_sync_and_save(updated_sessions):
     else:
         save_data(updated_sessions)
         st.session_state.sessions_list = updated_sessions
-
-def delete_session(session_id):
-    fresh_data = load_data()
-    if fresh_data:
-        fresh_data = [s for s in fresh_data if s["id"] != session_id]
-        save_data(fresh_data)
-        st.session_state.sessions_list = fresh_data
-    else:
-        st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
-        save_data(st.session_state.sessions_list)
 
 st.markdown("<h1 style='text-align: center; margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers</h1>", unsafe_allow_html=True)
 
@@ -156,7 +158,6 @@ def get_or_create_teams(session, all_sessions):
                     if len(parts) == 2 and "-" not in t:
                         prev_pairs.add(frozenset([parts[0].strip(), parts[1].strip()]))
                 
-                # Finde heraus, wer in der letzten Runde der Vorsession pausiert hat
                 prev_total = prev_sess.get("total_rounds", 4)
                 prev_modus = prev_sess.get("modus", "Up & Down")
                 prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
@@ -200,7 +201,6 @@ def get_or_create_teams(session, all_sessions):
         if not has_forbidden:
             break
             
-    # Anti-Doppel-Pause: Verschiebe das Team mit Spielern aus der Vorsessions-Pause von Index 0 weg
     if len(best_teams) % 2 != 0 and prev_resting_players:
         for _ in range(len(best_teams)):
             t0_players = [p.strip() for p in best_teams[0].split("&") if p.strip() != "-"]
@@ -294,6 +294,7 @@ def get_board_players(session, round_num, board_name):
     if is_2v2 or in_coop_phase:
         teams = get_or_create_teams(session, st.session_state.sessions_list)
         n_teams = len(teams)
+        coop_start_round = singles_rounds + 1 if is_standard_training else 1
         rel_round = (round_num - singles_rounds) if in_coop_phase else round_num
         
         resting_team_idx = (rel_round - 1) % n_teams if n_teams % 2 != 0 else -1
@@ -750,6 +751,8 @@ def open_new_session_dialog():
                 new_session = {
                     "id": new_id,
                     "datum": session_datum.strftime("%d.%m.%Y"),
+                    "start_time": None,  # Startet erst bei Klick auf "Teamtraining starten"
+                    "end_time": None,
                     "modus": spielmodus,
                     "boards_count": gewaehlte_boards_zahl,
                     "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds,
@@ -1001,83 +1004,95 @@ with tab_übersicht:
         st.info("Derzeit läuft keine aktive Session. Starte eine neue Session, um die Übersicht zu sehen.")
     else:
         curr_sess = active_sessions_for_btn[0]
-        st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} ({curr_sess['modus']})")
+        start_t = curr_sess.get("start_time")
         
-        total_rounds = curr_sess.get("total_rounds", 4)
-        modus = curr_sess.get("modus", "Up & Down")
-        is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
-        singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
-        
-        res = curr_sess.get("results", {})
-        
-        if modus == "Koop 2vs2 (Up & Down)":
-            active_boards_list = ["Kaiser B1", "Board 2"]
-        elif is_standard_training:
-            bc = curr_sess.get("boards_count", 4)
-            all_b_names = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
-            base_boards = all_b_names[:bc]
-            
-            singles_complete = True
-            for b in base_boards:
-                board_completed_r = max([r for (r, board_n), v in res.items() if board_n == b and v.get("winner")], default=0)
-                if board_completed_r < singles_rounds:
-                    singles_complete = False
-                    break
-            
-            if singles_complete and singles_rounds > 0 and any(r <= singles_rounds for (r, b), v in res.items()):
-                active_boards_list = ["Kaiser B1", "Board 2"]
-            else:
-                active_boards_list = base_boards
+        # 2-Schritt Workflow: Wenn noch nicht gestartet, Info + Start-Button anzeigen
+        if not start_t:
+            st.info(f"Session **{curr_sess['id']}** wurde erstellt für den **{curr_sess['datum']}**.")
+            st.write(f"👥 **Gemeldete Spieler:** {', '.join(curr_sess.get('spieler', []))}")
+            st.write("")
+            if st.button("🚀 Teamtraining starten", type="primary", use_container_width=True, key="start_training_btn"):
+                curr_sess["start_time"] = datetime.now().strftime("%H:%M")
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
         else:
-            active_boards_list = get_boards_list(curr_sess, 1)
-        
-        for b_name in active_boards_list:
-            completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
-            next_r_for_board = max(completed_r_for_board) + 1 if completed_r_for_board else 1
+            st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} (Start: {start_t} Uhr) | Modus: {curr_sess['modus']}")
             
-            with st.container(border=True):
-                st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
+            total_rounds = curr_sess.get("total_rounds", 4)
+            modus = curr_sess.get("modus", "Up & Down")
+            is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+            singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+            
+            res = curr_sess.get("results", {})
+            
+            if modus == "Koop 2vs2 (Up & Down)":
+                active_boards_list = ["Kaiser B1", "Board 2"]
+            elif is_standard_training:
+                bc = curr_sess.get("boards_count", 4)
+                all_b_names = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
+                base_boards = all_b_names[:bc]
                 
-                if next_r_for_board <= total_rounds:
-                    ready = is_board_ready(curr_sess, b_name, next_r_for_board)
-                    ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
-                    st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
-                    
-                    existing_match = res.get((next_r_for_board, b_name))
-                    if existing_match:
-                        p1 = existing_match.get("s1", "-")
-                        p2 = existing_match.get("s2", "-")
-                    else:
-                        players_now = get_board_players(curr_sess, next_r_for_board, b_name)
-                        p1, p2 = players_now[0], players_now[1]
-                    
-                    if is_standard_training and next_r_for_board > singles_rounds:
-                        r_head_board = f"Doppelrunde {next_r_for_board - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
-                    else:
-                        r_head_board = f"Runde {next_r_for_board}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {next_r_for_board}/{total_rounds}"
-                    
-                    st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_head_board}</p>", unsafe_allow_html=True)
-                    
-                    sc1, sc2 = st.columns([5, 2])
-                    sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
-                    with sc2:
-                        if st.button("🔄", key=f"sub1_{b_name}_{next_r_for_board}", help="Wechsel"):
-                            open_substitution_dialog(b_name, all_sessions_sorted.index(curr_sess), next_r_for_board, 1, p1)
-                    
-                    st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
-                    
-                    sc3, sc4 = st.columns([5, 2])
-                    sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
-                    with sc4:
-                        if st.button("🔄", key=f"sub2_{b_name}_{next_r_for_board}", help="Wechsel"):
-                            open_substitution_dialog(b_name, all_sessions_sorted.index(curr_sess), next_r_for_board, 2, p2)
-                    
-                    st.write("")
-                    if st.button("🎯 Eintragen", key=f"live_{b_name}_{next_r_for_board}", use_container_width=True, disabled=not ready):
-                        open_board_dialog(b_name, all_sessions_sorted.index(curr_sess))
+                singles_complete = True
+                for b in base_boards:
+                    board_completed_r = max([r for (r, board_n), v in res.items() if board_n == b and v.get("winner")], default=0)
+                    if board_completed_r < singles_rounds:
+                        singles_complete = False
+                        break
+                
+                if singles_complete and singles_rounds > 0 and any(r <= singles_rounds for (r, b), v in res.items()):
+                    active_boards_list = ["Kaiser B1", "Board 2"]
                 else:
-                    st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
-                    st.success("✅ Abgeschlossen")
+                    active_boards_list = base_boards
+            else:
+                active_boards_list = get_boards_list(curr_sess, 1)
+            
+            for b_name in active_boards_list:
+                completed_r_for_board = [r for (r, b), v in res.items() if b == b_name and v.get("winner")]
+                next_r_for_board = max(completed_r_for_board) + 1 if completed_r_for_board else 1
+                
+                with st.container(border=True):
+                    st.markdown(f"<h4 style='text-align: center; margin-bottom: 0;'>{b_name}</h4>", unsafe_allow_html=True)
+                    
+                    if next_r_for_board <= total_rounds:
+                        ready = is_board_ready(curr_sess, b_name, next_r_for_board)
+                        ampel = "🟢 Spielbar" if ready else "🔴 Wartet"
+                        st.markdown(f"<p style='text-align: center; font-weight: bold; font-size: 1.1em; margin-top: 5px; margin-bottom: 0;'>{ampel}</p>", unsafe_allow_html=True)
+                        
+                        existing_match = res.get((next_r_for_board, b_name))
+                        if existing_match:
+                            p1 = existing_match.get("s1", "-")
+                            p2 = existing_match.get("s2", "-")
+                        else:
+                            players_now = get_board_players(curr_sess, next_r_for_board, b_name)
+                            p1, p2 = players_now[0], players_now[1]
+                        
+                        if is_standard_training and next_r_for_board > singles_rounds:
+                            r_head_board = f"Doppelrunde {next_r_for_board - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
+                        else:
+                            r_head_board = f"Runde {next_r_for_board}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {next_r_for_board}/{total_rounds}"
+                        
+                        st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{r_head_board}</p>", unsafe_allow_html=True)
+                        
+                        sc1, sc2 = st.columns([5, 2])
+                        sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
+                        with sc2:
+                            if st.button("🔄", key=f"sub1_{b_name}_{next_r_for_board}", help="Wechsel"):
+                                open_substitution_dialog(b_name, all_sessions_sorted.index(curr_sess), next_r_for_board, 1, p1)
+                        
+                        st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
+                        
+                        sc3, sc4 = st.columns([5, 2])
+                        sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
+                        with sc4:
+                            if st.button("🔄", key=f"sub2_{b_name}_{next_r_for_board}", help="Wechsel"):
+                                open_substitution_dialog(b_name, all_sessions_sorted.index(curr_sess), next_r_for_board, 2, p2)
+                        
+                        st.write("")
+                        if st.button("🎯 Eintragen", key=f"live_{b_name}_{next_r_for_board}", use_container_width=True, disabled=not ready):
+                            open_board_dialog(b_name, all_sessions_sorted.index(curr_sess))
+                    else:
+                        st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
+                        st.success("✅ Abgeschlossen")
 
     st.write("")
     st.divider()
@@ -1399,8 +1414,11 @@ with tab_session:
             with st.container(border=True):
                 gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
                 status_text = " ✅ **[Abgeschlossen]**" if is_session_completed(sess) else ""
+                start_t = sess.get("start_time")
+                end_t = sess.get("end_time")
+                time_str = f" | ⏱️ {start_t} Uhr" + (f" – {end_t} Uhr" if end_t else " (laufend)") if start_t else " | ⏱️ (noch nicht gestartet)"
                 total_rounds = sess.get("total_rounds", 4)
-                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['id']}{gaeste_text}*{status_text}")
+                st.markdown(f"**{sess['datum']}** — *{sess['modus']} · {sess['boards']} · {total_rounds} Runden · {sess['id']}{time_str}{gaeste_text}*{status_text}")
                 
                 if st.button("📊 Spielablauf ansehen", key=f"sess_view_{sess['id']}", use_container_width=True):
                     open_session_archive_dialog(idx)
@@ -1417,7 +1435,9 @@ def open_delete_session_dialog(session_id_to_delete):
     with col2:
         if st.button("Löschen bestätigen", type="primary", use_container_width=True):
             if del_pwd == "1521":
-                delete_session(session_id_to_delete)
+                filtered_sessions = [s for s in st.session_state.sessions_list if s["id"] != session_id_to_delete]
+                st.session_state.sessions_list = filtered_sessions
+                save_data(st.session_state.sessions_list)
                 st.success("Session wurde erfolgreich gelöscht!")
                 st.rerun()
             elif del_pwd:
@@ -1432,10 +1452,12 @@ with tab_archiv:
     else:
         all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]), reverse=True)
         for idx, sess in enumerate(all_sessions_sorted):
-            orig_idx = st.session_state.sessions_list.index(sess)
             with st.container(border=True):
                 status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
-                st.markdown(f"**{sess['id']}** — {sess['datum']} {status_text}")
+                start_t = sess.get("start_time")
+                end_t = sess.get("end_time")
+                time_str = f"🕒 {start_t} – {end_t} Uhr" if (start_t and end_t) else (f"🕒 Start: {start_t} Uhr" if start_t else "🕒 noch nicht gestartet")
+                st.markdown(f"**{sess['id']}** — {sess['datum']} ({time_str}) {status_text}")
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -1454,25 +1476,16 @@ with tab_archiv:
                 if is_checked:
                     blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
                     if blitz_pwd == "1521":
-                        st.success("Admin-Modus aktiv")
+                        st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
                         total_rounds = sess.get("total_rounds", 4)
                         leg_modus = sess.get("modus_leg", "Best of 5")
-                        req_win = 3 if leg_modus == "Best of 5" else 2
                         
-                        round_options = [f"Runde {r}" for r in range(1, total_rounds + 1)]
-                        selected_round_label = st.selectbox("Wähle die Runde aus:", round_options, key=f"blitz_r_sel_{sess['id']}")
-                        selected_round_num = int(selected_round_label.split(" ")[1])
-                        
-                        st.markdown(f"**Ergebnisse für {selected_round_label} eintragen:**")
-                        boards_in_r = get_boards_list(sess, selected_round_num)
-                        
-                        with st.form(key=f"form_blitz_round_{sess['id']}_{selected_round_num}"):
-                            round_results_input = {}
+                        for r in range(1, total_rounds + 1):
+                            st.markdown(f"**Runde {r}**")
+                            boards_in_r = get_boards_list(sess, r)
                             for b_name in boards_in_r:
-                                m_info = sess.get("results", {}).get((selected_round_num, b_name))
-                                auto_p = get_board_players(sess, selected_round_num, b_name)
-                                p1 = m_info.get("s1", auto_p[0]) if m_info else auto_p[0]
-                                p2 = m_info.get("s2", auto_p[1]) if m_info else auto_p[1]
+                                m_info = sess.get("results", {}).get((r, b_name))
+                                p1, p2 = get_board_players(sess, r, b_name) if not m_info else (m_info.get("s1", "-"), m_info.get("s2", "-"))
                                 
                                 try:
                                     s1 = int(m_info.get("ergebnis", "0:0").split(":")[0]) if m_info else 0
@@ -1480,54 +1493,52 @@ with tab_archiv:
                                 except:
                                     s1, s2 = 0, 0
                                     
-                                st.markdown(f"**{b_name}**: `{p1}` vs `{p2}`")
-                                col_i1, col_i2 = st.columns(2)
-                                v1 = col_i1.number_input(f"Legs {p1}", min_value=0, max_value=5, value=s1, key=f"bf_l1_{sess['id']}_{selected_round_num}_{b_name}")
-                                v2 = col_i2.number_input(f"Legs {p2}", min_value=0, max_value=5, value=s2, key=f"bf_l2_{sess['id']}_{selected_round_num}_{b_name}")
-                                round_results_input[b_name] = (p1, p2, v1, v2)
-                                st.markdown("---")
-                                
-                            submitted_round = st.form_submit_button(f"💾 Gesamte {selected_round_label} speichern", use_container_width=True)
-                            
-                            if submitted_round:
-                                validation_error = False
-                                for b_name, (p1, p2, val1, val2) in round_results_input.items():
-                                    if p1 == "-" or p2 == "-":
-                                        continue
-                                    if val1 == val2:
-                                        st.error(f"🚨 Auf {b_name}: Ein Unentschieden ist nicht möglich.")
-                                        validation_error = True
-                                    elif val1 > req_win or val2 > req_win:
-                                        st.error(f"🚨 Auf {b_name}: Bei {leg_modus} kann niemand mehr als {req_win} Legs gewinnen.")
-                                        validation_error = True
-                                    elif val1 != req_win and val2 != req_win:
-                                        st.error(f"🚨 Auf {b_name}: Bei {leg_modus} muss der Sieger genau {req_win} Legs haben.")
-                                        validation_error = True
-                                        
-                                if not validation_error:
-                                    if "results" not in sess:
-                                        sess["results"] = {}
-                                    for b_name, (p1, p2, val1, val2) in round_results_input.items():
-                                        if p1 == "-" or p2 == "-":
-                                            continue
-                                        winner = p1 if val1 > val2 else p2
-                                        loser = p2 if val1 > val2 else p1
-                                        m_info = sess["results"].get((selected_round_num, b_name), {})
-                                        old_180_1 = m_info.get("180_s1", 0)
-                                        old_180_2 = m_info.get("180_s2", 0)
-                                        old_avg_1 = m_info.get("avg_s1", 0.0)
-                                        old_avg_2 = m_info.get("avg_s2", 0.0)
-                                        
-                                        sess["results"][(selected_round_num, b_name)] = {
-                                            "s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}",
-                                            "winner": winner, "loser": loser,
-                                            "180_s1": old_180_1, "180_s2": old_180_2,
-                                            "avg_s1": old_avg_1, "avg_s2": old_avg_2
-                                        }
-                                    st.session_state.sessions_list[orig_idx] = sess
-                                    smart_sync_and_save(st.session_state.sessions_list)
-                                    st.success(f"{selected_round_label} erfolgreich gespeichert!")
-                                    st.rerun()
+                                with st.container(border=True):
+                                    st.write(f"*{b_name}*")
+                                    c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
+                                    c_p1.markdown(f"**{p1}**")
+                                    c_vs.markdown("vs")
+                                    c_p2.markdown(f"**{p2}**")
+                                    
+                                    c_in1, c_in2 = st.columns(2)
+                                    val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
+                                    val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
+                                    
+                                    c_b1, c_b2 = st.columns(2)
+                                    with c_b1:
+                                        if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                            req_win = 3 if leg_modus == "Best of 5" else 2
+                                            if p1 == "-" or p2 == "-":
+                                                pass
+                                            elif val1 == val2:
+                                                st.error("🚨 Unentschieden nicht möglich.")
+                                            elif val1 > req_win or val2 > req_win:
+                                                st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
+                                            elif val1 != req_win and val2 != req_win:
+                                                st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
+                                            else:
+                                                winner = p1 if val1 > val2 else p2
+                                                loser = p2 if val1 > val2 else p1
+                                                if "results" not in sess: sess["results"] = {}
+                                                
+                                                if m_info:
+                                                    sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
+                                                    sess["results"][(r, b_name)]["winner"] = winner
+                                                    sess["results"][(r, b_name)]["loser"] = loser
+                                                else:
+                                                    sess["results"][(r, b_name)] = {
+                                                        "s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}",
+                                                        "winner": winner, "loser": loser,
+                                                        "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0
+                                                    }
+                                                smart_sync_and_save(st.session_state.sessions_list)
+                                                st.rerun()
+                                    with c_b2:
+                                        if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                            if (r, b_name) in sess["results"]:
+                                                del sess["results"][(r, b_name)]
+                                                smart_sync_and_save(st.session_state.sessions_list)
+                                                st.rerun()
                     elif blitz_pwd:
                         st.error("Falsches Passwort!")
 
@@ -1539,15 +1550,13 @@ with tab_regeln:
         st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
         st.markdown("""
         * **Die Umfrage:** Der Teamcoach startet vor jedem Teamtraining eine Umfrage in der WhatsApp-Gruppe, wer an diesem Abend dabei ist.
-        * **Der Startschuss:** Sobald die Rückmeldungen vorliegen, startet der Coach den Spieltag in der App über **➕ Neue Session** und hakt alle anwesenden Spieler an.
+        * **Der Startschuss:** Sobald die Rückmeldungen vorliegen, erstellt der Coach den Spieltag in der App über **➕ Neue Session**. Am Trainingsabend selbst klickt er auf **🚀 Teamtraining starten**, wodurch die offizielle Zeiterfassung beginnt.
         """)
 
     with st.container(border=True):
         st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
         st.markdown("""
-        * **Das Prinzip:** Wer gewinnt, steigt auf (Richtung Kaiser B1); wer verliert, steigt ab. 
-        * **Kaiser B1:** Der Sieger bleibt König oder verteidigt den Thron. Der Verlierer wandert ein Board nach unten.
-        * **Unterstes Board:** Der Sieger steigt nach oben; der Verlierer wandert ganz nach unten.
+        * **Das Prinzip:** Wer auf Kaiser B1 gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten. Wer ganz unten gewinnt, steigt nach oben auf.
         """)
 
     with st.container(border=True):
@@ -1557,7 +1566,7 @@ with tab_regeln:
         * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der Vorsession zusammen spielen (wird automatisch geprüft).
         * **Up & Down für Teams:** Gespielt wird auf Kaiser B1 und Board 2 im gewohnten Up & Down System (Gewinner steigen auf, Verlierer steigen ab).
         * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden).
-        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass im Laufe des Abends jeder gleich oft pausiert. Niemand pausiert zweimal hintereinander (Anti-Doppel-Pause-Schutz).
+        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass im Laufe des Abends jeder gleich oft pausiert.
         * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst freigeschaltet, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
         """)
 
