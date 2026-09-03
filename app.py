@@ -93,7 +93,6 @@ def smart_sync_and_save(updated_sessions):
         st.session_state.sessions_list = updated_sessions
 
 def delete_session(session_id):
-    """Löscht eine Session explizit aus der Cloud, damit der Smart-Sync sie nicht wiederherstellt."""
     fresh_data = load_data()
     if fresh_data:
         fresh_data = [s for s in fresh_data if s["id"] != session_id]
@@ -165,7 +164,6 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
-    # Runde 1 Logik: Bottom to Top (Verlierer von unten zuerst) + Neue Spieler ganz oben
     if round_num == 1 and not in_coop_phase:
         sorted_all = sorted(
             st.session_state.sessions_list, 
@@ -193,13 +191,14 @@ def get_board_players(session, round_num, board_name):
             prev_players_bottom_to_top = []
             for pb in reversed(prev_boards):
                 match_inf = prev_results.get((target_r, pb))
-                if match_inf and match_inf.get("winner"):
-                    w = match_inf.get("winner")
-                    l = match_inf.get("loser")
-                    if l != "-" and l not in prev_players_bottom_to_top:
-                        prev_players_bottom_to_top.append(l)
-                    if w != "-" and w not in prev_players_bottom_to_top:
-                        prev_players_bottom_to_top.append(w)
+                p1, p2 = "-", "-"
+                if match_inf:
+                    p1 = match_inf.get("loser", match_inf.get("s2", "-"))
+                    p2 = match_inf.get("winner", match_inf.get("s1", "-"))
+                    if p1 != "-" and p1 not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(p1)
+                    if p2 != "-" and p2 not in prev_players_bottom_to_top:
+                        prev_players_bottom_to_top.append(p2)
                 else:
                     p_pair = get_board_players(prev_sess, target_r, pb)
                     p1, p2 = p_pair[0], p_pair[1]
@@ -208,7 +207,6 @@ def get_board_players(session, round_num, board_name):
                     if p1 != "-" and p1 not in prev_players_bottom_to_top:
                         prev_players_bottom_to_top.append(p1)
             
-            # Neue Spieler kommen ganz nach oben, danach die alten von unten nach oben
             returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
             new_players = [p for p in spieler if p not in returning_players and p != "-"]
             
@@ -259,7 +257,6 @@ def get_board_players(session, round_num, board_name):
                 
             return list(pairs[b_idx])
         
-        # Auf- und Abstieg Runden > 1
         prev_r = round_num - 1
         res = session.get("results", {})
         w = {}
@@ -544,6 +541,17 @@ def open_new_session_dialog():
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
             aktive_spieler = anwesende + gaeste
             
+            # --- ERROR CHECK: Harte Blockade bei falschen Board-Angaben ---
+            boards_cnt = int(anzahl_boards.split()[0])
+            max_needed_boards = (len(aktive_spieler) + 1) // 2
+            
+            if boards_cnt > max_needed_boards:
+                st.error(f"🚨 Fehler: Zu viele Boards! Für {len(aktive_spieler)} Spieler sind max. {max_needed_boards} Boards möglich.")
+                return
+            if len(aktive_spieler) < 2:
+                st.error("🚨 Fehler: Bitte mindestens 2 Spieler auswählen!")
+                return
+            
             max_id = 0
             for s in st.session_state.sessions_list:
                 try:
@@ -553,11 +561,6 @@ def open_new_session_dialog():
                     pass
             new_id = f"S-{max_id + 1}"
             
-            # Automatische Board-Korrektur (max. benötigte Boards bei Spielerzahl berechnen)
-            max_needed_boards = (len(aktive_spieler) + 1) // 2
-            selected_board_cnt = int(anzahl_boards.split()[0])
-            boards_cnt = min(selected_board_cnt, max_needed_boards)
-            
             new_session = {
                 "id": new_id,
                 "datum": session_datum.strftime("%d.%m.%Y"),
@@ -565,7 +568,7 @@ def open_new_session_dialog():
                 "boards_count": boards_cnt,
                 "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds,
                 "total_rounds": total_rounds,
-                "boards": f"{boards_cnt} Boards" if boards_cnt > 1 else "1 Board",
+                "boards": anzahl_boards,
                 "modus_leg": leg_modus,
                 "spieler": aktive_spieler,
                 "gaeste": gaeste,
@@ -649,16 +652,23 @@ def open_edit_session_dialog(session_idx):
             gaeste = [x for x in [g1, g2, g3, g4] if x.strip() != ""]
             aktive_spieler = anwesende + gaeste
             
+            # --- ERROR CHECK: Harte Blockade bei falschen Board-Angaben ---
+            boards_cnt = int(anzahl_boards.split()[0])
             max_needed_boards = (len(aktive_spieler) + 1) // 2
-            selected_board_cnt = int(anzahl_boards.split()[0])
-            boards_cnt = min(selected_board_cnt, max_needed_boards)
+            
+            if boards_cnt > max_needed_boards:
+                st.error(f"🚨 Fehler: Zu viele Boards! Für {len(aktive_spieler)} Spieler sind max. {max_needed_boards} Boards möglich.")
+                return
+            if len(aktive_spieler) < 2:
+                st.error("🚨 Fehler: Bitte mindestens 2 Spieler auswählen!")
+                return
             
             sess["datum"] = session_datum.strftime("%d.%m.%Y")
             sess["modus"] = spielmodus
             sess["boards_count"] = boards_cnt
             sess["singles_rounds"] = singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds
             sess["total_rounds"] = total_rounds
-            sess["boards"] = f"{boards_cnt} Boards" if boards_cnt > 1 else "1 Board"
+            sess["boards"] = anzahl_boards
             sess["modus_leg"] = leg_modus
             sess["spieler"] = aktive_spieler
             sess["gaeste"] = gaeste
@@ -774,7 +784,7 @@ def open_board_dialog(board_name, session_idx):
                     "avg_s2": in_avg_2
                 }
                 smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun() # Schließt den Dialog durch direkten Reload
+                st.rerun()
     with col_btn2:
         if st.button("Schließen", use_container_width=True, key=f"d_close_{board_name}_{session_idx}"):
             st.rerun()
@@ -1182,14 +1192,12 @@ with tab_session:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        # Sortiere hier absteigend nach der Nummer in S-N
         sorted_sessions_tab = sorted(
             st.session_state.sessions_list, 
             key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, 
             reverse=True
         )
         for sess in sorted_sessions_tab:
-            # Wichtig: Hole den Original-Index für die Dialog-Funktion!
             original_idx = st.session_state.sessions_list.index(sess)
             with st.container(border=True):
                 gaeste_text = f" | Gäste: {', '.join(sess['gaeste'])}" if sess.get('gaeste') else ""
@@ -1207,7 +1215,6 @@ with tab_archiv:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        # Sortieren absteigend (neueste oben)
         sorted_sessions = sorted(
             st.session_state.sessions_list, 
             key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, 
@@ -1215,7 +1222,6 @@ with tab_archiv:
         )
         
         for sess in sorted_sessions:
-            # Echten Index in der Originalliste finden
             orig_idx = st.session_state.sessions_list.index(sess)
             
             with st.container(border=True):
@@ -1272,7 +1278,6 @@ with tab_archiv:
                                             winner = p1 if sc1 > sc2 else p2
                                             loser = p2 if sc1 > sc2 else p1
                                             if "results" not in sess: sess["results"] = {}
-                                            # Alte Werte behalten falls vorhanden, sonst Null
                                             old_180_1 = match_info.get("180_s1", 0)
                                             old_180_2 = match_info.get("180_s2", 0)
                                             old_avg_1 = match_info.get("avg_s1", 0.0)
