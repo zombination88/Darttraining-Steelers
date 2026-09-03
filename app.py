@@ -4,7 +4,7 @@
 # 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
 # 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
 # 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
-# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
+# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (inkl. Hover-Listen bei Gleichstand).
 # 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
 # 8. SPIELMODI & LOGIK:
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). Doppel startet strikt erst nach Abschluss aller Einzel-Matches!
@@ -105,6 +105,7 @@ def save_backup_to_cloud(serializable_sessions):
         json_str = json.dumps(serializable_sessions, ensure_ascii=False)
         backup_ws.append_row([ts, json_str])
         
+        # Limit auf 20 Einträge
         try:
             all_vals = backup_ws.get_all_values()
             if len(all_vals) > 21: # 1 Kopfzeile + 20 Backups
@@ -124,23 +125,27 @@ def save_data(sessions):
     if not sheet_conn:
         return
         
-    # 1. Daten durch den Filter schicken
-    sichere_sessions = make_serializable(sessions)
-    
+    # 1. Keys im results-Dictionary sicher in Strings umwandeln, bevor gefiltert wird
     serializable_sessions = []
-    for sess in sichere_sessions:
+    for sess in sessions:
         sess_copy = sess.copy()
         fixed_results = {}
-        for (r_num, b_name), v in sess.get("results", {}).items():
-            fixed_results[f"{r_num}_{b_name}"] = v
+        for k, v in sess.get("results", {}).items():
+            if isinstance(k, tuple) and len(k) == 2:
+                fixed_results[f"{k[0]}_{k[1]}"] = v
+            else:
+                fixed_results[k] = v
         sess_copy["results"] = fixed_results
         serializable_sessions.append(sess_copy)
+        
+    # 2. Die restlichen Daten sicher filtern (Tupel in Listen, Dates in ISO)
+    sichere_sessions = make_serializable(serializable_sessions)
+    json_str = json.dumps(sichere_sessions, ensure_ascii=False)
     
-    json_str = json.dumps(serializable_sessions, ensure_ascii=False)
     try:
         sheet_conn.clear()
         sheet_conn.update([["json_data"], [json_str]])
-        save_backup_to_cloud(serializable_sessions)
+        save_backup_to_cloud(sichere_sessions)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -581,18 +586,43 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
 def open_session_archive_dialog(session_idx):
     all_sessions_sorted = sorted(st.session_state.sessions_list, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
     sess = all_sessions_sorted[session_idx]
+    
     start_t = sess.get("start_time", "–")
     end_t = sess.get("end_time", "–")
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
     st.caption(f"⏱️ Start: {start_t} Uhr | Ende: {end_t} Uhr")
     
-    res = sess.get("results", {})
+    # Session Zeitstatistik berechnen für die Kopfzeile
+    total_minutes = 0
+    if start_t != "–" and end_t != "–":
+        try:
+            t1 = datetime.strptime(start_t, "%H:%M")
+            t2 = datetime.strptime(end_t, "%H:%M")
+            diff_min = (t2 - t1).total_seconds() / 60
+            if diff_min < 0: diff_min += 24 * 60
+            total_minutes = diff_min
+        except: pass
+    
     total_rounds = sess.get("total_rounds", 4)
     modus = sess.get("modus", "Up & Down")
     is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
+    res = sess.get("results", {})
+    
+    if total_minutes > 0:
+        total_legs = 0
+        for match in res.values():
+            try:
+                l1, l2 = map(int, match.get("ergebnis", "0:0").split(":"))
+                total_legs += (l1 + l2)
+            except: pass
+        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
+        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
+        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
+        st.divider()
+
     if not res:
         st.info("Für diese Session wurden noch keine Matches erfasst.")
     else:
@@ -655,6 +685,28 @@ def open_session_summary_dialog(session_idx):
     singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
     
     res = sess.get("results", {})
+    
+    total_minutes = 0
+    if start_t != "–" and end_t != "–":
+        try:
+            t1 = datetime.strptime(start_t, "%H:%M")
+            t2 = datetime.strptime(end_t, "%H:%M")
+            diff_min = (t2 - t1).total_seconds() / 60
+            if diff_min < 0: diff_min += 24 * 60
+            total_minutes = diff_min
+        except: pass
+        
+    if total_minutes > 0:
+        total_legs = 0
+        for match in res.values():
+            try:
+                l1, l2 = map(int, match.get("ergebnis", "0:0").split(":"))
+                total_legs += (l1 + l2)
+            except: pass
+        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
+        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
+        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
+        st.divider()
     
     # 1. Einzel-Phase anzeigen
     if singles_rounds > 0 and not is_pure_coop:
@@ -1407,12 +1459,12 @@ with tab_kader:
                         stats[p]["Matches"] += 1
                         stats[p]["Niederlagen"] += 1
 
-    valid_players = [p for p in kader if stats[p]["Matches"] >= 3] # MVP nur ab 3 Spielen
+    # --- MVP LOGIK ---
+    valid_players = [p for p in kader if stats[p]["Matches"] >= 3]
     mvp_help = None
     
     if valid_players:
         best_rate = max([(stats[p]["Siege"] / stats[p]["Matches"]) for p in valid_players])
-        # Filtere alle Spieler heraus, die exakt diese beste Siegquote haben
         top_mvps = [p for p in valid_players if abs((stats[p]["Siege"] / stats[p]["Matches"]) - best_rate) < 1e-9]
         
         mvp_rate = best_rate
@@ -1644,8 +1696,20 @@ with tab_archiv:
     st.caption("Die neueste Session steht hier immer ganz oben. Inklusive automatischem Cloud-Backup und lokalem JSON-Download.")
     
     if st.session_state.sessions_list:
-        # 1. Sichere Serialisierung (Tupel-Schutz)
-        sichere_sessions = make_serializable(st.session_state.sessions_list)
+        # Sichere Serialisierung (Tupel-Schutz) auch für den manuellen Download-Button
+        export_sessions = []
+        for sess in st.session_state.sessions_list:
+            sess_copy = sess.copy()
+            fixed_results = {}
+            for k, v in sess.get("results", {}).items():
+                if isinstance(k, tuple) and len(k) == 2:
+                    fixed_results[f"{k[0]}_{k[1]}"] = v
+                else:
+                    fixed_results[k] = v
+            sess_copy["results"] = fixed_results
+            export_sessions.append(sess_copy)
+            
+        sichere_sessions = make_serializable(export_sessions)
         backup_json_str = json.dumps(sichere_sessions, ensure_ascii=False, indent=2)
         
         st.download_button(
