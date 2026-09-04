@@ -10,8 +10,8 @@
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
 #    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
-# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
-#    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur der PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
+# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er-, 6er-, 8er-, 10er- oder 12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
+#    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur für den PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
 # 10. TAB-STRUKTUR & UI: Die Reiter müssen exakt in der definierten Reihenfolge (Übersicht, Kader, Session, Freundschaftsspiele, Match-Archiv, Modus & Regeln) und mit sämtlichen Statistik- und Blitz-Erfassungs-Blöcken aufgebaut sein.
 
 import streamlit as st
@@ -992,7 +992,13 @@ def generate_spielbericht_pdf(sess):
     auf_g = sess.get("auf_gast", {})
 
     t_size = sess.get("team_size", 4)
-    if t_size == 6:
+    if t_size == 12:
+        y_coords_pdf = {f"m{i}": 650 - i*25 for i in range(1, 37)} # approximate scale
+    elif t_size == 10:
+        y_coords_pdf = {f"m{i}": 650 - i*28 for i in range(1, 31)}
+    elif t_size == 8:
+        y_coords_pdf = {f"m{i}": 630 - i*32 for i in range(1, 25)}
+    elif t_size == 6:
         y_coords_pdf = {
             "m1": 615, "m2": 570, "m3": 525, "m4": 480, "m5": 435, "m6": 390,
             "m7": 345, "m8": 300, "m9": 255, "m10": 210, "m11": 165, "m12": 120,
@@ -1014,7 +1020,6 @@ def generate_spielbericht_pdf(sess):
     
     rounds_map = get_liga_config(sess)
     match_map = [match for round in rounds_map for match in round]
-    all_match_keys = [m[0] for m in match_map]
 
     for m_key, label, h_key, g_key in match_map:
         if m_key in res and res[m_key].get("played"):
@@ -1720,7 +1725,6 @@ with tab_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
-            real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1774,34 +1778,25 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    singles_count = t_size
-                    cross_count = t_size
-                    singles_batches = math.ceil(singles_count / b_count)
-                    cross_batches = math.ceil(cross_count / b_count)
+                    singles_batches = math.ceil(t_size / b_count)
+                    cross_batches = math.ceil(t_size / b_count)
                     is_in_doubles = (curr_round_idx >= singles_batches + cross_batches)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("🚨 Die Doppel-Runden dürfen erst gestartet werden, wenn beide Teams ihre Doppel-Aufstellungen hinterlegt haben!")
+                            st.warning("🚨 Nach der Eingabe der letzten Einzelrunde (Einzel + Kreuz-Einzel) müssen nun beide Teams ihre Doppel-Aufstellungen hinterlegen!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], True)
                             if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], False)
                             continue
-                    elif curr_round_idx >= 1:
-                        st.markdown("**🔜 Doppel bereits jetzt aufstellen (Optional):**")
-                        c_opt1, c_opt2 = st.columns(2)
-                        if not auf_h.get("hd1") and c_opt1.button("🔒 Heim Doppel", key=f"opt_hd_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(l_sess['id'], True)
-                        if not auf_g.get("gd1") and c_opt2.button("🔒 Gast Doppel", key=f"opt_gd_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(l_sess['id'], False)
                                 
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
-                        st.markdown(f"**Aktive Runde ({curr_round_idx + 1} / {len(rounds_list)})**")
+                        st.markdown(f"**Runde {curr_round_idx + 1} / {len(rounds_list)} läuft:**")
                         
                         current_board_matches = active_matches[:b_count]
                         waiting_queue = active_matches[b_count:]
@@ -2017,7 +2012,7 @@ with tab_regeln:
         st.markdown("""
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
-        * **Flexibel wählbar:** Als 4er-Team (Standard) oder freies Spiel mit 6er-, 8er-, 10er- oder 12er-Team und variablen Boards.
+        * **Flexibel wählbar:** Als 4er-, 6er-, 8er-, 10er- oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Die aktuellen Board-Matches sowie die nachfolgende Warteschlange werden übersichtlich angezeigt.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
