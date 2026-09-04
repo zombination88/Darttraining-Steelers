@@ -4,13 +4,13 @@
 # 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
 # 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
 # 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
-# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten).
+# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten). Bei Gleichstand: Tooltip!
 # 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
 # 8. SPIELMODI & LOGIK:
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
 #    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
-# 9. LIGA-BETRIEB (Schwaben 4. BezLiga): Streng isolierter Modus, freie Texteingabe, Links/Rechts-Board-Layout, automatische Kreuzrunde und separates Live-Tracking.
+# 9. LIGA-BETRIEB: Komplett vom Training isolierter Modus (Schwaben 4. BezLiga) mit 2-Board Live Tracking, Blind Setup, Kreuz-Runde und eigenen Stats.
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 
-st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="wide")
+st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
 # --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
@@ -29,9 +29,7 @@ def make_serializable(data):
     """Wandelt Tupel und Datumsformate sicher um, damit JSON nicht abstürzt."""
     if isinstance(data, dict):
         return {str(k): make_serializable(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [make_serializable(i) for i in data]
-    elif isinstance(data, tuple):
+    elif isinstance(data, (list, tuple)):
         return [make_serializable(i) for i in data]
     elif hasattr(data, 'isoformat'):
         return data.isoformat()
@@ -72,12 +70,9 @@ def load_data():
                     for k, v in sess.get("results", {}).items():
                         parts = k.split("_", 1)
                         if len(parts) == 2 and not sess.get("is_liga"):
-                            try:
-                                r_num = int(parts[0])
-                                b_name = parts[1]
-                                fixed_results[(r_num, b_name)] = v
-                            except ValueError:
-                                fixed_results[k] = v
+                            r_num = int(parts[0])
+                            b_name = parts[1]
+                            fixed_results[(r_num, b_name)] = v
                         else:
                             fixed_results[k] = v
                     sess["results"] = fixed_results
@@ -210,7 +205,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-c_mus, c_sync, c_dummy = st.columns([1, 1, 8])
+c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
 with c_mus:
     try:
         with st.popover("🎵"):
@@ -238,14 +233,11 @@ kader = [
 if "sessions_list" not in st.session_state:
     st.session_state.sessions_list = load_data()
 
+# Daten strikt in Liga und Training trennen
 training_sessions = [s for s in st.session_state.sessions_list if not s.get("is_liga")]
 liga_sessions = [s for s in st.session_state.sessions_list if s.get("is_liga")]
 
 tab_übersicht, tab_kader, tab_session, tab_liga, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Freundschaftsspiele", "Match-Archiv", "Modus & Regeln"])
-
-# --------------------------
-# --- TRAINING FUNKTIONEN ---
-# --------------------------
 
 def get_or_create_teams(session, all_training_sessions):
     """Generiert zufällige 2v2 Teams für die Session."""
@@ -933,7 +925,7 @@ LIGA_ROUNDS = [
 LIGA_MATCH_MAP = [match for round in LIGA_ROUNDS for match in round]
 
 def generate_spielbericht_pdf(sess):
-    """Erstellt den PDF-Spielbericht per Overlay-Verfahren."""
+    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix."""
     import io
     import os
     try:
@@ -945,19 +937,58 @@ def generate_spielbericht_pdf(sess):
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
+    c.setFont("Helvetica", 11)
     
     heim = sess.get("heim_team", "")
     gast = sess.get("gast_team", "")
     datum = sess.get("datum", "")
     
-    # 1. Metadaten eintragen (Koordinaten müssen im Nachgang leicht nachjustiert werden)
-    c.setFont("Helvetica", 12)
-    c.drawString(100, 750, heim)  # X-Position 100, Y-Position 750 (vom unteren Rand)
-    c.drawString(350, 750, gast)
-    c.drawString(450, 780, datum)
+    # 1. Metadaten eintragen (Angepasste Koordinaten für Bez_Schwaben_Spielbericht_2.pdf)
+    c.drawString(460, 745, datum)
+    c.drawString(110, 715, heim) 
+    c.drawString(340, 715, gast)
     
-    # Hier können später die genauen Ergebnisse für m1 bis m10 ergänzt werden.
-    # z.B.: c.drawString(x_pos, y_pos, str(sess.get("results", {}).get("m1", {}).get("lh", 0)))
+    res = sess.get("results", {})
+    auf_h = sess.get("auf_heim", {})
+    auf_g = sess.get("auf_gast", {})
+
+    # Matrix für die 10 Spiele (Y-Koordinaten pro Zeile von oben nach unten)
+    # Block 1 (Einzel 1-4)
+    y_coords = {
+        "m1": 630, "m2": 590, "m3": 545, "m4": 505,
+        "m5": 435, "m6": 395, "m7": 350, "m8": 305,
+        "m9": 200, "m10": 120
+    }
+    
+    # X-Spalten Definitionen
+    x_name_heim = 60
+    x_name_gast = 310
+    
+    x_legs_heim = 260
+    x_legs_gast = 480
+    
+    x_180_heim = 65
+    x_180_gast = 315
+    
+    for m_key, label, h_key, g_key in LIGA_MATCH_MAP:
+        if m_key in res and res[m_key].get("played"):
+            m_data = res[m_key]
+            y = y_coords[m_key]
+            
+            # Spielernamen
+            c.drawString(x_name_heim, y, str(auf_h.get(h_key, "")))
+            c.drawString(x_name_gast, y, str(auf_g.get(g_key, "")))
+            
+            # Legs
+            c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
+            c.drawString(x_legs_gast, y, str(m_data.get("lg", 0)))
+            
+            # 180er (Y-Koordinate etwas tiefer in der kleinen Zeile darunter)
+            y_sub = y - 15
+            if m_data.get("180_h", 0) > 0:
+                c.drawString(x_180_heim, y_sub, str(m_data.get("180_h", "")))
+            if m_data.get("180_g", 0) > 0:
+                c.drawString(x_180_gast, y_sub, str(m_data.get("180_g", "")))
 
     c.save()
     packet.seek(0)
@@ -965,7 +996,15 @@ def generate_spielbericht_pdf(sess):
     pdf_out = io.BytesIO()
     
     # 2. Overlay über das Original-PDF legen
-    if os.path.exists("Bez_Schwaben_Spielbericht.pdf"):
+    if os.path.exists("Bez_Schwaben_Spielbericht_2.pdf"):
+        new_pdf = PdfReader(packet)
+        original_pdf = PdfReader(open("Bez_Schwaben_Spielbericht_2.pdf", "rb"))
+        output = PdfWriter()
+        page = original_pdf.pages[0]
+        page.merge_page(new_pdf.pages[0])
+        output.add_page(page)
+        output.write(pdf_out)
+    elif os.path.exists("Bez_Schwaben_Spielbericht.pdf"): # Fallback für alten Namen
         new_pdf = PdfReader(packet)
         original_pdf = PdfReader(open("Bez_Schwaben_Spielbericht.pdf", "rb"))
         output = PdfWriter()
@@ -976,7 +1015,7 @@ def generate_spielbericht_pdf(sess):
     else:
         # Fallback-Ausgabe, falls Datei nicht hochgeladen wurde
         c2 = canvas.Canvas(pdf_out, pagesize=A4)
-        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht.pdf' fehlt!")
+        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht_2.pdf' fehlt!")
         c2.drawString(100, 700, f"Spiel: {heim} vs {gast}")
         c2.save()
 
@@ -1118,7 +1157,6 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
         p4 = d2_p2_txt.strip() if d2_p2_sel == "Neuer Ersatzspieler..." else d2_p2_sel
         
         if p1 and p2 and p3 and p4:
-            # CHECK AUF DOPPELTE SPIELER
             selected_players = [p1, p2, p3, p4]
             if len(set(selected_players)) != 4:
                 st.error("🚨 Fehler: Ein Spieler kann nicht mehrfach aufgestellt werden. Jeder Name darf nur 1x vorkommen!")
@@ -1224,7 +1262,6 @@ def open_liga_bericht_dialog(session_idx):
 
     st.divider()
     
-    # NEU: Checkbox zum offiziellen Abschließen
     is_locked = sess.get("is_locked", False)
     if not is_locked:
         lock_spiel = st.checkbox("🔒 Spiel endgültig abschließen (Verschiebt das Spiel dauerhaft ins Archiv)", value=False)
@@ -1435,7 +1472,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (Format 4er-Team). Verdeckte Eingabe und automatisches Kreuzen.")
+    st.write("Isolierter Bereich für Freundschaftsspiele (Format 4er-Team). Verdeckte Eingabe und automatische PDF-Ausgabe.")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1445,10 +1482,9 @@ with tab_liga:
     if not liga_sessions:
         st.info("Noch keine Liga-Spiele angelegt.")
     else:
-        # NEU: Filtert abgeschlossene Spiele aus dem Live-Reiter heraus
         active_liga = [s for s in liga_sessions if not s.get("is_locked", False)]
         if not active_liga:
-            st.success("🎉 Alle aktuellen Liga-Spiele sind abgeschlossen! Du findest die Berichte im Match-Archiv.")
+            st.success("🎉 Alle aktuellen Spiele sind abgeschlossen! Du findest die PDF-Berichte ganz unten.")
             
         sorted_liga = sorted(active_liga, key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, reverse=True)
         for l_sess in sorted_liga:
