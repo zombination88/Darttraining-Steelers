@@ -234,11 +234,15 @@ def smart_sync_and_save(updated_sessions):
         
     fresh_data = load_data()
     if fresh_data:
-        fresh_dict = {s["id"]: s for s in fresh_data}
+        existing_ids = {s["id"] for s in fresh_data}
         for sess in updated_sessions:
-            fresh_dict[sess["id"]] = sess
-            
-        final_data = list(fresh_dict.values())
+            if sess["id"] not in existing_ids:
+                fresh_data.append(sess)
+            else:
+                for idx, fs in enumerate(fresh_data):
+                    if fs["id"] == sess["id"]:
+                        fresh_data[idx] = sess
+        final_data = [s for s in fresh_data if s["id"] in [u["id"] for u in updated_sessions]]
         save_data(final_data)
         st.session_state.sessions_list = final_data
     else:
@@ -248,7 +252,7 @@ def smart_sync_and_save(updated_sessions):
 def delete_session(session_id):
     fresh_data = load_data()
     if fresh_data:
-        fresh_data = [s for s in fresh_data if s.get("id") != session_id]
+        fresh_data = [s for s in fresh_data if s.get("id"] != session_id]
         save_data(fresh_data)
         st.session_state.sessions_list = fresh_data
     else:
@@ -556,19 +560,17 @@ def is_board_ready(session, board_name, next_r):
     return True
 
 @st.dialog("🔄 Spieler auswechseln")
-def open_substitution_dialog(board_name, session_id, round_num, slot_num, current_player):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    
+def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
     alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
     if "-" not in alle_spieler: alle_spieler.append("-")
     alle_spieler.sort()
 
     st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
     idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
-    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{session_id}_{round_num}_{slot_num}")
-    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{session_id}_{round_num}_{slot_num}")
+    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{board_name}_{round_num}_{slot_num}")
+    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{board_name}_{round_num}_{slot_num}")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -584,14 +586,13 @@ def open_substitution_dialog(board_name, session_id, round_num, slot_num, curren
                 }
             if slot_num == 1: sess["results"][(round_num, board_name)]["s1"] = final_name
             else: sess["results"][(round_num, board_name)]["s2"] = final_name
-            st.session_state.sessions_list[real_idx] = sess
             smart_sync_and_save(st.session_state.sessions_list)
             st.rerun()
 
 @st.dialog("📊 Session Endstand & Zusammenfassung")
-def open_session_summary_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
+def open_session_summary_dialog(session_idx):
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     
     start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
@@ -743,15 +744,15 @@ def open_new_session_dialog():
                 st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten")
-def open_edit_session_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    
-    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_id}")
+def open_edit_session_dialog(session_idx):
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_idx}")
     if pwd != "1521":
         if pwd != "": st.error("Falsches Passwort!")
         return
+
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
+    real_idx = st.session_state.sessions_list.index(sess)
     
     try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
     except: curr_date = date.today()
@@ -787,7 +788,7 @@ def open_edit_session_dialog(session_id):
     cols = st.columns(2)
     for i, sp in enumerate(kader):
         with cols[0 if i < len(kader)//2 else 1]:
-            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
+            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_idx}"): anwesende.append(sp)
                 
     curr_gaeste = sess.get("gaeste", [])
     gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
@@ -826,18 +827,17 @@ def open_delete_session_dialog(session_id):
             else: st.error("Falsches Passwort!")
 
 @st.dialog("📋 Board-Erfassung & Tracking")
-def open_board_dialog(board_name, session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
+def open_board_dialog(board_name, session_idx):
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
     real_idx = st.session_state.sessions_list.index(sess)
-    
     total_rounds = sess.get("total_rounds", 4)
     res = sess.get("results", {})
     completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
     current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
     if current_round > total_rounds:
-        st.warning(f"{board_name} hat alle Runden beendet.")
+        st.warning(f"{board_name} has completed all rounds.")
         if st.button("Schließen"): st.rerun()
         return
 
@@ -1210,7 +1210,6 @@ def open_liga_aufstellung_doppel(session_id, is_heim):
             if p1: all_selected.append(p1)
             if p2: all_selected.append(p2)
             
-        # Dubletten-Prüfung mit Namensnennung
         seen = set()
         duplicates = set()
         for player in all_selected:
@@ -1736,7 +1735,8 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    is_in_doubles = (curr_round_idx >= len(rounds_list) - (3 if t_size == 6 else 2))
+                    num_doubles_blocks = 3 if t_size == 6 else 2
+                    is_in_doubles = (curr_round_idx >= len(rounds_list) - num_doubles_blocks)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
@@ -1772,7 +1772,6 @@ with tab_liga:
                                     
                                     if i % 2 == 1:
                                         st.markdown(f"Gast (links): **{p_gast}**")
-                                        # Auswechsel-Button NUR in der Kreuz-Runde (2. Runde)
                                         if not is_played and "Kreuz" in m_label and not "d" in g_key:
                                             if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                         st.markdown(f"Heim: **{p_heim}**")
@@ -1959,18 +1958,16 @@ with tab_archiv:
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, alle Spielmodi und den Ablauf bei Freundschaftsspielen.")
+    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
     
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
-        * **Flexibel wählbar:** Als **Standard-Liga-Spiel** (4er-Team, 2 Boards) oder als **Freies Spiel** (4er- oder 6er-Team mit 1-6 frei wählbaren Boards).
+        * **Flexibel wählbar:** Als 4er- oder 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Vorschau:** Gespielt wird auf frei wählbaren parallelen Boards. Die Vorschau zeigt euch bereits die nächsten Matches, damit ihr Auswechslungen rechtzeitig vorbereiten könnt.
-        * **Auswechslungen:** Das Einwechseln von Ersatzspielern (`🔄`) ist ausschließlich in der Kreuz-Runde (2. Runde) möglich.
-        * **Doppel-Sperre:** Kein Spieler darf in den Doppeln doppelt aufgestellt werden. Das System prüft dies und nennt bei Dubletten den Spielernamen in der Fehlermeldung.
-        * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
+        * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
         
     with st.container(border=True):
@@ -1987,5 +1984,4 @@ with tab_regeln:
         * **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Zeitmanagement:** Im Session-Reiter werden globale Durchschnittszeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang berechnet.
-        * **Tresor-Backup (`completed_backup`):** Abgeschlossene Spiele werden als unzerstörbarer Tresor im Hintergrund zusammengeführt, sodass niemals ein Spiel verloren geht.
         """)
