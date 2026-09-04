@@ -24,7 +24,6 @@ import io
 import os
 import random
 import math
-from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
@@ -107,6 +106,7 @@ def save_backup_to_cloud(serializable_sessions):
             backup_ws = spreadsheet.add_worksheet(title="backups", rows=100, cols=2)
             backup_ws.append_row(["Timestamp", "JSON_Data"])
         
+        from zoneinfo import ZoneInfo
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(serializable_sessions, ensure_ascii=False)
         backup_ws.append_row([ts, json_str])
@@ -160,6 +160,7 @@ def save_completed_backup(serializable_sessions):
                 
         merged_vault = list(vault_dict.values())
         
+        from zoneinfo import ZoneInfo
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(merged_vault, ensure_ascii=False)
         
@@ -195,6 +196,7 @@ def save_data(sessions):
 
 def get_local_time_str():
     try:
+        from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%H:%M")
     except Exception:
         return datetime.now().strftime("%H:%M")
@@ -936,30 +938,13 @@ def get_liga_config(sess):
             rounds.append(block[i:i + b_count])
     return rounds
 
-def get_running_score_up_to(res, all_keys, target_key):
-    """Berechnet den Spielstand ('Stand') bis einschließlich des aktuellen Matches für den offiziellen Spielbericht."""
-    h_score = 0
-    g_score = 0
-    for k in all_keys:
-        m_data = res.get(k, {})
-        if m_data.get("played"):
-            lh = m_data.get("lh", 0)
-            lg = m_data.get("lg", 0)
-            if lh > lg:
-                h_score += 1
-            elif lg > lh:
-                g_score += 1
-        if k == target_key:
-            break
-    return f"{h_score}:{g_score}"
-
 def generate_spielbericht_pdf(sess):
     try:
         from pypdf import PdfReader, PdfWriter
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
     except ImportError:
-        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab).")
+        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab). Bitte in requirements.txt hinterlegen!")
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
@@ -1000,7 +985,6 @@ def generate_spielbericht_pdf(sess):
     
     rounds_map = get_liga_config(sess)
     match_map = [match for round in rounds_map for match in round]
-    all_match_keys = [m[0] for m in match_map]
 
     for m_key, label, h_key, g_key in match_map:
         if m_key in res and res[m_key].get("played"):
@@ -1706,7 +1690,6 @@ with tab_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
-            real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1716,8 +1699,9 @@ with tab_liga:
             auf_h = l_sess.setdefault("auf_heim", {})
             auf_g = l_sess.setdefault("auf_gast", {})
             
-            sets_heim, sets_gast, legs_heim, legs_gast = 0, 0, 0, 0
+            sets_heim, sets_gast, legs_heim, legs_gast, total_180s_liga = 0, 0, 0, 0, 0
             for m_data in res.values():
+                total_180s_liga += int(m_data.get("180_h", 0)) + int(m_data.get("180_g", 0))
                 if m_data.get("played"):
                     lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
                     legs_heim += lh; legs_gast += lg
@@ -1733,7 +1717,13 @@ with tab_liga:
             with st.container(border=True):
                 st.markdown(f"### {heim} vs. {gast}")
                 st.caption(f"{l_sess['datum']} | ID: {l_sess['id']} | Status: {status}")
-                st.markdown(f"**Sets:** {sets_heim} : {sets_gast} | **Legs:** {legs_heim} : {legs_gast}")
+                
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("Sets", f"{sets_heim} : {sets_gast}")
+                col_s2.metric("Legs", f"{legs_heim} : {legs_gast}")
+                col_s3.metric("Fortschritt", f"{played_matches_count}/{total_matches_count}")
+                col_s4.metric("180er gesamt", f"{total_180s_liga}x")
+                st.divider()
                 
                 t_size = l_sess.get("team_size", 4)
                 h_einzel_ok = bool(auf_h.get(f"h{t_size}"))
@@ -1753,14 +1743,19 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    num_doubles_blocks = 3 if t_size == 6 else 2
-                    is_in_doubles = (curr_round_idx >= len(rounds_list) - num_doubles_blocks)
+                    # Check if we are in doubles phase
+                    singles_count = 6 if t_size == 6 else 4
+                    cross_count = 6 if t_size == 6 else 4
+                    doubles_count = 3 if t_size == 6 else 2
+                    singles_batches = math.ceil(singles_count / b_count)
+                    cross_batches = math.ceil(cross_count / b_count)
+                    is_in_doubles = (curr_round_idx >= singles_batches + cross_batches)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("Phase 2: Doppel-Aufstellungen eintragen")
+                            st.warning("🚨 Die Doppel-Runden dürfen erst gestartet werden, wenn beide Teams ihre Doppel-Aufstellungen hinterlegt haben!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], True)
@@ -1777,9 +1772,7 @@ with tab_liga:
                                 
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
-                        r_titles = ["1. Runde (Einzel)", "2. Runde (Kreuz-Einzel)", "3. Runde (Doppel)"]
-                        round_title_str = r_titles[curr_round_idx] if curr_round_idx < len(r_titles) else f"Runde {curr_round_idx + 1}"
-                        st.markdown(f"**{round_title_str}**")
+                        st.markdown(f"**Aktive Runde ({curr_round_idx + 1} / {len(rounds_list)})**")
                         
                         current_board_matches = active_matches[:b_count]
                         waiting_queue = active_matches[b_count:]
@@ -1793,10 +1786,6 @@ with tab_liga:
                             with cols_boards[i % len(cols_boards)]:
                                 with st.container(border=True):
                                     st.write(f"*{b_name}* — {m_label}")
-                                    
-                                    all_match_keys = [match[0] for round in rounds_list for match in round]
-                                    stand_str = get_running_score_up_to(res, all_match_keys, m_key)
-                                    st.caption(f"Stand: **{stand_str}**")
                                     
                                     show_sub_btn = ("Kreuz" in m_label) and not is_played
                                     
@@ -1908,9 +1897,9 @@ with tab_archiv:
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
-                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(training_sessions.index(sess))
+                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
-                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(training_sessions.index(sess))
+                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
                     with c3:
                         if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
                         
@@ -1988,7 +1977,7 @@ with tab_archiv:
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
+    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
     
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
@@ -1996,7 +1985,7 @@ with tab_regeln:
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
         * **Flexibel wählbar:** Als 4er- oder 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
-        * **Live-Tracking & Vorschau:** Gespielt wird auf frei wählbaren parallelen Boards. Die Vorschau zeigt euch bereits die nächsten Matches, damit ihr Auswechslungen rechtzeitig vorbereiten könnt.
+        * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Die aktuellen Board-Matches sowie die nachfolgende Warteschlange werden übersichtlich angezeigt.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
         
@@ -2015,3 +2004,4 @@ with tab_regeln:
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Zeitmanagement:** Im Session-Reiter werden globale Durchschnittszeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang berechnet.
         """)
+
