@@ -160,6 +160,7 @@ def save_completed_backup(serializable_sessions):
                 
         merged_vault = list(vault_dict.values())
         
+        from zoneinfo::ZoneInfo if False else object # dummy placeholder import safety
         from zoneinfo import ZoneInfo
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(merged_vault, ensure_ascii=False)
@@ -938,13 +939,30 @@ def get_liga_config(sess):
             rounds.append(block[i:i + b_count])
     return rounds
 
+def get_running_score_up_to(res, all_keys, target_key):
+    """Berechnet den Spielstand ('Stand') bis einschließlich des aktuellen Matches für den offiziellen Spielbericht."""
+    h_score = 0
+    g_score = 0
+    for k in all_keys:
+        m_data = res.get(k, {})
+        if m_data.get("played"):
+            lh = m_data.get("lh", 0)
+            lg = m_data.get("lg", 0)
+            if lh > lg:
+                h_score += 1
+            elif lg > lh:
+                g_score += 1
+        if k == target_key:
+            break
+    return f"{h_score}:{g_score}"
+
 def generate_spielbericht_pdf(sess):
     try:
         from pypdf import PdfReader, PdfWriter
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
     except ImportError:
-        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab). Bitte in requirements.txt hinterlegen!")
+        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab).")
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
@@ -985,6 +1003,7 @@ def generate_spielbericht_pdf(sess):
     
     rounds_map = get_liga_config(sess)
     match_map = [match for round in rounds_map for match in round]
+    all_match_keys = [m[0] for m in match_map]
 
     for m_key, label, h_key, g_key in match_map:
         if m_key in res and res[m_key].get("played"):
@@ -1676,7 +1695,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (4er/6er-Team, variable Boards, Blind Setup, 2 Einzel-Runden, 1 Doppel-Runde und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1758,16 +1777,17 @@ with tab_liga:
                                 open_liga_aufstellung_doppel(l_sess['id'], False)
                             continue
                     elif curr_round_idx >= 1:
-                        st.markdown("**🔜 Doppel bereits jetzt aufstellen (Optional):**")
                         c_opt1, c_opt2 = st.columns(2)
-                        if not auf_h.get("hd1") and c_opt1.button("🔒 Heim Doppel", key=f"opt_hd_{l_sess['id']}"):
+                        if not auf_h.get("hd1") and c_opt1.button("🔒 Heim Doppel aufstellen", key=f"opt_hd_{l_sess['id']}"):
                             open_liga_aufstellung_doppel(l_sess['id'], True)
-                        if not auf_g.get("gd1") and c_opt2.button("🔒 Gast Doppel", key=f"opt_gd_{l_sess['id']}"):
+                        if not auf_g.get("gd1") and c_opt2.button("🔒 Gast Doppel aufstellen", key=f"opt_gd_{l_sess['id']}"):
                             open_liga_aufstellung_doppel(l_sess['id'], False)
                                 
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
-                        st.markdown(f"**Aktive Runde ({curr_round_idx + 1} / {len(rounds_list)})**")
+                        r_titles = ["1. Runde (Einzel)", "2. Runde (Kreuz-Einzel)", "3. Runde (Doppel)"]
+                        round_title_str = r_titles[curr_round_idx] if curr_round_idx < len(r_titles) else f"Runde {curr_round_idx + 1}"
+                        st.markdown(f"**{round_title_str}**")
                         
                         current_board_matches = active_matches[:b_count]
                         waiting_queue = active_matches[b_count:]
@@ -1781,6 +1801,11 @@ with tab_liga:
                             with cols_boards[i % len(cols_boards)]:
                                 with st.container(border=True):
                                     st.write(f"*{b_name}* — {m_label}")
+                                    
+                                    # Stand / Running score vor oder nach dem Spiel anzeigen
+                                    all_match_keys = [match[0] for round in rounds_list for match in round]
+                                    stand_str = get_running_score_up_to(res, all_match_keys, m_key)
+                                    st.caption(f"Aktueller Stand: **{stand_str}**")
                                     
                                     show_sub_btn = ("Kreuz" in m_label) and not is_played
                                     
@@ -1971,7 +1996,7 @@ with tab_archiv:
                             st.error("Falsches Passwort!")
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
+    st.subheader("🎯 Modus & Regeln")
     st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, den WhatsApp-Workflow, den Auf- und Abstieg sowie den Koop-Modus.")
     
     with st.container(border=True):
