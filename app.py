@@ -185,7 +185,7 @@ def smart_sync_and_save(updated_sessions):
 def delete_session(session_id):
     fresh_data = load_data()
     if fresh_data:
-        fresh_data = [s for s in fresh_data if s.get("id"] != session_id]
+        fresh_data = [s for s in fresh_data if s.get("id") != session_id]
         save_data(fresh_data)
         st.session_state.sessions_list = fresh_data
     else:
@@ -1523,7 +1523,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele nach dem offiziellen Spielbericht-System (mit flexiblen Boards & Live-Vorschau).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1584,7 +1584,6 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    num_singles_rounds = (t_size * 2) // b_count
                     is_in_doubles = (curr_round_idx >= len(rounds_list) - (3 if t_size == 6 else 2))
                     
                     if is_in_doubles:
