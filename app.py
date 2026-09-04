@@ -193,13 +193,10 @@ def is_session_completed(sess):
     return True
 
 def check_session_completion_time(sess):
-    if sess.get("is_liga"): return
+    """Setzt bei Abschluss automatisch die Enduhrzeit, sofern noch nicht vorhanden."""
     if is_session_completed(sess):
         if not sess.get("end_time"):
             sess["end_time"] = get_local_time_str()
-    else:
-        if "end_time" in sess:
-            sess["end_time"] = None
 
 def smart_sync_and_save(updated_sessions):
     for sess in updated_sessions:
@@ -207,15 +204,16 @@ def smart_sync_and_save(updated_sessions):
         
     fresh_data = load_data()
     if fresh_data:
-        existing_ids = {s["id"] for s in fresh_data}
+        # Mappe der frischen Daten aus der Cloud
+        fresh_dict = {s["id"]: s for s in fresh_data}
+        
+        # Wir aktualisieren nur die Sessions, die verändert wurden.
+        # Wir löschen NIEMALS Sessions aus fresh_data, nur weil sie im lokalen State fehlen!
         for sess in updated_sessions:
-            if sess["id"] not in existing_ids:
-                fresh_data.append(sess)
-            else:
-                for idx, fs in enumerate(fresh_data):
-                    if fs["id"] == sess["id"]:
-                        fresh_data[idx] = sess
-        final_data = [s for s in fresh_data if s["id"] in [u["id"] for u in updated_sessions]]
+            fresh_dict[sess["id"]] = sess
+            
+        final_data = list(fresh_dict.values())
+        
         save_data(final_data)
         st.session_state.sessions_list = final_data
     else:
