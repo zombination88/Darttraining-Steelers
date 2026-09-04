@@ -951,11 +951,11 @@ def generate_spielbericht_pdf(sess):
     auf_h = sess.get("auf_heim", {})
     auf_g = sess.get("auf_gast", {})
 
-    # Exakte Y-Matrix kalibriert auf Bez_Schwaben_Spielbericht_2.pdf
+    # Exakte, kalibrierte Y-Matrix für Bez_Schwaben_Spielbericht_2.pdf
     y_coords_pdf = {
-        "m1": 650, "m2": 610, "m3": 570, "m4": 530,  # Block 1 (Einzel 1-4)
-        "m5": 420, "m6": 380, "m7": 340, "m8": 300,  # Block 2 (Kreuz-Einzel 5-8)
-        "m9": 195, "m10": 150                        # Doppel 1 & 2
+        "m1": 615, "m2": 570, "m3": 525, "m4": 480,  # Block 1 (Einzel 1-4)
+        "m5": 400, "m6": 355, "m7": 310, "m8": 265,  # Block 2 (Kreuz-Einzel 5-8)
+        "m9": 200, "m10": 155                        # Doppel 1 & 2
     }
     
     x_name_heim = 55
@@ -1545,7 +1545,7 @@ with tab_liga:
                         if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}", use_container_width=True):
                             open_liga_aufstellung_doppel(liga_sessions.index(l_sess), False)
                     else:
-                        if curr_block >= 1 and (not h_doppel_ok or not g_doppel_ok):
+                        if curr_block >= 2 and (not h_doppel_ok or not g_doppel_ok):
                             with st.expander("🔜 Doppel bereits jetzt vorab aufstellen (Optional)", expanded=False):
                                 c_dh, c_dg = st.columns(2)
                                 if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_opt_{l_sess['id']}", use_container_width=True):
