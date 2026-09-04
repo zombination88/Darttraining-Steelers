@@ -951,7 +951,7 @@ def generate_spielbericht_pdf(sess):
     auf_h = sess.get("auf_heim", {})
     auf_g = sess.get("auf_gast", {})
 
-    # Exakte Y-Matrix auf das offizielle Formular (Bez_Schwaben_Spielbericht_2.pdf) kalibriert
+    # Exakte Y-Matrix kalibriert auf Bez_Schwaben_Spielbericht_2.pdf
     y_coords_pdf = {
         "m1": 650, "m2": 610, "m3": 570, "m4": 530,  # Block 1 (Einzel 1-4)
         "m5": 420, "m6": 380, "m7": 340, "m8": 300,  # Block 2 (Kreuz-Einzel 5-8)
@@ -972,7 +972,6 @@ def generate_spielbericht_pdf(sess):
             m_data = res[m_key]
             y = y_coords_pdf.get(m_key, 500)
             
-            # Namen & Legs eintragen
             h_name = str(auf_h.get(h_key, ""))
             g_name = str(auf_g.get(g_key, ""))
             
@@ -982,7 +981,6 @@ def generate_spielbericht_pdf(sess):
             c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
             c.drawString(x_legs_gast, y, str(m_data.get("lg", 0)))
             
-            # 180er darunter
             y_sub = y - 13
             if m_data.get("180_h", 0) > 0:
                 c.drawString(x_180_heim, y_sub, str(m_data.get("180_h", "")))
@@ -1129,7 +1127,6 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
         if ("h" in k or "g" in k) and not "d" in k:
             if v and v != "-": bisherige_spieler.append(v)
             
-    # Ergänze eingewechselte Spieler aus den Results
     for m_key, m_data in sess.get("results", {}).items():
         if is_heim:
             if m_data.get("s1") and m_data.get("s1") not in bisherige_spieler: bisherige_spieler.append(m_data.get("s1"))
@@ -1138,24 +1135,38 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
     bisherige_spieler = list(set(bisherige_spieler))
     bisherige_spieler.sort()
     options = bisherige_spieler if bisherige_spieler else ["Bitte zuerst Einzel spielen..."]
+    options_with_custom = options + ["+ Anderen Spieler eingeben..."]
     
     st.markdown("**Doppel 1**")
     c1, c2 = st.columns(2)
-    d1_p1 = c1.selectbox("Spieler 1", options, key="d1_p1")
-    d1_p2 = c2.selectbox("Spieler 2", options, key="d1_p2")
+    d1_p1_sel = c1.selectbox("Spieler 1", options_with_custom, key="d1_p1_sel")
+    d1_p1 = c1.text_input("Name Spieler 1", key="d1_p1_txt") if d1_p1_sel == "+ Anderen Spieler eingeben..." else d1_p1_sel
+    
+    d1_p2_sel = c2.selectbox("Spieler 2", options_with_custom, key="d1_p2_sel")
+    d1_p2 = c2.text_input("Name Spieler 2", key="d1_p2_txt") if d1_p2_sel == "+ Anderen Spieler eingeben..." else d1_p2_sel
     
     st.markdown("**Doppel 2**")
     c3, c4 = st.columns(2)
-    d2_p1 = c3.selectbox("Spieler 1", options, key="d2_p1")
-    d2_p2 = c4.selectbox("Spieler 2", options, key="d2_p2")
+    d2_p1_sel = c3.selectbox("Spieler 1", options_with_custom, key="d2_p1_sel")
+    d2_p1 = c3.text_input("Name Spieler 1", key="d2_p1_txt") if d2_p1_sel == "+ Anderen Spieler eingeben..." else d2_p1_sel
+    
+    d2_p2_sel = c4.selectbox("Spieler 2", options_with_custom, key="d2_p2_sel")
+    d2_p2 = c4.text_input("Name Spieler 2", key="d2_p2_txt") if d2_p2_sel == "+ Anderen Spieler eingeben..." else d2_p2_sel
         
     if st.button("Speichern", type="primary", use_container_width=True):
-        selected_players = [d1_p1, d1_p2, d2_p1, d2_p2]
-        if len(set(selected_players)) != 4:
-            st.error("🚨 Fehler: Ein Spieler kann nicht doppelt aufgestellt werden. Jeder Name darf nur 1x vorkommen!")
+        p1 = d1_p1.strip() if d1_p1 else ""
+        p2 = d1_p2.strip() if d1_p2 else ""
+        p3 = d2_p1.strip() if d2_p1 else ""
+        p4 = d2_p2.strip() if d2_p2 else ""
+        
+        all_selected = [p1, p2, p3, p4]
+        if any(not x for x in all_selected):
+            st.error("🚨 Bitte alle 4 Spieler für die Doppel ausfüllen!")
+        elif len(set(all_selected)) != 4:
+            st.error("🚨 Fehler: Ein Name wurde mehrfach verwendet! Jeder Spieler darf in den Doppel insgesamt nur 1x vorkommen.")
         else:
-            d1_str = f"{d1_p1} & {d1_p2}"
-            d2_str = f"{d2_p1} & {d2_p2}"
+            d1_str = f"{p1} & {p2}"
+            d2_str = f"{p3} & {p4}"
             if is_heim:
                 sess["auf_heim"].update({"hd1": d1_str, "hd2": d2_str})
             else:
@@ -1534,7 +1545,7 @@ with tab_liga:
                         if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}", use_container_width=True):
                             open_liga_aufstellung_doppel(liga_sessions.index(l_sess), False)
                     else:
-                        if curr_block >= 2 and curr_block < 4 and (not h_doppel_ok or not g_doppel_ok):
+                        if curr_block >= 1 and (not h_doppel_ok or not g_doppel_ok):
                             with st.expander("🔜 Doppel bereits jetzt vorab aufstellen (Optional)", expanded=False):
                                 c_dh, c_dg = st.columns(2)
                                 if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_opt_{l_sess['id']}", use_container_width=True):
@@ -1768,7 +1779,7 @@ with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, Freundschaftsspiele und den Auf- und Abstieg.")
     
-    with st.container(border=Thread:=True):
+    with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
         * **Isoliert:** Eigener Bereich im Tab **Freundschaftsspiele**.
