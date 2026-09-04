@@ -924,7 +924,7 @@ LIGA_ROUNDS = [
 LIGA_MATCH_MAP = [match for round in LIGA_ROUNDS for match in round]
 
 def generate_spielbericht_pdf(sess):
-    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix."""
+    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix und Fettschrift."""
     import io
     import os
     try:
@@ -936,14 +936,15 @@ def generate_spielbericht_pdf(sess):
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
-    c.setFont("Helvetica", 10)
+    # Auf Fettschrift umgestellt für professionellen Look
+    c.setFont("Helvetica-Bold", 10)
     
     heim = sess.get("heim_team", "")
     gast = sess.get("gast_team", "")
     datum = sess.get("datum", "")
     
-    # Metadaten
-    c.drawString(450, 750, datum)
+    # Metadaten Kopfbereich
+    c.drawString(420, 750, datum)
     c.drawString(100, 720, heim) 
     c.drawString(330, 720, gast)
     
@@ -951,18 +952,11 @@ def generate_spielbericht_pdf(sess):
     auf_h = sess.get("auf_heim", {})
     auf_g = sess.get("auf_gast", {})
 
-    # Exakte Y-Matrix nach Original-PDF (Block 1, Block 2, Doppel)
-    y_coords = {
-        "m1": 560, "m2": 480, "m3": 400, "m4": 320,
-        "m5": 240, "m6": 160, "m7": 80,  "m8": 5,
-        "m9": -75, "m10": -155 # Wird auf Seite 1 gerechnet
-    }
-    
-    # Alternative exakte Y-Matrix korrigiert für PDF
+    # Exakte Y-Matrix nach Original-PDF (Einzel 1-4, Kreuz-Einzel 5-8, Doppel 1-2)
     y_coords_pdf = {
-        "m1": 595, "m2": 535, "m3": 475, "m4": 415,
-        "m5": 310, "m6": 250, "m7": 190, "m8": 130,
-        "m9": 45,  "m10": -15
+        "m1": 595, "m2": 535, "m3": 475, "m4": 415,  # Block 1 (Einzel 1-4)
+        "m5": 310, "m6": 250, "m7": 190, "m8": 130,  # Block 2 (Kreuz-Einzel 5-8)
+        "m9": 45,  "m10": -15                        # Doppel 1 & 2
     }
     
     x_name_heim = 55
@@ -979,14 +973,14 @@ def generate_spielbericht_pdf(sess):
             m_data = res[m_key]
             y = y_coords_pdf.get(m_key, 500)
             
-            # Namen & Legs
+            # Namen & Legs eintragen
             c.drawString(x_name_heim, y, str(auf_h.get(h_key, "")))
             c.drawString(x_name_gast, y, str(auf_g.get(g_key, "")))
             
             c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
             c.drawString(x_legs_gast, y, str(m_data.get("lg", 0)))
             
-            # 180er in kleiner Zeile darunter
+            # 180er darunter
             y_sub = y - 14
             if m_data.get("180_h", 0) > 0:
                 c.drawString(x_180_heim, y_sub, str(m_data.get("180_h", "")))
@@ -1016,8 +1010,8 @@ def generate_spielbericht_pdf(sess):
         output.write(pdf_out)
     else:
         c2 = canvas.Canvas(pdf_out, pagesize=A4)
-        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht_2.pdf' fehlt!")
-        c2.drawString(100, 700, f"Spiel: {heim} vs {gast}")
+        c2.setFont("Helvetica-Bold", 12)
+        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht_2.pdf' fehlt im Ordner!")
         c2.save()
 
     pdf_out.seek(0)
