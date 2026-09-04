@@ -10,7 +10,8 @@
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
 #    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
-# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export.
+# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
+#    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur der PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
 
 import streamlit as st
 import pandas as pd
@@ -846,7 +847,7 @@ def open_board_dialog(board_name, session_idx):
     current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
     if current_round > total_rounds:
-        st.warning(f"{board_name} hat alle Runden beendet.")
+        st.warning(f"{board_name} has completed all rounds.")
         if st.button("Schließen"): st.rerun()
         return
 
@@ -947,7 +948,6 @@ def get_liga_config(sess):
     return rounds
 
 def generate_spielbericht_pdf(sess):
-    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix in fettes Helvetica-Bold."""
     import io
     import os
     try:
@@ -1032,7 +1032,7 @@ def generate_spielbericht_pdf(sess):
     else:
         c2 = canvas.Canvas(pdf_out, pagesize=A4)
         c2.setFont("Helvetica-Bold", 12)
-        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht_2.pdf' fehlt im Ordner!")
+        c2.drawString(100, 750, "FEHLER: Originaldatei fehlt!")
         c2.save()
 
     pdf_out.seek(0)
@@ -1047,8 +1047,8 @@ def open_new_liga_match_dialog():
     gast_team = st.text_input("Gastmannschaft", placeholder="z.B. DC Irgendwas")
     
     team_mode = st.selectbox("Spielmodus / Team-Größe", [
-        "4er-Team (Standard nach BDV: 4 Einzel, 4 Kreuz, 2 Doppel)",
-        "6er-Team (Erweitert: 6 Einzel, 6 Rückrunde, 3 Doppel — alle 6 spielen)"
+        "4er-Team (Standard: 4 Einzel, 4 Kreuz, 2 Doppel)",
+        "6er-Team (Erweitert: 6 Einzel, 6 Rückrunde, 3 Doppel)"
     ])
     team_size = 6 if "6er" in team_mode else 4
 
@@ -1523,7 +1523,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards und PDF-Export).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1660,7 +1660,6 @@ with tab_liga:
         st.info("Noch keine abgeschlossenen Freundschaftsspiele im Archiv.")
     else:
         for c_sess in completed_liga:
-            c_idx = st.session_state.sessions_list.index(c_sess)
             with st.container(border=True):
                 st.markdown(f"**{c_sess['datum']}** | 🏆 {c_sess.get('heim_team')} vs. {c_sess.get('gast_team')}")
                 try:
@@ -1674,9 +1673,6 @@ with tab_liga:
                     )
                 except Exception as e:
                     st.error(f"PDF-Generierung fehlgeschlagen: {e}")
-                
-                if st.button("⚙️ Korrigieren / Bearbeiten", key=f"edit_comp_{c_sess['id']}"):
-                    open_liga_bericht_dialog(c_idx)
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
@@ -1743,6 +1739,7 @@ with tab_regeln:
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
         * **Live-Tracking & Vorschau:** Gespielt wird auf frei wählbaren parallelen Boards. Die Vorschau zeigt euch bereits die nächsten Matches, damit ihr Auswechslungen rechtzeitig vorbereiten könnt.
+        * **Archivierung:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Korrekturen und Bearbeitungen sind aus Gründen der Übersichtlichkeit ausschließlich im **Match-Archiv** möglich.
         """)
         
     with st.container(border=True):
