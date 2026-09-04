@@ -1067,15 +1067,20 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
         p4 = d2_p2_txt.strip() if d2_p2_sel == "Neuer Ersatzspieler..." else d2_p2_sel
         
         if p1 and p2 and p3 and p4:
-            d1_str = f"{p1} & {p2}"
-            d2_str = f"{p3} & {p4}"
-            
-            if is_heim:
-                sess["auf_heim"].update({"hd1": d1_str, "hd2": d2_str})
+            # CHECK AUF DOPPELTE SPIELER
+            selected_players = [p1, p2, p3, p4]
+            if len(set(selected_players)) != 4:
+                st.error("🚨 Fehler: Ein Spieler kann nicht mehrfach aufgestellt werden. Jeder Name darf nur 1x vorkommen!")
             else:
-                sess["auf_gast"].update({"gd1": d1_str, "gd2": d2_str})
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
+                d1_str = f"{p1} & {p2}"
+                d2_str = f"{p3} & {p4}"
+                
+                if is_heim:
+                    sess["auf_heim"].update({"hd1": d1_str, "hd2": d2_str})
+                else:
+                    sess["auf_gast"].update({"gd1": d1_str, "gd2": d2_str})
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
         else:
             st.error("Bitte wähle für alle 4 Positionen einen Spieler aus!")
 
@@ -1166,7 +1171,18 @@ def open_liga_bericht_dialog(session_idx):
                 
             res[m_key] = {"lh": lh, "lg": lg, "played": True if (lh>0 or lg>0) else False, "180_h": m_data.get("180_h", 0), "180_g": m_data.get("180_g", 0)}
 
+    st.divider()
+    
+    # NEU: Checkbox zum offiziellen Abschließen
+    is_locked = sess.get("is_locked", False)
+    if not is_locked:
+        lock_spiel = st.checkbox("🔒 Spiel endgültig abschließen (Verschiebt das Spiel dauerhaft ins Archiv)", value=False)
+    else:
+        lock_spiel = True
+        st.info("Dieses Spiel ist bereits offiziell abgeschlossen und archiviert.")
+
     if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True, disabled=not all_valid):
+        sess["is_locked"] = lock_spiel
         smart_sync_and_save(st.session_state.sessions_list)
         st.rerun()
 
@@ -1378,7 +1394,12 @@ with tab_liga:
     if not liga_sessions:
         st.info("Noch keine Liga-Spiele angelegt.")
     else:
-        sorted_liga = sorted(liga_sessions, key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, reverse=True)
+        # NEU: Filtert abgeschlossene Spiele aus dem Live-Reiter heraus
+        active_liga = [s for s in liga_sessions if not s.get("is_locked", False)]
+        if not active_liga:
+            st.success("🎉 Alle aktuellen Liga-Spiele sind abgeschlossen! Du findest die Berichte im Match-Archiv.")
+            
+        sorted_liga = sorted(active_liga, key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, reverse=True)
         for l_sess in sorted_liga:
             real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
