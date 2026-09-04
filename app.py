@@ -10,7 +10,7 @@
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
 #    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
-# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
+# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
 #    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur der PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
 # 10. TAB-STRUKTUR & UI: Die Reiter müssen exakt in der definierten Reihenfolge (Übersicht, Kader, Session, Freundschaftsspiele, Match-Archiv, Modus & Regeln) und mit sämtlichen Statistik- und Blitz-Erfassungs-Blöcken aufgebaut sein.
 
@@ -905,7 +905,19 @@ def get_liga_config(sess):
     t_size = sess.get("team_size", 4)
     b_count = sess.get("boards_count", 2)
     
-    if t_size == 6:
+    if t_size == 12:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 13)]
+        cross = [(f"m{i+12}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+5)%12 + 1}") for i in range(1, 13)]
+        doubles = [(f"m{i+24}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 7)]
+    elif t_size == 10:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 11)]
+        cross = [(f"m{i+10}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+4)%10 + 1}") for i in range(1, 11)]
+        doubles = [(f"m{i+20}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 6)]
+    elif t_size == 8:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 9)]
+        cross = [(f"m{i+8}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+3)%8 + 1}") for i in range(1, 9)]
+        doubles = [(f"m{i+16}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 5)]
+    elif t_size == 6:
         singles = [
             ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
             ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),
@@ -1068,7 +1080,7 @@ def open_new_liga_match_dialog():
     gast_team = st.text_input("Gastmannschaft", placeholder="z.B. DC Irgendwas")
     
     if "Freies Spiel" in match_type:
-        team_size = st.selectbox("Team-Größe", [4, 6], format_func=lambda x: f"{x}er-Team")
+        team_size = st.selectbox("Team-Größe", [6, 8, 10, 12], format_func=lambda x: f"{x}er-Team")
         b_count = st.selectbox("Anzahl paralleler Boards", [1, 2, 3, 4, 5, 6], index=1)
     else:
         team_size = 4
@@ -1191,7 +1203,7 @@ def open_liga_aufstellung_doppel(session_id, is_heim):
     
     team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
     t_size = sess.get("team_size", 4)
-    num_doubles = 3 if t_size == 6 else 2
+    num_doubles = t_size // 2
     
     st.write(f"### Doppel-Aufstellung: {team_name}")
     st.markdown("🚨 **Wichtig:** Jeder Spieler darf in den Doppel insgesamt nur **1x** vorkommen (keine Dubletten).")
@@ -1694,7 +1706,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1708,6 +1720,7 @@ with tab_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
+            real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1717,8 +1730,9 @@ with tab_liga:
             auf_h = l_sess.setdefault("auf_heim", {})
             auf_g = l_sess.setdefault("auf_gast", {})
             
-            sets_heim, sets_gast, legs_heim, legs_gast = 0, 0, 0, 0
+            sets_heim, sets_gast, legs_heim, legs_gast, total_180s_liga = 0, 0, 0, 0, 0
             for m_data in res.values():
+                total_180s_liga += int(m_data.get("180_h", 0)) + int(m_data.get("180_g", 0))
                 if m_data.get("played"):
                     lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
                     legs_heim += lh; legs_gast += lg
@@ -1732,9 +1746,15 @@ with tab_liga:
             status = "✅ Abgeschlossen" if is_done else "🔴 Aktiv"
             
             with st.container(border=True):
-                st.markdown(f"### 🏆 {heim} vs. {gast} — Stand: {sets_heim}:{sets_gast}")
+                st.markdown(f"### {heim} vs. {gast} — Stand: {sets_heim}:{sets_gast}")
                 st.caption(f"{l_sess['datum']} | ID: {l_sess['id']} | Status: {status}")
-                st.markdown(f"**Sets:** {sets_heim} : {sets_gast} | **Legs:** {legs_heim} : {legs_gast}")
+                
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("Sets", f"{sets_heim} : {sets_gast}")
+                col_s2.metric("Legs", f"{legs_heim} : {legs_gast}")
+                col_s3.metric("Fortschritt", f"{played_matches_count}/{total_matches_count}")
+                col_s4.metric("180er gesamt", f"{total_180s_liga}x")
+                st.divider()
                 
                 t_size = l_sess.get("team_size", 4)
                 h_einzel_ok = bool(auf_h.get(f"h{t_size}"))
@@ -1754,14 +1774,17 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    num_doubles_blocks = 3 if t_size == 6 else 2
-                    is_in_doubles = (curr_round_idx >= len(rounds_list) - num_doubles_blocks)
+                    singles_count = t_size
+                    cross_count = t_size
+                    singles_batches = math.ceil(singles_count / b_count)
+                    cross_batches = math.ceil(cross_count / b_count)
+                    is_in_doubles = (curr_round_idx >= singles_batches + cross_batches)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("Phase 2: Doppel-Aufstellungen eintragen")
+                            st.warning("🚨 Die Doppel-Runden dürfen erst gestartet werden, wenn beide Teams ihre Doppel-Aufstellungen hinterlegt haben!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], True)
@@ -1778,9 +1801,7 @@ with tab_liga:
                                 
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
-                        r_titles = ["1. Runde (Einzel)", "2. Runde (Kreuz-Einzel)", "3. Runde (Doppel)"]
-                        round_title_str = r_titles[curr_round_idx] if curr_round_idx < len(r_titles) else f"Runde {curr_round_idx + 1}"
-                        st.markdown(f"**{round_title_str}**")
+                        st.markdown(f"**Aktive Runde ({curr_round_idx + 1} / {len(rounds_list)})**")
                         
                         current_board_matches = active_matches[:b_count]
                         waiting_queue = active_matches[b_count:]
@@ -1996,7 +2017,7 @@ with tab_regeln:
         st.markdown("""
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
-        * **Flexibel wählbar:** Als 4er- or 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
+        * **Flexibel wählbar:** Als 4er-Team (Standard) oder freies Spiel mit 6er-, 8er-, 10er- oder 12er-Team und variablen Boards.
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Die aktuellen Board-Matches sowie die nachfolgende Warteschlange werden übersichtlich angezeigt.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
