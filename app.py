@@ -241,7 +241,7 @@ if "sessions_list" not in st.session_state:
 training_sessions = [s for s in st.session_state.sessions_list if not s.get("is_liga")]
 liga_sessions = [s for s in st.session_state.sessions_list if s.get("is_liga")]
 
-tab_übersicht, tab_kader, tab_session, tab_liga, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Liga-Modus", "Match-Archiv", "Modus & Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_liga, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Freundschaftsspiele", "Match-Archiv", "Modus & Regeln"])
 
 # --------------------------
 # --- TRAINING FUNKTIONEN ---
@@ -932,6 +932,57 @@ LIGA_ROUNDS = [
 ]
 LIGA_MATCH_MAP = [match for round in LIGA_ROUNDS for match in round]
 
+def generate_spielbericht_pdf(sess):
+    """Erstellt den PDF-Spielbericht per Overlay-Verfahren."""
+    import io
+    import os
+    try:
+        from pypdf import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+    except ImportError:
+        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab)")
+
+    packet = io.BytesIO()
+    c = canvas.Canvas(packet, pagesize=A4)
+    
+    heim = sess.get("heim_team", "")
+    gast = sess.get("gast_team", "")
+    datum = sess.get("datum", "")
+    
+    # 1. Metadaten eintragen (Koordinaten müssen im Nachgang leicht nachjustiert werden)
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 750, heim)  # X-Position 100, Y-Position 750 (vom unteren Rand)
+    c.drawString(350, 750, gast)
+    c.drawString(450, 780, datum)
+    
+    # Hier können später die genauen Ergebnisse für m1 bis m10 ergänzt werden.
+    # z.B.: c.drawString(x_pos, y_pos, str(sess.get("results", {}).get("m1", {}).get("lh", 0)))
+
+    c.save()
+    packet.seek(0)
+    
+    pdf_out = io.BytesIO()
+    
+    # 2. Overlay über das Original-PDF legen
+    if os.path.exists("Bez_Schwaben_Spielbericht.pdf"):
+        new_pdf = PdfReader(packet)
+        original_pdf = PdfReader(open("Bez_Schwaben_Spielbericht.pdf", "rb"))
+        output = PdfWriter()
+        page = original_pdf.pages[0]
+        page.merge_page(new_pdf.pages[0])
+        output.add_page(page)
+        output.write(pdf_out)
+    else:
+        # Fallback-Ausgabe, falls Datei nicht hochgeladen wurde
+        c2 = canvas.Canvas(pdf_out, pagesize=A4)
+        c2.drawString(100, 750, "FEHLER: Originaldatei 'Bez_Schwaben_Spielbericht.pdf' fehlt!")
+        c2.drawString(100, 700, f"Spiel: {heim} vs {gast}")
+        c2.save()
+
+    pdf_out.seek(0)
+    return pdf_out
+
 @st.dialog("➕ Neues Liga-Spiel (4. BezLiga)", width="large")
 def open_new_liga_match_dialog():
     st.write("Erstelle hier ein neues Ligaspiel. Die Aufstellung erfolgt gleich völlig unabhängig vom Trainingskader im Live-Modus.")
@@ -1383,10 +1434,10 @@ with tab_session:
         with c5: st.metric("🎯 Ø Dauer pro Leg", f"{(gt_min / gt_legs):.1f} Min." if gt_legs > 0 else "0.0 Min.", delta="Gesamt-Durchschnitt", delta_color="off")
 
 with tab_liga:
-    st.subheader("Liga-Modus (4. BezLiga Schwaben)")
-    st.write("Streng isolierter Turnier-Modus. Verdeckte Eingabe, exakt nach offiziellem BDV Spielbericht.")
+    st.subheader("Freundschaftsspiele")
+    st.write("Isolierter Bereich für Freundschaftsspiele (Format 4er-Team). Verdeckte Eingabe und automatisches Kreuzen.")
     
-    if st.button("➕ Neues Liga-Spiel starten", type="primary", use_container_width=True):
+    if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
         
     st.divider()
@@ -1634,6 +1685,33 @@ with tab_liga:
         st.dataframe(pd.DataFrame(l_rows).sort_values(by="Einzel (S/M)", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Noch keine Statistiken für Ligamatches verfügbar.")
+        
+    st.divider()
+    st.subheader("🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
+    st.write("Hier findest du alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
+    
+    locked_liga = [s for s in liga_sessions if s.get("is_locked", False)]
+    if not locked_liga:
+        st.info("Noch keine abgeschlossenen Spiele vorhanden.")
+    else:
+        sorted_locked = sorted(locked_liga, key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] else 0, reverse=True)
+        for l_sess in sorted_locked:
+            with st.container(border=True):
+                heim = l_sess.get("heim_team", "Heim")
+                gast = l_sess.get("gast_team", "Gast")
+                st.markdown(f"**{l_sess['datum']} | 🏆 {heim} vs. {gast}**")
+                
+                try:
+                    pdf_data = generate_spielbericht_pdf(l_sess)
+                    st.download_button(
+                        label="📥 Offiziellen Spielbericht als PDF laden",
+                        data=pdf_data,
+                        file_name=f"Spielbericht_{heim}_vs_{gast}.pdf",
+                        mime="application/pdf",
+                        key=f"pdf_dl_{l_sess['id']}"
+                    )
+                except Exception as e:
+                    st.warning(f"PDF-Export nicht möglich: Bitte füge 'pypdf' und 'reportlab' in deine requirements.txt ein! (Fehler: {e})")
 
 with tab_archiv:
     st.subheader("Match-Archiv (Training & Liga)")
