@@ -1743,13 +1743,8 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    # Check if we are in doubles phase
-                    singles_count = 6 if t_size == 6 else 4
-                    cross_count = 6 if t_size == 6 else 4
-                    doubles_count = 3 if t_size == 6 else 2
-                    singles_batches = math.ceil(singles_count / b_count)
-                    cross_batches = math.ceil(cross_count / b_count)
-                    is_in_doubles = (curr_round_idx >= singles_batches + cross_batches)
+                    num_doubles_blocks = 3 if t_size == 6 else 2
+                    is_in_doubles = (curr_round_idx >= len(rounds_list) - num_doubles_blocks)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
@@ -1977,8 +1972,33 @@ with tab_archiv:
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
+    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, den WhatsApp-Workflow, den Auf- und Abstieg sowie den Koop-Modus.")
     
+    with st.container(border=True):
+        st.markdown("### 📱 WhatsApp-Umfrage & Session-Start")
+        st.markdown("""
+        * **Die Umfrage:** Der Teamcoach startet vor jedem Teamtraining eine Umfrage in der WhatsApp-Gruppe, wer an diesem Abend dabei ist.
+        * **Der Startschuss:** Sobald die Rückmeldungen vorliegen, erstellt der Coach den Spieltag in der App über **➕ Neue Session**. Am Trainingsabend selbst klickt er auf **🚀 Teamtraining starten**, wodurch die offizielle Zeiterfassung beginnt.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 👑 Das Up & Down Prinzip (Einzel)")
+        st.markdown("""
+        * **Das Prinzip:** Wer auf Kaiser B1 gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten. Wer ganz unten gewinnt, steigt nach oben auf.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 🤝 Der Koop-Modus (Feste 2v2-Teams & Up & Down)")
+        st.markdown("""
+        * **Zufällige Teams:** Es werden feste 2er-Paarungen per Zufall gebildet, die für die gesamte Session so zusammenbleiben.
+        * **Wichtige Regel:** Es dürfen **keine exakt gleichen 2er-Paarungen** aus der Vorsession zusammen spielen (wird automatisch geprüft).
+        * **Up & Down für Teams:** Gespielt wird auf Kaiser B1 und Board 2 im gewohnten Up & Down System (Gewinner steigen auf, Verlierer steigen ab).
+        * **Anzahl der Runden:** Die Anzahl der Runden wird frei festgelegt (z.B. 2 Runden).
+        * **Automatisches Pausen-Freilos:** Bei einer ungeraden Teamanzahl (z.B. 5 Teams) rotiert das aussetzende Team in jeder Runde automatisch weiter, sodass im Laufe des Abends jeder gleich oft pausiert.
+        * **Anti-Doppel-Pause Schutz:** Spieler, die in der letzten Session als Letztes pausieren mussten, sind in der neuen Session in Runde 1 garantiert im Einsatz.
+        * **Strikte Reihenfolge:** Im Standard-Training wird die Koop-Phase erst freigeschaltet, wenn **alle Einzel-Runden komplett zu Ende gespielt und eingetragen** sind.
+        """)
+
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
@@ -1988,19 +2008,25 @@ with tab_regeln:
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Die aktuellen Board-Matches sowie die nachfolgende Warteschlange werden übersichtlich angezeigt.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
-        
+
     with st.container(border=True):
-        st.markdown("### 👑 Trainings-Modi & Logik")
+        st.markdown("### 💾 Automatisches Cloud-Backup & JSON-Download")
         st.markdown("""
-        * **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
-        * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
-        * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Richtung B1), Verlierer ab. Der Kaiser der Vorsession startet ganz unten.
+        * **Cloud-Audit-Trail:** Nach jeder Änderung, jedem Spielerwechsel und jedem eingetragenen Match-Ergebnis speichert die App vollautomatisch einen vollständigen Zeit-Snapshot in einem separaten Backup-Blatt (`backups`) in unserer Google-Tabelle.
+        * **Lokales JSON-Backup:** Im Reiter **Match-Archiv** könnt ihr jederzeit per Klick ein aktuelles Backup aller Sessions als JSON-Datei auf euer Endgerät herunterladen.
         """)
 
     with st.container(border=True):
-        st.markdown("### 👥 Besonderheiten & Zeitmanagement")
+        st.markdown("### 🚦 Die Ampel-Anzeige & Board-Begrenzung")
         st.markdown("""
-        * **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
-        * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
-        * **Zeitmanagement:** Im Session-Reiter werden globale Durchschnittszeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang berechnet.
+        * 🟢 **Spielbar:** Euer Match steht fest – ihr könnt sofort loslegen!
+        * 🔴 **Wartet:** Ihr müsst noch kurz auf die Nachbarboards warten.
+        * **Keine leeren Boards:** Die App sperrt zu viele Boards automatisch, wenn nicht genügend Spieler da sind.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### ⏱️ Leg-Modus Validierung")
+        st.markdown("""
+        * **Best of 5:** Der Sieger benötigt exakt 3 Legs (3:0, 3:1, 3:2).
+        * **Best of 3:** Der Sieger benötigt exakt 2 Legs (2:0, 2:1).
         """)
