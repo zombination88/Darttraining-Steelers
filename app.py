@@ -19,7 +19,10 @@ from datetime import date, datetime
 import json
 import gspread
 from google.oauth2.service_account import Credentials
-import re
+import io
+import os
+import random
+import math
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
@@ -152,6 +155,23 @@ def get_local_time_str():
     except Exception:
         return datetime.now().strftime("%H:%M")
 
+def is_session_completed(sess):
+    if sess.get("is_liga"):
+        from_conf = get_liga_config(sess)
+        total_matches = sum([len(r) for r in from_conf])
+        played = len([k for k, v in sess.get("results", {}).items() if v.get("played")])
+        return played == total_matches
+
+    total_rounds = sess.get("total_rounds", 4)
+    res = sess.get("results", {})
+    for r in range(1, total_rounds + 1):
+        boards_in_round = get_boards_list(sess, r)
+        for b_name in boards_in_round:
+            match_info = res.get((r, b_name))
+            if not match_info or not match_info.get("winner"):
+                return False
+    return True
+
 def check_session_completion_time(sess):
     if sess.get("is_liga"):
         return
@@ -193,15 +213,17 @@ def delete_session(session_id):
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
 
-st.markdown(
-    """
-    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
-        <img src="https://raw.githubusercontent.com/zombination88/Darttraining-Steelers/main/logo.png.png" alt="Logo" width="60" onerror="this.src='https://raw.githubusercontent.com/zombination88/Darttraining-Steelers/main/logo.png'">
-        <h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+c_logo, c_title = st.columns([1, 4])
+with c_logo:
+    for logo_path in ["logo.png.png", "logo.png"]:
+        try:
+            st.image(logo_path, width=80)
+            break
+        except:
+            pass
+
+with c_title:
+    st.markdown("<h1 style='margin: 0; padding-top: 8px; font-size: 1.8rem;'>Wehringer Steelers — Teamtraining</h1>", unsafe_allow_html=True)
 
 c_mus, c_sync, c_dummy = st.columns([1, 1, 4])
 with c_mus:
@@ -258,11 +280,10 @@ def get_or_create_teams(session, all_training_sessions):
                 prev_modus = prev_sess.get("modus", "Up & Down")
                 prev_is_std = (prev_modus == "Standard-Training (Einzel + Coop)")
                 prev_singles = prev_sess.get("singles_rounds", prev_total - 2 if prev_is_std and prev_total > 2 else prev_total)
-                prev_coop_start = prev_singles + 1 if prev_is_std else 1
                 prev_teams = prev_sess.get("coop_teams", [])
                 if len(prev_teams) % 2 != 0:
                     n_prev = len(prev_teams)
-                    last_rel_round = prev_total - prev_coop_start + 1
+                    last_rel_round = prev_total - prev_singles
                     resting_idx = (last_rel_round - 1) % n_prev
                     resting_team_str = prev_teams[resting_idx]
                     for p in resting_team_str.split("&"):
@@ -276,7 +297,6 @@ def get_or_create_teams(session, all_training_sessions):
     except:
         pass
 
-    import random
     best_teams = []
     for _ in range(50):
         shuffled = spieler.copy()
@@ -493,17 +513,6 @@ def is_board_ready(session, board_name, next_r):
         if not found: return False
     return True
 
-def is_session_completed(sess):
-    total_rounds = sess.get("total_rounds", 4)
-    res = sess.get("results", {})
-    for r in range(1, total_rounds + 1):
-        boards_in_round = get_boards_list(sess, r)
-        for b_name in boards_in_round:
-            match_info = res.get((r, b_name))
-            if not match_info or not match_info.get("winner"):
-                return False
-    return True
-
 @st.dialog("🔄 Spieler auswechseln")
 def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
     all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
@@ -614,9 +623,8 @@ def open_session_summary_dialog(session_idx):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 def get_max_boards_for_players(num_players):
-    import math
     if num_players < 2: return 0
-    return math.floor(num_players / 2)
+    return num_players // 2
 
 @st.dialog("➕ Neue Session starten")
 def open_new_session_dialog():
@@ -884,14 +892,12 @@ def get_liga_config(sess):
     return rounds
 
 def generate_spielbericht_pdf(sess):
-    import io
-    import os
     try:
         from pypdf import PdfReader, PdfWriter
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
     except ImportError:
-        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab)")
+        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab). Bitte in requirements.txt hinterlegen!")
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
@@ -912,14 +918,14 @@ def generate_spielbericht_pdf(sess):
     t_size = sess.get("team_size", 4)
     if t_size == 6:
         y_coords_pdf = {
-            "m1": 630, "m2": 585, "m3": 540, "m4": 495, "m5": 450, "m6": 405,
-            "m7": 360, "m8": 315, "m9": 270, "m10": 225, "m11": 180, "m12": 135,
-            "m13": 90, "m14": 65, "m15": 40
+            "m1": 615, "m2": 570, "m3": 525, "m4": 480, "m5": 435, "m6": 390,
+            "m7": 345, "m8": 300, "m9": 255, "m10": 210, "m11": 165, "m12": 120,
+            "m13": 80, "m14": 55, "m15": 30
         }
     else:
         y_coords_pdf = {
-            "m1": 630, "m2": 585, "m3": 540, "m4": 495,
-            "m5": 415, "m6": 370, "m7": 325, "m8": 280,
+            "m1": 615, "m2": 570, "m3": 525, "m4": 480,
+            "m5": 400, "m6": 355, "m7": 310, "m8": 265,
             "m9": 200, "m10": 155
         }
     
@@ -1353,135 +1359,135 @@ with tab_übersicht:
                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
                         st.success("✅ Abgeschlossen")
 
-        st.write("")
+    st.write("")
+    st.divider()
+
+    st.markdown("### 📊 Allgemeine Statistiken")
+    
+    total_180s = 0
+    kaiser_winner_text = "Noch offen"
+    anwesende_count = 0
+    
+    display_sess = None
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    for s in all_sessions_sorted:
+        if is_session_completed(s) or s.get("results"):
+            display_sess = s
+            break
+    if not display_sess and all_sessions_sorted:
+        display_sess = all_sessions_sorted[0]
+
+    for sess in training_sessions:
+        for match in sess.get("results", {}).values():
+            s1_name = match.get("s1", "")
+            s2_name = match.get("s2", "")
+            if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
+            if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
+
+    if display_sess:
+        l_results = display_sess.get("results", {})
+        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        if kaiser_matches:
+            kaiser_matches.sort(key=lambda x: x[0], reverse=True)
+            kaiser_winner_text = kaiser_matches[0][1].get("winner")
+        
+        anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
+
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric(label="Sessions", value=str(len(training_sessions)), delta="gesamt")
+        with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
         st.divider()
-
-        st.markdown("### 📊 Allgemeine Statistiken")
+        c3, c4 = st.columns(2)
+        with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
+        with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
         
-        total_180s = 0
-        kaiser_winner_text = "Noch offen"
-        anwesende_count = 0
-        
-        display_sess = None
-        all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-        for s in all_sessions_sorted:
-            if is_session_completed(s) or s.get("results"):
-                display_sess = s
-                break
-        if not display_sess and all_sessions_sorted:
-            display_sess = all_sessions_sorted[0]
-
-        for sess in training_sessions:
-            for match in sess.get("results", {}).values():
-                s1_name = match.get("s1", "")
-                s2_name = match.get("s2", "")
-                if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
-                if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
-
-        if display_sess:
-            l_results = display_sess.get("results", {})
-            kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
-            if kaiser_matches:
-                kaiser_matches.sort(key=lambda x: x[0], reverse=True)
-                kaiser_winner_text = kaiser_matches[0][1].get("winner")
-            
-            anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
-
-        with st.container(border=True):
-            c1, c2 = st.columns(2)
-            with c1: st.metric(label="Sessions", value=str(len(training_sessions)), delta="gesamt")
-            with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
-            st.divider()
-            c3, c4 = st.columns(2)
-            with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
-            with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
-            
-        st.write("")
-        with st.expander("Letzte Session & Spitzenreiter", expanded=False):
-            col_l, col_r = st.columns(2)
-            with col_l:
-                st.markdown("### Letzte Session")
-                if display_sess:
-                    l_date = display_sess.get('datum', '–')
-                    count_180s = {}
-                    match_avgs = []
-                    for m in display_sess.get('results', {}).values():
-                        s1_name = m.get("s1", "")
-                        s2_name = m.get("s2", "")
-                        if s1_name and " & " not in s1_name:
-                            count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
-                            if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
-                        if s2_name and " & " not in s2_name:
-                            count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
-                            if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
-                    
-                    most_180_text = "Keine"
-                    if count_180s and max(count_180s.values()) > 0:
-                        top_player = max(count_180s, key=count_180s.get)
-                        most_180_text = f"{top_player} ({count_180s[top_player]}x)"
-                    
-                    best_avg_text = "–"
-                    if match_avgs:
-                        top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
-                        best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
-                    
-                    st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
-                else:
-                    st.info("Keine Daten vorhanden.")
-
-            with col_r:
-                st.markdown("### Spitzenreiter")
-                stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
-                for sess in training_sessions:
-                    for match in sess.get("results", {}).values():
-                        winner = match.get("winner", "")
-                        loser = match.get("loser", "")
-                        if winner and " & " not in winner:
-                            for p in winner.split(" & "):
-                                if p in stats_temp:
-                                    stats_temp[p]["Matches"] += 1
-                                    stats_temp[p]["Siege"] += 1
-                        if loser and " & " not in loser:
-                            for p in loser.split(" & "):
-                                if p in stats_temp:
-                                    stats_temp[p]["Matches"] += 1
-
-                best_p = "Keiner"
-                best_q = 0.0
-                best_m = 0
-                for p in kader:
-                    m = stats_temp[p]["Matches"]
-                    s = stats_temp[p]["Siege"]
-                    if m > 0:
-                        q = s / m
-                        if q > best_q or (q == best_q and m > best_m):
-                            best_q = q
-                            best_m = m
-                            best_p = p
-
-                st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
-                st.progress(best_q)
-
-        with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
-            all_matches = []
-            for sess in all_sessions_sorted:
-                sess_date = sess.get("datum", "")
-                for (round_num, board_name), m_info in sess.get("results", {}).items():
-                    if not m_info.get("winner"): continue
-                    all_matches.append({
-                        "Datum": sess_date, "Runde": round_num, "Board": board_name,
-                        "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                        "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
-                    })
-                    
-            if all_matches:
-                for m in all_matches[:15]: 
-                    with st.container(border=True):
-                        st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
-                        st.caption(f"⚔️ {m['Spieler']}")
-                        st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+    st.write("")
+    with st.expander("Letzte Session & Spitzenreiter", expanded=False):
+        col_l, col_r = st.columns(2)
+        with col_l:
+            st.markdown("### Letzte Session")
+            if display_sess:
+                l_date = display_sess.get('datum', '–')
+                count_180s = {}
+                match_avgs = []
+                for m in display_sess.get('results', {}).values():
+                    s1_name = m.get("s1", "")
+                    s2_name = m.get("s2", "")
+                    if s1_name and " & " not in s1_name:
+                        count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
+                        if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
+                    if s2_name and " & " not in s2_name:
+                        count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
+                        if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
+                
+                most_180_text = "Keine"
+                if count_180s and max(count_180s.values()) > 0:
+                    top_player = max(count_180s, key=count_180s.get)
+                    most_180_text = f"{top_player} ({count_180s[top_player]}x)"
+                
+                best_avg_text = "–"
+                if match_avgs:
+                    top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
+                    best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
+                
+                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
             else:
-                st.info("Bisher wurden keine Board-Matches ausgetragen.")
+                st.info("Keine Daten vorhanden.")
+
+        with col_r:
+            st.markdown("### Spitzenreiter")
+            stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
+            for sess in training_sessions:
+                for match in sess.get("results", {}).values():
+                    winner = match.get("winner", "")
+                    loser = match.get("loser", "")
+                    if winner and " & " not in winner:
+                        for p in winner.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+                                stats_temp[p]["Siege"] += 1
+                    if loser and " & " not in loser:
+                        for p in loser.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+
+            best_p = "Keiner"
+            best_q = 0.0
+            best_m = 0
+            for p in kader:
+                m = stats_temp[p]["Matches"]
+                s = stats_temp[p]["Siege"]
+                if m > 0:
+                    q = s / m
+                    if q > best_q or (q == best_q and m > best_m):
+                        best_q = q
+                        best_m = m
+                        best_p = p
+
+            st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
+            st.progress(best_q)
+
+    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
+        all_matches = []
+        for sess in all_sessions_sorted:
+            sess_date = sess.get("datum", "")
+            for (round_num, board_name), m_info in sess.get("results", {}).items():
+                if not m_info.get("winner"): continue
+                all_matches.append({
+                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
+                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
+                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
+                })
+                
+        if all_matches:
+            for m in all_matches[:15]: 
+                with st.container(border=True):
+                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
+                    st.caption(f"⚔️ {m['Spieler']}")
+                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+        else:
+            st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz (Teamtraining)")
@@ -1753,7 +1759,8 @@ with tab_archiv:
     st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
     if st.session_state.sessions_list:
-        backup_json_str = json.dumps(make_serializable(st.session_state.sessions_list), ensure_ascii=False, indent=2)
+        safe_data_for_export = make_serializable(st.session_state.sessions_list)
+        backup_json_str = json.dumps(safe_data_for_export, ensure_ascii=False, indent=2)
         st.download_button(label="📥 Backup als JSON herunterladen", data=backup_json_str, file_name=f"steelers_backup_{date.today().strftime('%Y-%m-%d')}.json", mime="application/json", use_container_width=True)
         st.write("")
 
@@ -1801,11 +1808,83 @@ with tab_archiv:
                     with c2:
                         if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(training_sessions.index(sess))
                     with c3:
-                        if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): delete_session(sess['id'])
+                        if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        
+                    st.divider()
+                    
+                    is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur (Admin)", key=f"blitz_check_{sess['id']}")
+                    if is_checked:
+                        blitz_pwd = st.text_input("Admin-Passwort:", type="password", key=f"blitz_pwd_{sess['id']}")
+                        if blitz_pwd == "1521":
+                            st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
+                            total_rounds = sess.get("total_rounds", 4)
+                            leg_modus = sess.get("modus_leg", "Best of 5")
+                            
+                            for r in range(1, total_rounds + 1):
+                                st.markdown(f"**Runde {r}**")
+                                boards_in_r = get_boards_list(sess, r)
+                                for b_name in boards_in_r:
+                                    m_info = sess.get("results", {}).get((r, b_name))
+                                    p1, p2 = get_board_players(sess, r, b_name) if not m_info else (m_info.get("s1", "-"), m_info.get("s2", "-"))
+                                    
+                                    try:
+                                        s1 = int(m_info.get("ergebnis", "0:0").split(":")[0]) if m_info else 0
+                                        s2 = int(m_info.get("ergebnis", "0:0").split(":")[1]) if m_info else 0
+                                    except:
+                                        s1, s2 = 0, 0
+                                        
+                                    with st.container(border=True):
+                                        st.write(f"*{b_name}*")
+                                        c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
+                                        c_p1.markdown(f"**{p1}**")
+                                        c_vs.markdown("vs")
+                                        c_p2.markdown(f"**{p2}**")
+                                        
+                                        c_in1, c_in2 = st.columns(2)
+                                        val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
+                                        val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
+                                        
+                                        c_b1, c_b2 = st.columns(2)
+                                        with c_b1:
+                                            if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                req_win = 3 if leg_modus == "Best of 5" else 2
+                                                if p1 == "-" or p2 == "-":
+                                                    pass
+                                                elif val1 == val2:
+                                                    st.error("🚨 Unentschieden nicht möglich.")
+                                                elif val1 > req_win or val2 > req_win:
+                                                    st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
+                                                elif val1 != req_win and val2 != req_win:
+                                                    st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
+                                                else:
+                                                    winner = p1 if val1 > val2 else p2
+                                                    loser = p2 if val1 > val2 else p1
+                                                    if "results" not in sess: sess["results"] = {}
+                                                    
+                                                    if m_info:
+                                                        sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
+                                                        sess["results"][(r, b_name)]["winner"] = winner
+                                                        sess["results"][(r, b_name)]["loser"] = loser
+                                                    else:
+                                                        sess["results"][(r, b_name)] = {
+                                                            "s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}",
+                                                            "winner": winner, "loser": loser,
+                                                            "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0
+                                                        }
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+                                        with c_b2:
+                                            if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                if (r, b_name) in sess["results"]:
+                                                    del sess["results"][(r, b_name)]
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+                        elif blitz_pwd:
+                            st.error("Falsches Passwort!")
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
+    st.write("Hier findet ihr die Anleitung für den Trainingsabend, alle Spielmodi und den Ablauf bei Freundschaftsspielen.")
     
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
