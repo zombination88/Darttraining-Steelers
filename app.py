@@ -19,7 +19,6 @@ from datetime import date, datetime
 import json
 import gspread
 from google.oauth2.service_account import Credentials
-import re
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
@@ -891,9 +890,9 @@ def open_board_dialog(board_name, session_idx):
     req_win = 3 if sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
     is_valid_result = True
     if current_p1 != "-" and current_p2 != "-":
-        if in_score1 == in_score2: st.error("Unentschieden nicht möglich."), is_valid_result.__init__(False)
-        elif in_score1 > req_win or in_score2 > req_win: st.error(f"Max {req_win} Legs."), is_valid_result.__init__(False)
-        elif in_score1 != req_win and in_score2 != req_win: st.error(f"Sieger braucht genau {req_win} Legs."), is_valid_result.__init__(False)
+        if in_score1 == in_score2: st.error("Unentschieden nicht möglich."); is_valid_result = False
+        elif in_score1 > req_win or in_score2 > req_win: st.error(f"Max {req_win} Legs."); is_valid_result = False
+        elif in_score1 != req_win and in_score2 != req_win: st.error(f"Sieger braucht genau {req_win} Legs."); is_valid_result = False
     
     cb1, cb2 = st.columns(2)
     with cb1:
@@ -973,11 +972,19 @@ def generate_spielbericht_pdf(sess):
     auf_h = sess.get("auf_heim", {})
     auf_g = sess.get("auf_gast", {})
 
-    y_coords_pdf = {
-        "m1": 630, "m2": 585, "m3": 540, "m4": 495,
-        "m5": 415, "m6": 370, "m7": 325, "m8": 280,
-        "m9": 200, "m10": 155
-    }
+    t_size = sess.get("team_size", 4)
+    if t_size == 6:
+        y_coords_pdf = {
+            "m1": 630, "m2": 585, "m3": 540, "m4": 495, "m5": 450, "m6": 405,
+            "m7": 360, "m8": 315, "m9": 270, "m10": 225, "m11": 180, "m12": 135,
+            "m13": 90, "m14": 65, "m15": 40
+        }
+    else:
+        y_coords_pdf = {
+            "m1": 630, "m2": 585, "m3": 540, "m4": 495,
+            "m5": 415, "m6": 370, "m7": 325, "m8": 280,
+            "m9": 200, "m10": 155
+        }
     
     x_name_heim = 65
     x_name_gast = 315
@@ -1523,7 +1530,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1731,27 +1738,30 @@ with tab_archiv:
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die Anleitung für den Trainingsabend, Freundschaftsspiele und den Auf- und Abstieg.")
+    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
     
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
+        * **Flexibel wählbar:** Als 4er- oder 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Vorschau:** Gespielt wird auf frei wählbaren parallelen Boards. Die Vorschau zeigt euch bereits die nächsten Matches, damit ihr Auswechslungen rechtzeitig vorbereiten könnt.
         * **Archivierung:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Korrekturen und Bearbeitungen sind aus Gründen der Übersichtlichkeit ausschließlich im **Match-Archiv** möglich.
         """)
         
     with st.container(border=True):
-        st.markdown("### 👑 Das Prinzip: 'Up & Down' (Training)")
+        st.markdown("### 👑 Trainings-Modi & Logik")
         st.markdown("""
-        * **Kaiser B1 ist das Top-Board:** Wer hier gewinnt, bleibt König (Kaiser) oder steigt auf. Wer verliert, wandert ein Board nach unten.
-        * **Das untere Board:** Wer hier gewinnt, steigt ein Board nach oben. Wer verliert, wandert nach ganz unten (Richtung B1).
+        * **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
+        * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
+        * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Richtung B1), Verlierer ab. Der Kaiser der Vorsession startet ganz unten.
         """)
 
     with st.container(border=True):
-        st.markdown("### 👥 Was passiert bei ungerader Spieleranzahl? (Training)")
+        st.markdown("### 👥 Besonderheiten & Zeitmanagement")
         st.markdown("""
-        * Das System setzt auf dem allerletzten Board einen **Platzhalter (`-`)** ein.
-        * Wer verliert, rutscht ans letzte Board und bekommt das Freilos (die Pause). So wechselt sich die Pause automatisch ab!
+        * **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+        * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
+        * **Zeitmanagement:** Im Session-Reiter werden globale Durchschnittszeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang berechnet.
         """)
