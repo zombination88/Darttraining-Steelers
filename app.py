@@ -242,7 +242,7 @@ def smart_sync_and_save(updated_sessions):
                 for idx, fs in enumerate(fresh_data):
                     if fs["id"] == sess["id"]:
                         fresh_data[idx] = sess
-        final_data = [s for s in fresh_data if s.get("id") in [u["id"] for u in updated_sessions]]
+        final_data = [s for s in fresh_data if s["id"] in [u["id"] for u in updated_sessions]]
         save_data(final_data)
         st.session_state.sessions_list = final_data
     else:
@@ -744,15 +744,15 @@ def open_new_session_dialog():
                 st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten")
-def open_edit_session_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    
-    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_id}")
+def open_edit_session_dialog(session_idx):
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_idx}")
     if pwd != "1521":
         if pwd != "": st.error("Falsches Passwort!")
         return
+
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
+    real_idx = st.session_state.sessions_list.index(sess)
     
     try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
     except: curr_date = date.today()
@@ -788,7 +788,7 @@ def open_edit_session_dialog(session_id):
     cols = st.columns(2)
     for i, sp in enumerate(kader):
         with cols[0 if i < len(kader)//2 else 1]:
-            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
+            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_idx}"): anwesende.append(sp)
                 
     curr_gaeste = sess.get("gaeste", [])
     gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
@@ -827,11 +827,10 @@ def open_delete_session_dialog(session_id):
             else: st.error("Falsches Passwort!")
 
 @st.dialog("📋 Board-Erfassung & Tracking")
-def open_board_dialog(board_name, session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
+def open_board_dialog(board_name, session_idx):
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    sess = all_sessions_sorted[session_idx]
     real_idx = st.session_state.sessions_list.index(sess)
-    
     total_rounds = sess.get("total_rounds", 4)
     res = sess.get("results", {})
     completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
@@ -864,14 +863,14 @@ def open_board_dialog(board_name, session_id):
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"**Heim:** `{current_p1}`")
-        in_score1 = st.number_input("Legs Heim", 0, 5, score1, key=f"score1_{session_id}_{board_name}")
-        in_180_1 = st.number_input("🎯 180er Heim", 0, 20, t1_180, key=f"180_1_{session_id}_{board_name}")
-        in_avg_1 = st.number_input("📊 Avg Heim", 0.0, 180.0, avg1, step=0.1, key=f"avg_1_{session_id}_{board_name}")
+        in_score1 = st.number_input("Legs Heim", 0, 5, score1)
+        in_180_1 = st.number_input("🎯 180er Heim", 0, 20, t1_180)
+        in_avg_1 = st.number_input("📊 Avg Heim", 0.0, 180.0, avg1, step=0.1)
     with c2:
         st.markdown(f"**Gast:** `{current_p2}`")
-        in_score2 = st.number_input("Legs Gast", 0, 5, score2, key=f"score2_{session_id}_{board_name}")
-        in_180_2 = st.number_input("🎯 180er Gast", 0, 20, t2_180, key=f"180_2_{session_id}_{board_name}")
-        in_avg_2 = st.number_input("📊 Avg Gast", 0.0, 180.0, avg2, step=0.1, key=f"avg_2_{session_id}_{board_name}")
+        in_score2 = st.number_input("Legs Gast", 0, 5, score2)
+        in_180_2 = st.number_input("🎯 180er Gast", 0, 20, t2_180)
+        in_avg_2 = st.number_input("📊 Avg Gast", 0.0, 180.0, avg2, step=0.1)
         
     ergebnis = f"{in_score1}:{in_score2}"
     winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else "-")
@@ -1690,6 +1689,7 @@ with tab_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
+            real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1748,15 +1748,16 @@ with tab_liga:
                     is_in_doubles = (curr_round_idx >= len(rounds_list) - num_doubles_blocks)
                     
                     if is_in_doubles:
-                        h_doppel_ok = bool(auf_h.get("hd1"))
-                        g_doppel_ok = bool(auf_g.get("gd1"))
+                        h_doppel_ok = all(bool(auf_h.get(f"hd{i+1}")) for i in range(num_doubles_blocks))
+                        g_doppel_ok = all(bool(auf_g.get(f"gd{i+1}")) for i in range(num_doubles_blocks))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("Phase 2: Doppel-Aufstellungen eintragen")
+                            st.warning("🚨 Die Doppel-Runden dürfen erst gestartet werden, wenn beide Teams ihre Doppel-Aufstellungen hinterlegt haben!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], True)
                             if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], False)
+                            continue  # Blockiere das Starten der Doppel, bis Aufstellung da ist!
                     elif curr_round_idx >= 1:
                         st.markdown("**🔜 Doppel bereits jetzt aufstellen (Optional):**")
                         c_opt1, c_opt2 = st.columns(2)
@@ -1769,7 +1770,6 @@ with tab_liga:
                         active_matches = rounds_list[curr_round_idx]
                         st.markdown(f"**Runde {curr_round_idx + 1} / {len(rounds_list)} läuft:**")
                         
-                        # 1. Zeige nur die Boards an, auf denen gerade gespielt werden kann (max. b_count)
                         current_board_matches = active_matches[:b_count]
                         waiting_queue = active_matches[b_count:]
                         
@@ -1807,13 +1807,12 @@ with tab_liga:
                                         if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True):
                                             open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
 
-                        # 2. Zeige darunter an, welche Spiele als nächstes in dieser Runde auf den Boards kommen
                         if waiting_queue:
                             st.write("")
-                            st.markdown("##### ⏳ Wartende Partien in dieser Runde:")
+                            st.markdown("##### ⏳ Wartende Partien in dieser Runde (Kommen als Nächstes):")
                             for wi, (wm_key, wm_label, wh_key, wg_key) in enumerate(waiting_queue):
                                 wp_h, wp_g = auf_h.get(wh_key, "-"), auf_g.get(wg_key, "-")
-                                st.caption(f"• **{wm_label}**: {wp_h} vs {wp_g} (Kommt als Nächstes frei)")
+                                st.caption(f"• **{wm_label}**: {wp_h} vs {wp_g}")
 
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
@@ -1896,7 +1895,7 @@ with tab_archiv:
                     with c1:
                         if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(training_sessions.index(sess))
                     with c2:
-                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(training_sessions.index(sess))
                     with c3:
                         if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
                         
@@ -1982,7 +1981,7 @@ with tab_regeln:
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
         * **Flexibel wählbar:** Als 4er- oder 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
-        * **Live-Tracking & Statistiken:** Gespielt wird auf den zugewiesenen Boards. Darunter seht ihr direkt die Warteschlange der nächsten Partien sowie sinnvolle Statistiken (Sets, Legs, 180er).
+        * **Live-Tracking & Vorschau:** Gespielt wird auf frei wählbaren parallelen Boards. Die Vorschau zeigt euch bereits die nächsten Matches, damit ihr Auswechslungen rechtzeitig vorbereiten könnt.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
         
