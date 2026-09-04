@@ -912,14 +912,14 @@ def generate_spielbericht_pdf(sess):
     t_size = sess.get("team_size", 4)
     if t_size == 6:
         y_coords_pdf = {
-            "m1": 630, "m2": 585, "m3": 540, "m4": 495, "m5": 450, "m6": 405,
-            "m7": 360, "m8": 315, "m9": 270, "m10": 225, "m11": 180, "m12": 135,
-            "m13": 90, "m14": 65, "m15": 40
+            "m1": 615, "m2": 570, "m3": 525, "m4": 480, "m5": 435, "m6": 390,
+            "m7": 345, "m8": 300, "m9": 255, "m10": 210, "m11": 165, "m12": 120,
+            "m13": 80, "m14": 55, "m15": 30
         }
     else:
         y_coords_pdf = {
-            "m1": 630, "m2": 585, "m3": 540, "m4": 495,
-            "m5": 415, "m6": 370, "m7": 325, "m8": 280,
+            "m1": 615, "m2": 570, "m3": 525, "m4": 480,
+            "m5": 400, "m6": 355, "m7": 310, "m8": 265,
             "m9": 200, "m10": 155
         }
     
@@ -1674,7 +1674,7 @@ with tab_archiv:
                         if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): delete_session(sess['id'])
 
 with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
+    st.subheader("🎯 Modus & Regeln")
     st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
     
     with st.container(border=True):
