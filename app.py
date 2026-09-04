@@ -1058,7 +1058,7 @@ def open_liga_sub_dialog(session_idx, p_key, is_heim, curr_name):
         st.rerun()
 
 @st.dialog("🎯 Live Board (Liga)")
-def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p_heim, p_gast):
+def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p_heim, p_gast, anwurf_gast=False):
     sess = st.session_state.sessions_list[session_idx]
     res = sess.setdefault("results", {})
     m_data = res.get(m_key, {})
@@ -1066,33 +1066,42 @@ def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p_heim,
     st.write(f"### {board_name} — {m_label}")
     st.caption("Eingabe OHNE Average, nur Basis-Turnierwerte.")
     
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"**Heim:** `{p_heim}`")
-        lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key="lh")
-        e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key="180h")
-        hf_h = st.text_input("High Finish Heim", m_data.get("hf_h", ""), key="hfh")
-        sl_h = st.text_input("Short Leg Heim", m_data.get("sl_h", ""), key="slh")
-    with c2:
-        st.markdown(f"**Gast:** `{p_gast}`")
-        lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key="lg")
-        e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key="180g")
-        hf_g = st.text_input("High Finish Gast", m_data.get("hf_g", ""), key="hfg")
-        sl_g = st.text_input("Short Leg Gast", m_data.get("sl_g", ""), key="slg")
+    if anwurf_gast:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**Gast (Anwurf):** `{p_gast}`")
+            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key="lg")
+            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key="180g")
+        with c2:
+            st.markdown(f"**Heim:** `{p_heim}`")
+            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key="lh")
+            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key="180h")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**Heim (Anwurf):** `{p_heim}`")
+            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key="lh")
+            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key="180h")
+        with c2:
+            st.markdown(f"**Gast:** `{p_gast}`")
+            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key="lg")
+            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key="180g")
+
+    # Strenge "Best of 5" Prüfung: Jemand muss 3 Legs haben, der andere weniger.
+    is_valid = (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
+    if not is_valid:
+        st.error("🚨 Best of 5: Ein Spieler muss exakt 3 Legs zum Sieg haben!")
 
     cb1, cb2 = st.columns(2)
     with cb1:
-        if st.button("Speichern", type="primary", use_container_width=True):
-            if lh == lg:
-                st.error("Unentschieden im Leg-Modus ungültig!")
-            else:
-                res[m_key] = {
-                    "lh": lh, "lg": lg, "played": True,
-                    "180_h": e180_h, "hf_h": hf_h, "sl_h": sl_h,
-                    "180_g": e180_g, "hf_g": hf_g, "sl_g": sl_g
-                }
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
+        if st.button("Speichern", type="primary", use_container_width=True, disabled=not is_valid):
+            res[m_key] = {
+                "lh": lh, "lg": lg, "played": True,
+                "180_h": e180_h, "hf_h": "", "sl_h": "",
+                "180_g": e180_g, "hf_g": "", "sl_g": ""
+            }
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
     with cb2:
         if st.button("Abbrechen", use_container_width=True): st.rerun()
 
@@ -1103,6 +1112,8 @@ def open_liga_bericht_dialog(session_idx):
     res = sess.setdefault("results", {})
     st.write(f"Hier kannst du bei Bedarf alle Ergebnisse manuell korrigieren.")
     
+    all_valid = True
+    
     for m_key, label, h_key, g_key in LIGA_MATCH_MAP:
         p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
         m_data = res.get(m_key, {})
@@ -1111,9 +1122,16 @@ def open_liga_bericht_dialog(session_idx):
             lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"blh_{m_key}")
             c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
             lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"blg_{m_key}")
+            
+            # Entweder das Match ist ungespielt (0:0) oder strenges Best of 5
+            is_match_valid = (lh == 0 and lg == 0) or (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
+            if not is_match_valid:
+                st.error(f"🚨 Ungültig! Best of 5 erfordert exakt 3 Legs für den Sieger.")
+                all_valid = False
+                
             res[m_key] = {"lh": lh, "lg": lg, "played": True if (lh>0 or lg>0) else False, "180_h": m_data.get("180_h", 0), "hf_h": m_data.get("hf_h", ""), "sl_h": m_data.get("sl_h", ""), "180_g": m_data.get("180_g", 0), "hf_g": m_data.get("hf_g", ""), "sl_g": m_data.get("sl_g", "")}
 
-    if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True):
+    if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True, disabled=not all_valid):
         smart_sync_and_save(st.session_state.sessions_list)
         st.rerun()
 
@@ -1370,32 +1388,33 @@ with tab_liga:
                     else:
                         curr_block = 5 # Finished
                             
-                    if curr_block == 4: # Doppel Runde erreicht
-                        h_doppel_ok = all(auf_h.get(k) for k in ["hd1", "hd2"])
-                        g_doppel_ok = all(auf_g.get(k) for k in ["gd1", "gd2"])
-                        if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("⚠️ Phase 3: Einzel sind beendet. Bitte jetzt verdeckt die Doppel aufstellen!")
-                            c_dh, c_dg = st.columns(2)
-                            if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}", use_container_width=True):
-                                open_liga_aufstellung_doppel(real_idx, True)
-                            if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}", use_container_width=True):
-                                open_liga_aufstellung_doppel(real_idx, False)
-                                
-                    # Zeige Live Boards für aktuelle Runde (sofern bereit)
-                    if curr_block < 4 or (curr_block == 4 and h_doppel_ok and g_doppel_ok):
-                        active_matches = LIGA_ROUNDS[curr_block]
-                        
-                        block_titles = ["Runde 1 (Einzel 1 & 2)", "Runde 2 (Einzel 3 & 4)", "Runde 3 (Kreuz-Einzel 1)", "Runde 4 (Kreuz-Einzel 2)", "Runde 5 (Doppel)"]
-                        st.markdown(f"#### 🎯 {block_titles[curr_block]} läuft:")
-                        
-                        c_boardA, c_boardB = st.columns(2)
-                        
-                        for i, (m_key, m_label, h_key, g_key) in enumerate(active_matches):
-                            # Linkes Board (i=0) -> Heim fängt an, Rechtes Board (i=1) -> Gast fängt an
-                            board_col = c_boardA if i == 0 else c_boardB
-                            b_name = boards[0] if i == 0 else boards[1]
-                            anwurf = "Heim" if i == 0 else "Gast"
+                    h_doppel_ok = all(auf_h.get(k) for k in ["hd1", "hd2"])
+                    g_doppel_ok = all(auf_g.get(k) for k in ["gd1", "gd2"])
+                    
+                    if curr_block == 4 and (not h_doppel_ok or not g_doppel_ok): # Doppel Runde erreicht
+                        st.warning("⚠️ Phase 3: Einzel sind beendet. Bitte jetzt zwingend die Doppel aufstellen, um fortzufahren!")
+                        c_dh, c_dg = st.columns(2)
+                        if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}", use_container_width=True):
+                            open_liga_aufstellung_doppel(real_idx, True)
+                        if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}", use_container_width=True):
+                            open_liga_aufstellung_doppel(real_idx, False)
+                    else:
+                        # Optionales Vorab-Aufstellen der Doppel ab der 2. Runde (Kreuzrunde = Block 2)
+                        if curr_block >= 2 and curr_block < 4 and (not h_doppel_ok or not g_doppel_ok):
+                            with st.expander("🔜 Doppel bereits jetzt aufstellen (Optional)"):
+                                st.info("Ihr könnt die Doppel-Aufstellung jetzt schon eintragen, während die Einzel noch laufen.")
+                                c_dh, c_dg = st.columns(2)
+                                if not h_doppel_ok and c_dh.button("🔒 Heim Doppel Aufstellen", key=f"hd_setup_opt_{l_sess['id']}", use_container_width=True):
+                                    open_liga_aufstellung_doppel(real_idx, True)
+                                if not g_doppel_ok and c_dg.button("🔒 Gast Doppel Aufstellen", key=f"gd_setup_opt_{l_sess['id']}", use_container_width=True):
+                                    open_liga_aufstellung_doppel(real_idx, False)
+                                    
+                        # Zeige Live Boards für aktuelle Runde (sofern bereit)
+                        if curr_block < 4 or (curr_block == 4 and h_doppel_ok and g_doppel_ok):
+                            active_matches = LIGA_ROUNDS[curr_block]
                             
+                            block_titles = ["Runde 1 (Einzel 1 & 2)", "Runde 1 (Einzel 3 & 4)", "Runde 2 (Kreuz-Einzel 1)", "Runde 2 (Kreuz-Einzel 2)", "Runde 3 (Doppel)"]
+                            st.markdown(f"#### 🎯 {block_titles[curr_block]} läuft:")
                             p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
                             is_played = res.get(m_key, {}).get("played", False)
                             
@@ -1404,29 +1423,85 @@ with tab_liga:
                                     st.markdown(f"<h5 style='text-align: center; margin-bottom: 0;'>{b_name}</h5>", unsafe_allow_html=True)
                                     st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>{m_label} | 🎯 Anwurf: {anwurf}</p>", unsafe_allow_html=True)
                                     
-                                    # Heim
+                                    # Gastspieler nach oben schieben, wenn er Anwurf hat (Rechtes Board)
+                                    if is_anwurf_gast:
+                                        p_top, p_bot = p_gast, p_heim
+                                        k_top, k_bot = g_key, h_key
+                                        t_is_heim, b_is_heim = False, True
+                                    else:
+                                        p_top, p_bot = p_heim, p_gast
+                                        k_top, k_bot = h_key, g_key
+                                        t_is_heim, b_is_heim = True, False
+                                    
+                                    # Top Spieler
                                     sc1, sc2 = st.columns([5, 2])
-                                    sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p_heim}</div>", unsafe_allow_html=True)
+                                    sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p_top}</div>", unsafe_allow_html=True)
                                     # Auswechseln nur im Kreuz-Modus (Block 2 und 3) erlaubt
                                     if not is_played and curr_block in [2, 3]:
-                                        if sc2.button("🔄", key=f"sub_h_{m_key}_{l_sess['id']}", help="Spieler auswechseln"): 
-                                            open_liga_sub_dialog(real_idx, h_key, True, p_heim)
+                                        if sc2.button("🔄", key=f"sub_t_{m_key}_{l_sess['id']}", help="Spieler auswechseln"): 
+                                            open_liga_sub_dialog(real_idx, k_top, t_is_heim, p_top)
                                     
                                     st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                                     
-                                    # Gast
+                                    # Bottom Spieler
                                     sc3, sc4 = st.columns([5, 2])
-                                    sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p_gast}</div>", unsafe_allow_html=True)
+                                    sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p_bot}</div>", unsafe_allow_html=True)
                                     if not is_played and curr_block in [2, 3]:
-                                        if sc4.button("🔄", key=f"sub_g_{m_key}_{l_sess['id']}", help="Spieler auswechseln"): 
-                                            open_liga_sub_dialog(real_idx, g_key, False, p_gast)
+                                        if sc4.button("🔄", key=f"sub_b_{m_key}_{l_sess['id']}", help="Spieler auswechseln"): 
+                                            open_liga_sub_dialog(real_idx, k_bot, b_is_heim, p_bot)
                                     
                                     st.write("")
                                     if is_played:
-                                        st.success(f"Ergebnis: {res[m_key]['lh']} : {res[m_key]['lg']}")
+                                        if is_anwurf_gast:
+                                            st.success(f"Ergebnis: {res[m_key]['lg']} : {res[m_key]['lh']}")
+                                        else:
+                                            st.success(f"Ergebnis: {res[m_key]['lh']} : {res[m_key]['lg']}")
                                     else:
                                         if st.button("🎯 Eintragen", key=f"live_{m_key}_{l_sess['id']}", use_container_width=True):
-                                            open_liga_live_board_dialog(real_idx, m_key, b_name, m_label, p_heim, p_gast)
+                                            open_liga_live_board_dialog(real_idx, m_key, b_name, m_label, p_heim, p_gast, is_anwurf_gast)
+
+                        # --- NEU: Vorschau für wartende Matches (damit vorab ausgewechselt werden kann) ---
+                        if curr_block < 3:
+                            next_block = curr_block + 1
+                            next_matches = LIGA_ROUNDS[next_block]
+                            st.write("")
+                            st.markdown(f"**🔜 Wartende Matches (als nächstes):**")
+                            
+                            c_nextA, c_nextB = st.columns(2)
+                            for i, (m_key, m_label, h_key, g_key) in enumerate(next_matches):
+                                board_col = c_nextA if i == 0 else c_nextB
+                                is_anwurf_gast = (i == 1)
+                                b_name = boards[0] if i == 0 else boards[1]
+                                
+                                p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
+                                
+                                with board_col:
+                                    with st.container(border=True):
+                                        st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em; margin-bottom: 5px;'>{b_name} | {m_label} | 🎯 Anwurf: {'Gast' if is_anwurf_gast else 'Heim'}</p>", unsafe_allow_html=True)
+                                        
+                                        if is_anwurf_gast:
+                                            p_top, p_bot = p_gast, p_heim
+                                            k_top, k_bot = g_key, h_key
+                                            t_is_heim, b_is_heim = False, True
+                                        else:
+                                            p_top, p_bot = p_heim, p_gast
+                                            k_top, k_bot = h_key, g_key
+                                            t_is_heim, b_is_heim = True, False
+                                        
+                                        sc1, sc2 = st.columns([5, 2])
+                                        sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px; opacity: 0.6;'>{p_top}</div>", unsafe_allow_html=True)
+                                        # Auswechseln ab Kreuzrunde (Block 2 und 3) erlaubt
+                                        if next_block in [2, 3]:
+                                            if sc2.button("🔄", key=f"sub_t_prev_{m_key}_{l_sess['id']}", help="Spieler vorab auswechseln"): 
+                                                open_liga_sub_dialog(real_idx, k_top, t_is_heim, p_top)
+                                                
+                                        st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
+                                        
+                                        sc3, sc4 = st.columns([5, 2])
+                                        sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px; opacity: 0.6;'>{p_bot}</div>", unsafe_allow_html=True)
+                                        if next_block in [2, 3]:
+                                            if sc4.button("🔄", key=f"sub_b_prev_{m_key}_{l_sess['id']}", help="Spieler vorab auswechseln"): 
+                                                open_liga_sub_dialog(real_idx, k_bot, b_is_heim, p_bot)
 
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
@@ -1491,9 +1566,7 @@ with tab_liga:
                 "Spieler": p,
                 "Einzel (S/M)": f"{stt['e_siege']}/{stt['e_spiele']}",
                 "Doppel (S/M)": f"{stt['d_siege']}/{stt['d_spiele']}",
-                "180er": stt['180er'],
-                "High Finish": stt['hf'] if stt['hf'] > 0 else "-",
-                "Short Leg": stt['sl'] if stt['sl'] != 999 else "-"
+                "180er": stt['180er']
             })
             
     if l_rows:
@@ -1513,12 +1586,19 @@ with tab_archiv:
     if not st.session_state.sessions_list:
         st.info("Keine Sessions vorhanden.")
     else:
-        # Sortiere ALLE Sessions absteigend (egal ob S- oder L-)
-        sorted_all_sessions = sorted(
-            st.session_state.sessions_list, 
-            key=lambda x: int(x["id"].split("-")[1]) if "id" in x and "-" in x["id"] and x["id"].split("-")[1].isdigit() else 0, 
-            reverse=True
-        )
+        # Sortiere ALLE Sessions absteigend nach echtem Datum (und bei gleichem Datum nach ID-Nummer)
+        def get_sort_key(sess):
+            try:
+                d = datetime.strptime(sess.get("datum", "01.01.1970"), "%d.%m.%Y")
+            except:
+                d = datetime.strptime("01.01.1970", "%d.%m.%Y")
+            try:
+                num = int(sess.get("id", "").split("-")[1])
+            except:
+                num = 0
+            return (d, num)
+            
+        sorted_all_sessions = sorted(st.session_state.sessions_list, key=get_sort_key, reverse=True)
         
         for sess in sorted_all_sessions:
             orig_idx = st.session_state.sessions_list.index(sess)
