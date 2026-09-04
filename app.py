@@ -89,9 +89,32 @@ def open_edit_liga_session_dialog(session_idx):
 
 @st.dialog("🔒 Einzel-Aufstellung (Verdeckt)")
 def open_liga_aufstellung_einzel(session_idx, is_heim):
-<!-- ... existing code ... -->
-```
+    sess = liga_sessions[session_idx]
+    real_idx = st.session_state.sessions_list.index(sess)
+    team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
+    t_size = sess.get("team_size", 4)
+    st.write(f"### Aufstellung: {team_name}")
+    st.info(f"Trage hier die {t_size} Einzelspieler als Text ein.")
+    
+    inputs = []
+    for i in range(t_size):
+        inputs.append(st.text_input(f"Position {i+1}", key=f"auf_{is_heim}_{i}"))
+        
+    if st.button("Speichern", type="primary", use_container_width=True):
+        if all(x.strip() for x in inputs):
+            update_dict = {}
+            for i, val in enumerate(inputs):
+                key = f"h{i+1}" if is_heim else f"g{i+1}"
+                update_dict[key] = val.strip()
+            if is_heim:
+                sess["auf_heim"].update(update_dict)
+            else:
+                sess["auf_gast"].update(update_dict)
+            st.session_state.sessions_list[real_idx] = sess
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+        else:
+            st.error(f"Bitte alle {t_size} Positionen eintragen!")
 
-Durch das clevere Matrix-System im Code teilen sich die Matches in der Live-Ansicht nun ganz automatisch auf die eingestellte Boardanzahl auf – unabhängig davon, ob ihr auf 1, 2, 3 oder 4 Boards parallel werft.
-
-Gleichzeitig bleibt der PDF-Drucker intakt, da er die Spiele weiterhin korrekt nach den offiziellen `m1`, `m2`, etc. Schlüssel abfragt!
+@st.dialog("🔒 Doppel-Aufstellung (Verdeckt)")
+def open_liga_aufstellung_doppel(session_idx, is_heim):
