@@ -12,6 +12,13 @@
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
 # 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
 #    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur der PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
+# 10. REITER-LAYOUTS (Zusammensetzung darf niemals verändert werden!):
+#    - Übersicht: Button-Reihe -> Aktive Session (bzw. Info-Meldung bei Inaktivität) -> IMMER SICHTBAR DARUNTER: Allgemeine Statistiken, Letzte Session, Spitzenreiter & Letzte Matches (rein auf Training bezogen).
+#    - Kader: Live-Bilanz des Stammkaders -> KPI-Karten (MVP, Dauerbrenner, Avg, 180er) -> Spieler-Tabelle -> Doppel-Paarungen.
+#    - Session: Metriken (Gespielte Abende, Ø Anwesende, Rekord-Kaiser, Zeitmanagement) -> Button "Neue Session" -> Liste bisheriger Trainings.
+#    - Freundschaftsspiele: Button "Neues Freundschaftsspiel" -> Aktive Liga-Spiele (mit Live-Board) -> Abgeschlossene Spiele (NUR PDF-Download).
+#    - Match-Archiv: JSON-Download -> Alle Sessions absteigend sortiert inkl. Bearbeiten/Löschen und Blitz-Eingabe für Training.
+#    - Modus & Regeln: Die sauberen Trainingsregeln, Up & Down Prinzip, WhatsApp-Workflow (ohne Liga-Texte).
 
 import streamlit as st
 import pandas as pd
@@ -106,42 +113,57 @@ def save_backup_to_cloud(serializable_sessions):
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(serializable_sessions, ensure_ascii=False)
         backup_ws.append_row([ts, json_str])
+    except Exception as e:
+        pass
+
+def save_completed_backup(serializable_sessions):
+    """Speichert alle abgeschlossenen Spiele (Liga & Training) dauerhaft als Tresor in einem separaten Tabellenblatt (überschreibt immer sich selbst)."""
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_url(SHEET_URL)
         
         try:
-            all_vals = backup_ws.get_all_values()
-            if len(all_vals) > 21:
-                rows_to_delete = len(all_vals) - 21
-                for _ in range(rows_to_delete):
-                    try:
-                        backup_ws.delete_rows(2)
-                    except AttributeError:
-                        backup_ws.delete_row(2)
-        except Exception:
-            pass
+            backup_ws = spreadsheet.worksheet("completed_backup")
+        except:
+            backup_ws = spreadsheet.add_worksheet(title="completed_backup", rows=2, cols=2)
+        
+        completed_sessions = []
+        for s in serializable_sessions:
+            if s.get("is_liga"):
+                if s.get("is_locked"):
+                    completed_sessions.append(s)
+            else:
+                if s.get("end_time"):
+                    completed_sessions.append(s)
+                    
+        from zoneinfo import ZoneInfo
+        ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
+        json_str = json.dumps(completed_sessions, ensure_ascii=False)
+        
+        backup_ws.clear()
+        backup_ws.update([["Last_Updated", "JSON_Data_Completed"], [ts, json_str]])
     except Exception as e:
         pass
 
 def save_data(sessions):
     if not sheet_conn:
         return
-    serializable_sessions = []
-    for sess in sessions:
-        sess_copy = sess.copy()
-        fixed_results = {}
-        for k, v in sess.get("results", {}).items():
-            if isinstance(k, tuple) and len(k) == 2:
-                fixed_results[f"{k[0]}_{k[1]}"] = v
-            else:
-                fixed_results[k] = v
-        sess_copy["results"] = fixed_results
-        serializable_sessions.append(sess_copy)
         
+    serializable_sessions = make_serializable(sessions)
+    json_str = json.dumps(serializable_sessions, ensure_ascii=False)
     try:
-        sichere_sessions = make_serializable(serializable_sessions)
-        json_str = json.dumps(sichere_sessions, ensure_ascii=False)
         sheet_conn.clear()
         sheet_conn.update([["json_data"], [json_str]])
-        save_backup_to_cloud(sichere_sessions)
+        save_backup_to_cloud(serializable_sessions)
+        save_completed_backup(serializable_sessions)
     except Exception as e:
         st.error(f"Fehler beim Speichern in Google Sheets: {e}")
 
@@ -1364,134 +1386,135 @@ with tab_übersicht:
                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
                         st.success("✅ Abgeschlossen")
 
-        st.write("")
-        st.divider()
+    st.write("")
+    st.divider()
 
-        st.markdown("### 📊 Allgemeine Statistiken")
-        total_180s = 0
-        kaiser_winner_text = "Noch offen"
-        anwesende_count = 0
+    st.markdown("### 📊 Allgemeine Statistiken")
+    
+    total_180s = 0
+    kaiser_winner_text = "Noch offen"
+    anwesende_count = 0
+    
+    display_sess = None
+    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
+    for s in all_sessions_sorted:
+        if is_session_completed(s) or s.get("results"):
+            display_sess = s
+            break
+    if not display_sess and all_sessions_sorted:
+        display_sess = all_sessions_sorted[0]
+
+    for sess in training_sessions:
+        for match in sess.get("results", {}).values():
+            s1_name = match.get("s1", "")
+            s2_name = match.get("s2", "")
+            if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
+            if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
+
+    if display_sess:
+        l_results = display_sess.get("results", {})
+        kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
+        if kaiser_matches:
+            kaiser_matches.sort(key=lambda x: x[0], reverse=True)
+            kaiser_winner_text = kaiser_matches[0][1].get("winner")
         
-        display_sess = None
-        all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-        for s in all_sessions_sorted:
-            if is_session_completed(s) or s.get("results"):
-                display_sess = s
-                break
-        if not display_sess and all_sessions_sorted:
-            display_sess = all_sessions_sorted[0]
+        anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
 
-        for sess in training_sessions:
-            for match in sess.get("results", {}).values():
-                s1_name = match.get("s1", "")
-                s2_name = match.get("s2", "")
-                if s1_name and " & " not in s1_name: total_180s += int(match.get("180_s1", 0))
-                if s2_name and " & " not in s2_name: total_180s += int(match.get("180_s2", 0))
-
-        if display_sess:
-            l_results = display_sess.get("results", {})
-            kaiser_matches = [(r, m) for (r, b), m in l_results.items() if b == "Kaiser B1" and m.get("winner") and " & " not in m.get("s1", "") and " & " not in m.get("s2", "")]
-            if kaiser_matches:
-                kaiser_matches.sort(key=lambda x: x[0], reverse=True)
-                kaiser_winner_text = kaiser_matches[0][1].get("winner")
-            
-            anwesende_count = len([p for p in display_sess.get("spieler", []) if p != "-"])
-
-        with st.container(border=True):
-            c1, c2 = st.columns(2)
-            with c1: st.metric(label="Sessions", value=str(len(training_sessions)), delta="gesamt")
-            with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
-            st.divider()
-            c3, c4 = st.columns(2)
-            with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
-            with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
-            
-        st.write("")
-        with st.expander("Letzte Session & Spitzenreiter", expanded=False):
-            col_l, col_r = st.columns(2)
-            with col_l:
-                st.markdown("### Letzte Session")
-                if display_sess:
-                    l_date = display_sess.get('datum', '–')
-                    count_180s = {}
-                    match_avgs = []
-                    for m in display_sess.get('results', {}).values():
-                        s1_name = m.get("s1", "")
-                        s2_name = m.get("s2", "")
-                        if s1_name and " & " not in s1_name:
-                            count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
-                            if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
-                        if s2_name and " & " not in s2_name:
-                            count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
-                            if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
-                    
-                    most_180_text = "Keine"
-                    if count_180s and max(count_180s.values()) > 0:
-                        top_player = max(count_180s, key=count_180s.get)
-                        most_180_text = f"{top_player} ({count_180s[top_player]}x)"
-                    
-                    best_avg_text = "–"
-                    if match_avgs:
-                        top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
-                        best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
-                    
-                    st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
-                else:
-                    st.info("Keine Daten vorhanden.")
-
-            with col_r:
-                st.markdown("### Spitzenreiter")
-                stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
-                for sess in training_sessions:
-                    for match in sess.get("results", {}).values():
-                        winner = match.get("winner", "")
-                        loser = match.get("loser", "")
-                        if winner and " & " not in winner:
-                            for p in winner.split(" & "):
-                                if p in stats_temp:
-                                    stats_temp[p]["Matches"] += 1
-                                    stats_temp[p]["Siege"] += 1
-                        if loser and " & " not in loser:
-                            for p in loser.split(" & "):
-                                if p in stats_temp:
-                                    stats_temp[p]["Matches"] += 1
-
-                best_p = "Keiner"
-                best_q = 0.0
-                best_m = 0
-                for p in kader:
-                    m = stats_temp[p]["Matches"]
-                    s = stats_temp[p]["Siege"]
-                    if m > 0:
-                        q = s / m
-                        if q > best_q or (q == best_q and m > best_m):
-                            best_q = q
-                            best_m = m
-                            best_p = p
-
-                st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
-                st.progress(best_q)
-
-        with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
-            all_matches = []
-            for sess in all_sessions_sorted:
-                sess_date = sess.get("datum", "")
-                for (round_num, board_name), m_info in sess.get("results", {}).items():
-                    if not m_info.get("winner"): continue
-                    all_matches.append({
-                        "Datum": sess_date, "Runde": round_num, "Board": board_name,
-                        "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                        "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
-                    })
-                    
-            if all_matches:
-                for m in all_matches[:15]: 
-                    with st.container(border=True):
-                        st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
-                        st.caption(f"⚔️ {m['Spieler']}")
-                        st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1: st.metric(label="Sessions", value=str(len(training_sessions)), delta="gesamt")
+        with c2: st.metric(label="Team 180er", value=str(total_180s), delta="geworfen")
+        st.divider()
+        c3, c4 = st.columns(2)
+        with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
+        with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
+        
+    st.write("")
+    with st.expander("Letzte Session & Spitzenreiter", expanded=False):
+        col_l, col_r = st.columns(2)
+        with col_l:
+            st.markdown("### Letzte Session")
+            if display_sess:
+                l_date = display_sess.get('datum', '–')
+                count_180s = {}
+                match_avgs = []
+                for m in display_sess.get('results', {}).values():
+                    s1_name = m.get("s1", "")
+                    s2_name = m.get("s2", "")
+                    if s1_name and " & " not in s1_name:
+                        count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
+                        if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
+                    if s2_name and " & " not in s2_name:
+                        count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
+                        if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
+                
+                most_180_text = "Keine"
+                if count_180s and max(count_180s.values()) > 0:
+                    top_player = max(count_180s, key=count_180s.get)
+                    most_180_text = f"{top_player} ({count_180s[top_player]}x)"
+                
+                best_avg_text = "–"
+                if match_avgs:
+                    top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
+                    best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
+                
+                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
             else:
-                st.info("Bisher wurden keine Board-Matches ausgetragen.")
+                st.info("Keine Daten vorhanden.")
+
+        with col_r:
+            st.markdown("### Spitzenreiter")
+            stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
+            for sess in training_sessions:
+                for match in sess.get("results", {}).values():
+                    winner = match.get("winner", "")
+                    loser = match.get("loser", "")
+                    if winner and " & " not in winner:
+                        for p in winner.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+                                stats_temp[p]["Siege"] += 1
+                    if loser and " & " not in loser:
+                        for p in loser.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+
+            best_p = "Keiner"
+            best_q = 0.0
+            best_m = 0
+            for p in kader:
+                m = stats_temp[p]["Matches"]
+                s = stats_temp[p]["Siege"]
+                if m > 0:
+                    q = s / m
+                    if q > best_q or (q == best_q and m > best_m):
+                        best_q = q
+                        best_m = m
+                        best_p = p
+
+            st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
+            st.progress(best_q)
+
+    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
+        all_matches = []
+        for sess in all_sessions_sorted:
+            sess_date = sess.get("datum", "")
+            for (round_num, board_name), m_info in sess.get("results", {}).items():
+                if not m_info.get("winner"): continue
+                all_matches.append({
+                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
+                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
+                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
+                })
+                
+        if all_matches:
+            for m in all_matches[:15]: 
+                with st.container(border=True):
+                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
+                    st.caption(f"⚔️ {m['Spieler']}")
+                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+        else:
+            st.info("Bisher wurden keine Board-Matches ausgetragen.")
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz (Teamtraining)")
