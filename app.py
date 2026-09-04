@@ -1,3 +1,17 @@
+# INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN
+# 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
+# 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel abzustürzen!
+# 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
+# 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+# 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
+# 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten). Bei Gleichstand: Tooltip!
+# 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
+# 8. SPIELMODI & LOGIK:
+#    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
+#    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
+#    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
+# 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export.
+
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
@@ -8,7 +22,6 @@ import re
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
-# --- KONFIGURATION ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
 def make_serializable(data):
@@ -172,7 +185,7 @@ def smart_sync_and_save(updated_sessions):
 def delete_session(session_id):
     fresh_data = load_data()
     if fresh_data:
-        fresh_data = [s for s in fresh_data if s.get("id") != session_id]
+        fresh_data = [s for s in fresh_data if s.get("id"] != session_id]
         save_data(fresh_data)
         st.session_state.sessions_list = fresh_data
     else:
@@ -934,7 +947,7 @@ def get_liga_config(sess):
     return rounds
 
 def generate_spielbericht_pdf(sess):
-    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix und Fettschrift."""
+    """Erstellt den PDF-Spielbericht per Overlay-Verfahren mit exakter BDV-Formular-Matrix in fettes Helvetica-Bold."""
     import io
     import os
     try:
@@ -961,8 +974,8 @@ def generate_spielbericht_pdf(sess):
     auf_g = sess.get("auf_gast", {})
 
     y_coords_pdf = {
-        "m1": 615, "m2": 570, "m3": 525, "m4": 480,
-        "m5": 400, "m6": 355, "m7": 310, "m8": 265,
+        "m1": 630, "m2": 585, "m3": 540, "m4": 495,
+        "m5": 415, "m6": 370, "m7": 325, "m8": 280,
         "m9": 200, "m10": 155
     }
     
@@ -1572,10 +1585,9 @@ with tab_liga:
                             break
                             
                     num_singles_rounds = (t_size * 2) // b_count
-                    is_in_doubles = (curr_round_idx >= num_num_doubles_start := len(rounds_list) - (3 if t_size == 6 else 2))
+                    is_in_doubles = (curr_round_idx >= len(rounds_list) - (3 if t_size == 6 else 2))
                     
                     if is_in_doubles:
-                        num_doubles = 3 if t_size == 6 else 2
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
