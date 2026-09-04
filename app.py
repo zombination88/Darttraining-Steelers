@@ -936,37 +936,36 @@ def generate_spielbericht_pdf(sess):
 
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=A4)
-    # Auf Fettschrift umgestellt für professionellen Look
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Helvetica-Bold", 9)
     
     heim = sess.get("heim_team", "")
     gast = sess.get("gast_team", "")
     datum = sess.get("datum", "")
     
     # Metadaten Kopfbereich
-    c.drawString(420, 750, datum)
-    c.drawString(100, 720, heim) 
-    c.drawString(330, 720, gast)
+    c.drawString(420, 755, datum)
+    c.drawString(100, 722, heim) 
+    c.drawString(330, 722, gast)
     
     res = sess.get("results", {})
     auf_h = sess.get("auf_heim", {})
     auf_g = sess.get("auf_gast", {})
 
-    # Exakte Y-Matrix nach Original-PDF (Einzel 1-4, Kreuz-Einzel 5-8, Doppel 1-2)
+    # Exakte Y-Matrix auf das offizielle Formular (Bez_Schwaben_Spielbericht_2.pdf) kalibriert
     y_coords_pdf = {
-        "m1": 595, "m2": 535, "m3": 475, "m4": 415,  # Block 1 (Einzel 1-4)
-        "m5": 310, "m6": 250, "m7": 190, "m8": 130,  # Block 2 (Kreuz-Einzel 5-8)
-        "m9": 45,  "m10": -15                        # Doppel 1 & 2
+        "m1": 650, "m2": 610, "m3": 570, "m4": 530,  # Block 1 (Einzel 1-4)
+        "m5": 420, "m6": 380, "m7": 340, "m8": 300,  # Block 2 (Kreuz-Einzel 5-8)
+        "m9": 195, "m10": 150                        # Doppel 1 & 2
     }
     
     x_name_heim = 55
-    x_name_gast = 300
+    x_name_gast = 310
     
     x_legs_heim = 220
-    x_legs_gast = 440
+    x_legs_gast = 285
     
-    x_180_heim = 70
-    x_180_gast = 315
+    x_180_heim = 65
+    x_180_gast = 320
     
     for m_key, label, h_key, g_key in LIGA_MATCH_MAP:
         if m_key in res and res[m_key].get("played"):
@@ -974,14 +973,17 @@ def generate_spielbericht_pdf(sess):
             y = y_coords_pdf.get(m_key, 500)
             
             # Namen & Legs eintragen
-            c.drawString(x_name_heim, y, str(auf_h.get(h_key, "")))
-            c.drawString(x_name_gast, y, str(auf_g.get(g_key, "")))
+            h_name = str(auf_h.get(h_key, ""))
+            g_name = str(auf_g.get(g_key, ""))
+            
+            c.drawString(x_name_heim, y, h_name)
+            c.drawString(x_name_gast, y, g_name)
             
             c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
             c.drawString(x_legs_gast, y, str(m_data.get("lg", 0)))
             
             # 180er darunter
-            y_sub = y - 14
+            y_sub = y - 13
             if m_data.get("180_h", 0) > 0:
                 c.drawString(x_180_heim, y_sub, str(m_data.get("180_h", "")))
             if m_data.get("180_g", 0) > 0:
@@ -1122,15 +1124,20 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
     st.write(f"### Doppel-Aufstellung: {team_name}")
     
     auf_dict = sess.get("auf_heim", {}) if is_heim else sess.get("auf_gast", {})
-    
     bisherige_spieler = []
     for k, v in auf_dict.items():
         if ("h" in k or "g" in k) and not "d" in k:
             if v and v != "-": bisherige_spieler.append(v)
+            
+    # Ergänze eingewechselte Spieler aus den Results
+    for m_key, m_data in sess.get("results", {}).items():
+        if is_heim:
+            if m_data.get("s1") and m_data.get("s1") not in bisherige_spieler: bisherige_spieler.append(m_data.get("s1"))
+            if m_data.get("s2") and m_data.get("s2") not in bisherige_spieler: bisherige_spieler.append(m_data.get("s2"))
+            
     bisherige_spieler = list(set(bisherige_spieler))
     bisherige_spieler.sort()
-    
-    options = bisherige_spieler if bisherige_spieler else ["Spieler eintragen..."]
+    options = bisherige_spieler if bisherige_spieler else ["Bitte zuerst Einzel spielen..."]
     
     st.markdown("**Doppel 1**")
     c1, c2 = st.columns(2)
@@ -1149,7 +1156,6 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
         else:
             d1_str = f"{d1_p1} & {d1_p2}"
             d2_str = f"{d2_p1} & {d2_p2}"
-            
             if is_heim:
                 sess["auf_heim"].update({"hd1": d1_str, "hd2": d2_str})
             else:
@@ -1461,7 +1467,7 @@ with tab_session:
 
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (Format 4er-Team).")
+    st.write("Isolierter Bereich für Freundschaftsspiele nach offiziellem Spielbericht.")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1762,7 +1768,7 @@ with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
     st.write("Hier findet ihr die Anleitung für den Trainingsabend, Freundschaftsspiele und den Auf- und Abstieg.")
     
-    with st.container(border=True):
+    with st.container(border=Thread:=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
         * **Isoliert:** Eigener Bereich im Tab **Freundschaftsspiele**.
