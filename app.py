@@ -1801,8 +1801,6 @@ with tab_liga:
                                         if show_sub_btn and not "d" in h_key:
                                             if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
                                         st.markdown(f"Gast: **{p_gast}**")
-                                        if show_sub_btn and not "d" g_key if 'g_key' in locals() else False: # safe check
-                                            pass
                                         if show_sub_btn and not "d" in g_key:
                                             if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                     
