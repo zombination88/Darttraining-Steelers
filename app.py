@@ -1,6 +1,6 @@
 # INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN
 # 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
-# 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel abzustürzen!
+# 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel/Datumsformate abzusichern!
 # 3. KOOP-TEAMS: Es dürfen niemals exakt gleiche 2er-Teams aus der vorherigen Session gebildet werden.
 # 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
 # 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
@@ -19,6 +19,7 @@ from datetime import date, datetime
 import json
 import gspread
 from google.oauth2.service_account import Credentials
+import re
 
 st.set_page_config(page_title="Wehringer Steelers - Teamtraining", layout="centered")
 
@@ -533,70 +534,6 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
             smart_sync_and_save(st.session_state.sessions_list)
             st.rerun()
 
-@st.dialog("📊 Spielablauf & Rundenübersicht")
-def open_session_archive_dialog(session_idx):
-    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-    sess = all_sessions_sorted[session_idx]
-    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
-    st.write(f"### Session {sess['id']} vom {sess['datum']}")
-    st.caption(f"Modus: {sess['modus']} | Boards: {sess['boards']} | Leg-Modus: {sess['modus_leg']}")
-    st.caption(f"⏱️ Start: {start_t} Uhr | Ende: {end_t} Uhr")
-    
-    total_minutes = 0
-    if start_t != "–" and end_t != "–":
-        try:
-            t1 = datetime.strptime(start_t, "%H:%M")
-            t2 = datetime.strptime(end_t, "%H:%M")
-            diff_min = (t2 - t1).total_seconds() / 60
-            if diff_min < 0: diff_min += 24 * 60
-            total_minutes = diff_min
-        except: pass
-    
-    total_rounds = sess.get("total_rounds", 4)
-    modus = sess.get("modus", "Up & Down")
-    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
-    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
-    res = sess.get("results", {})
-    
-    if total_minutes > 0:
-        total_legs = sum([sum(map(int, m.get("ergebnis", "0:0").split(":"))) for m in res.values() if ":" in m.get("ergebnis", "")])
-        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
-        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
-        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
-        st.divider()
-
-    if not res:
-        st.info("Für diese Session wurden noch keine Matches erfasst.")
-    else:
-        for r in range(1, total_rounds + 1):
-            if is_standard_training and r > singles_rounds: r_display = f"Doppelrunde {r - singles_rounds}/{total_rounds - singles_rounds} (Coop)"
-            else: r_display = f"Runde {r}/{singles_rounds} (Einzel)" if is_standard_training else f"Runde {r}/{total_rounds}"
-            st.markdown(f"#### 🎯 {r_display}")
-            boards_in_r = get_boards_list(sess, r)
-            for b_name in boards_in_r:
-                match_info = res.get((r, b_name))
-                if match_info:
-                    heim, gast, ergebnis, sieger = match_info.get("s1", "–"), match_info.get("s2", "–"), match_info.get("ergebnis", "–"), match_info.get("winner", "-")
-                    t180 = f"{match_info.get('180_s1', 0)} / {match_info.get('180_s2', 0)}"
-                    avg = f"{match_info.get('avg_s1', 0.0)} / {match_info.get('avg_s2', 0.0)}"
-                else:
-                    auto_p = get_board_players(sess, r, b_name)
-                    heim, gast, ergebnis, sieger, t180, avg = auto_p[0], auto_p[1], "Ausstehend", "–", "–", "–"
-            
-                with st.container(border=True):
-                    st.markdown(f"**{b_name}**\n\n⚔️ {heim} vs {gast}\n\nErgebnis: **{ergebnis}** | Sieger: **{sieger}**\n\n🎯 180er: {t180} | 📊 Avg: {avg}")
-            
-            if is_standard_training and r == singles_rounds:
-                st.markdown("##### 🏆 Board-Endstand nach den Einzel-Runden:")
-                for b_name in get_boards_list(sess, singles_rounds):
-                    p_list = get_board_players(sess, singles_rounds, b_name)
-                    m_inf = res.get((singles_rounds, b_name))
-                    winner_str = m_inf.get("winner", "–") if m_inf else "–"
-                    st.write(f"- **{b_name}:** {p_list[0]} vs {p_list[1]} ➔ **Sieger:** {winner_str}")
-                st.divider()
-                
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
 @st.dialog("📊 Session Endstand & Zusammenfassung")
 def open_session_summary_dialog(session_idx):
     all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
@@ -1055,7 +992,7 @@ def open_new_liga_match_dialog():
     
     team_mode = st.selectbox("Spielmodus / Team-Größe", [
         "4er-Team (Standard: 4 Einzel, 4 Kreuz, 2 Doppel)",
-        "6er-Team (Erweitert: 6 Einzel, 6 Rückrunde, 3 Doppel)"
+        "6er-Team (Erweitert: 6 Einzel, 6 Kreuz, 3 Doppel)"
     ])
     team_size = 6 if "6er" in team_mode else 4
 
@@ -1734,7 +1671,7 @@ with tab_archiv:
                     with c2:
                         if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(training_sessions.index(sess))
                     with c3:
-                        if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): delete_session(sess['id'])
 
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
