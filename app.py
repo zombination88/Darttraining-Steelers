@@ -12,6 +12,7 @@
 #    - Up & Down (Einzel): Klassisch. Sieger steigt auf (Ri. B1), Verlierer ab. Kaiser der Vorsession startet ganz unten.
 # 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
 #    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur der PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
+# 10. TAB-STRUKTUR & UI: Die Reiter müssen exakt in der definierten Reihenfolge (Übersicht, Kader, Session, Freundschaftsspiele, Match-Archiv, Modus & Regeln) aufgebaut sein.
 
 import streamlit as st
 import pandas as pd
@@ -87,7 +88,7 @@ def load_data():
     return []
 
 def save_completed_backup(serializable_sessions):
-    """Speichert abgeschlossene Spiele dauerhaft als Tresor mit Merge-System (kein Überschreiben alter Daten)."""
+    """Speichert abgeschlossene Spiele dauerhaft im Tresor mit Merge-System (kein Überschreiben alter Daten)."""
     try:
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict:
@@ -205,6 +206,8 @@ def get_local_time_str():
 
 def get_liga_config(sess):
     t_size = sess.get("team_size", 4)
+    b_count = sess.get("boards_count", 2)
+    
     if t_size == 6:
         singles = [
             ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
@@ -231,7 +234,12 @@ def get_liga_config(sess):
         doubles = [
             ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")
         ]
-    return [singles, cross, doubles]
+        
+    rounds = []
+    for block in [singles, cross, doubles]:
+        for i in range(0, len(block), b_count):
+            rounds.append(block[i:i + b_count])
+    return rounds
 
 def is_session_completed(sess):
     if sess.get("is_liga"):
@@ -274,7 +282,7 @@ def smart_sync_and_save(updated_sessions):
                 for idx, fs in enumerate(fresh_data):
                     if fs["id"] == sess["id"]:
                         fresh_data[idx] = sess
-        final_data = [s for s in fresh_data if s.get("id") in [u["id"] for u in updated_sessions]]
+        final_data = [s for s in fresh_data if s["id"] in [u["id"] for u in updated_sessions]]
         save_data(final_data)
         st.session_state.sessions_list = final_data
     else:
@@ -932,6 +940,43 @@ def open_board_dialog(board_name, session_idx):
     with cb2:
         if st.button("Schließen", use_container_width=True): st.rerun()
 
+def get_liga_config(sess):
+    t_size = sess.get("team_size", 4)
+    b_count = sess.get("boards_count", 2)
+    
+    if t_size == 6:
+        singles = [
+            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
+            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),
+            ("m5", "Einzel 5", "h5", "g5"), ("m6", "Einzel 6", "h6", "g6")
+        ]
+        cross = [
+            ("m7", "Kreuz-Einzel 1", "h1", "g4"), ("m8", "Kreuz-Einzel 2", "h2", "g5"),
+            ("m9", "Kreuz-Einzel 3", "h3", "g6"), ("m10", "Kreuz-Einzel 4", "h4", "g1"),
+            ("m11", "Kreuz-Einzel 5", "h5", "g2"), ("m12", "Kreuz-Einzel 6", "h6", "g3")
+        ]
+        doubles = [
+            ("m13", "Doppel 1", "hd1", "gd1"), ("m14", "Doppel 2", "hd2", "gd2"), ("m15", "Doppel 3", "hd3", "gd3")
+        ]
+    else:
+        singles = [
+            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
+            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4")
+        ]
+        cross = [
+            ("m5", "Einzel 5 (Kreuz)", "h1", "g2"), ("m6", "Einzel 6 (Kreuz)", "h2", "g1"),
+            ("m7", "Einzel 7 (Kreuz)", "h3", "g4"), ("m8", "Einzel 8 (Kreuz)", "h4", "g3")
+        ]
+        doubles = [
+            ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")
+        ]
+        
+    rounds = []
+    for block in [singles, cross, doubles]:
+        for i in range(0, len(block), b_count):
+            rounds.append(block[i:i + b_count])
+    return rounds
+
 def generate_spielbericht_pdf(sess):
     try:
         from pypdf import PdfReader, PdfWriter
@@ -1196,7 +1241,6 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
         if any(not x for x in all_selected):
             st.error("🚨 Bitte alle Spieler für die Doppel ausfüllen!")
         elif len(set(all_selected)) != len(all_selected):
-            # Find duplicate name for friendly error message
             from collections import Counter
             counts = Counter(all_selected)
             dup = [name for name, count in counts.items() if count > 1][0]
@@ -1655,6 +1699,33 @@ with tab_liga:
         
     st.divider()
     
+    # Meaningful Friendlies Statistics Overview
+    if liga_sessions:
+        total_liga_games = len(liga_sessions)
+        total_liga_sets_heim = 0
+        total_liga_sets_gast = 0
+        total_liga_legs_heim = 0
+        total_liga_legs_gast = 0
+        total_liga_180s = 0
+        
+        for l_s in liga_sessions:
+            for m_d in l_s.get("results", {}).values():
+                if m_d.get("played"):
+                    lh, lg = m_d.get("lh", 0), m_d.get("lg", 0)
+                    total_liga_legs_heim += lh
+                    total_liga_legs_gast += lg
+                    if lh > lg: total_liga_sets_heim += 1
+                    elif lg > lh: total_liga_sets_gast += 1
+                    total_liga_180s += int(m_d.get("180_h", 0)) + int(m_d.get("180_g", 0))
+                    
+        with st.container(border=True):
+            st.markdown("#### 📊 Freundschaftsspiele — Gesamtbilanz (Steelers)")
+            lc1, lc2, lc3 = st.columns(3)
+            lc1.metric("Gespielte Partien", str(total_liga_games))
+            lc2.metric("Satzverhältnis", f"{total_liga_sets_heim} : {total_liga_sets_gast}")
+            lc3.metric("🎯 180er Team", str(total_liga_180s))
+        st.divider()
+    
     active_liga = [l for l in liga_sessions if not l.get("is_locked", False)]
     completed_liga = [l for l in liga_sessions if l.get("is_locked", False)]
     
@@ -1709,7 +1780,7 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    is_in_doubles = (curr_round_idx == 2) # Runde 3 sind die Doppel
+                    is_in_doubles = (curr_round_idx >= len(rounds_list) - (3 if t_size == 6 else 2))
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
@@ -1731,12 +1802,17 @@ with tab_liga:
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
                         r_titles = ["1. Runde (Einzel)", "2. Runde (Kreuz-Einzel)", "3. Runde (Doppel)"]
-                        st.markdown(f"**{r_titles[curr_round_idx]} läuft — Alle Spiele auf einen Blick:**")
+                        phase_label = r_titles[curr_round_idx] if curr_round_idx < len(r_titles) else f"Runde {curr_round_idx + 1}"
+                        st.markdown(f"**Aktive Matches auf den Boards ({phase_label}):**")
                         
-                        is_kreuz_round = (curr_round_idx == 1) # Nur in Runde 2 (Kreuz-Runde) auswechseln!
+                        is_kreuz_round = ("Kreuz" in phase_label or curr_round_idx == 1)
                         
-                        cols_boards = st.columns(min(len(active_matches), 3))
-                        for i, (m_key, m_label, h_key, g_key) in enumerate(active_matches):
+                        # Filter for matches that can be played simultaneously on the available boards
+                        current_board_batch = active_matches[:b_count]
+                        waiting_in_round = active_matches[b_count:]
+                        
+                        cols_boards = st.columns(min(len(current_board_batch), len(boards)))
+                        for i, (m_key, m_label, h_key, g_key) in enumerate(current_board_batch):
                             b_name = boards[i % len(boards)]
                             p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
                             is_played = res.get(m_key, {}).get("played", False)
@@ -1766,6 +1842,15 @@ with tab_liga:
                                     else:
                                         if st.button("🎯 Eintragen", key=f"live_{m_key}_{l_sess['id']}", use_container_width=True):
                                             open_liga_live_board_dialog(real_idx, m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
+
+                        # Queue view below for remaining matches in this round batch
+                        if waiting_in_round:
+                            st.write("")
+                            with st.expander("🔜 Als nächstes in dieser Runde auf den Boards:", expanded=False):
+                                for wi, (wm_key, wm_label, wh_key, wg_key) in enumerate(waiting_in_round):
+                                    wp_h, wp_g = auf_h.get(wh_key, "-"), auf_g.get(wg_key, "-")
+                                    next_board = boards[wi % len(boards)]
+                                    st.markdown(f"• **{next_board}**: {wm_label} (`{wp_h}` vs `{wp_g}`)")
 
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
@@ -1840,7 +1925,10 @@ with tab_archiv:
                             open_delete_session_dialog(sess['id'])
                 else:
                     status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
-                    st.markdown(f"**{sess['id']}** (Training) — {sess['datum']} {status_text}")
+                    start_t = sess.get("start_time", "–")
+                    end_t = sess.get("end_time", "–")
+                    time_display = f" | ⏱️ {start_t} - {end_t} Uhr" if start_t and start_t != "–" else ""
+                    st.markdown(f"**{sess['id']}** (Training) — {sess['datum']}{time_display} {status_text}")
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
@@ -1929,17 +2017,18 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
-        * Eigener Bereich im Tab **Freundschaftsspiele**.
-        * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup).
-        * **Flexibel wählbar:** Als 4er- oder 6er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
-        * **Live-Tracking:** Gespielt wird auf frei wählbaren parallelen Boards. Alle Spiele einer Runde werden direkt untereinander angezeigt, sodass ihr die Ergebnisse eintragen könnt.
-        * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den PDF-Download-Button. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
+        * **Eigener Bereich:** Im Tab **Freundschaftsspiele** isoliert von den normalen Trainingseinheiten.
+        * **Flexibel wählbar:** Als 4er-Team (4 Einzel, 4 Kreuz, 2 Doppel) oder 6er-Team (6 Einzel, 6 Kreuz, 3 Doppel) mit variablen Boards.
+        * **Verdeckte Aufstellung (Blind Setup):** Die Aufstellung erfolgt in 2 Phasen (Zuerst Einzel, später Doppel), wobei die Teams verdeckt aufgestellt werden.
+        * **Live-Ansicht & Warteschlange:** Es werden jeweils nur die aktuell auf den Boards spielbaren Partien angezeigt, ergänzt durch eine klare Warteschlange für die nächsten Matches dieser Runde.
+        * **Auswechslungen:** In der 2. Runde (Kreuz-Runde) können Spieler per Auswechsel-Button unkompliziert ersetzt werden.
+        * **Archivierung & PDF-Export:** Nach Abschluss kann der offizielle Spielbericht als PDF exportiert werden. Abgeschlossene Spiele zeigen im Liga-Tab nur noch den Download; das nachträgliche Bearbeiten ist exklusiv im **Match-Archiv** möglich.
         """)
         
     with st.container(border=True):
         st.markdown("### 👑 Trainings-Modi & Logik")
         st.markdown("""
-        * **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
+        * **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), danach Y Runden Doppel (Koop) exklusiv auf Kaiser B1 & Board 2.
         * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
         * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Richtung B1), Verlierer ab. Der Kaiser der Vorsession startet ganz unten.
         """)
@@ -1947,7 +2036,8 @@ with tab_regeln:
     with st.container(border=True):
         st.markdown("### 👥 Besonderheiten & Zeitmanagement")
         st.markdown("""
-        * **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+        * **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert automatisch. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Zeitmanagement:** Im Session-Reiter werden globale Durchschnittszeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang berechnet.
+        * **Sicherer Tresor:** Abgeschlossene Spiele werden in einem dauerhaften Backup-Tresor per Merge-System geschützt, sodass niemals Daten verloren gehen.
         """)
