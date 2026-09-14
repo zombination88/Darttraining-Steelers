@@ -13,9 +13,6 @@
 # 9. FREUNDSCHAFTSPIELE: Flexibel wählbar als 4er-, 6er-, 8er-, 10er- oder 12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export. 
 #    - WICHTIG: Im Reiter Freundschaftsspiele wird bei abgeschlossenen Spielen nur für den PDF-Download angezeigt. Der Korrigieren/Bearbeiten-Button ist dort entfernt und nur im Match-Archiv erreichbar.
 # 10. TAB-STRUKTUR & UI: Die Reiter müssen exakt in der definierten Reihenfolge (Übersicht, Kader, Session, Freundschaftsspiele, Match-Archiv, Modus & Regeln) und mit sämtlichen Statistik- und Blitz-Erfassungs-Blöcken aufgebaut sein.
-# ==============================================================================
-# ENDE DER REGELN - AB HIER STARTET DER CODE
-# ==============================================================================
 
 import streamlit as st
 import pandas as pd
@@ -89,55 +86,6 @@ def load_data():
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
-def save_completed_backup(serializable_sessions):
-    """Speichert abgeschlossene Spiele dauerhaft als Tresor mit Merge-System (kein Überschreiben alter Daten)."""
-    try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_url(SHEET_URL)
-        
-        try:
-            backup_ws = spreadsheet.worksheet("completed_backup")
-        except:
-            backup_ws = spreadsheet.add_worksheet(title="completed_backup", rows=2, cols=2)
-            backup_ws.append_row(["Last_Updated", "JSON_Data_Completed"])
-            
-        existing_completed = []
-        try:
-            all_vals = backup_ws.get_all_values()
-            if len(all_vals) > 1 and all_vals[1][1]:
-                existing_completed = json.loads(all_vals[1][1])
-        except:
-            pass
-            
-        current_completed = []
-        for s in serializable_sessions:
-            if s.get("is_liga"):
-                if s.get("is_locked"): current_completed.append(s)
-            else:
-                if s.get("end_time"): current_completed.append(s)
-                
-        vault_dict = {item["id"]: item for item in existing_completed}
-        for item in current_completed:
-            vault_dict[item["id"]] = item
-            
-        final_completed_list = list(vault_dict.values())
-        from zoneinfo import ZoneInfo
-        ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
-        json_str = json.dumps(final_completed_list, ensure_ascii=False)
-        
-        backup_ws.clear()
-        backup_ws.update([["Last_Updated", "JSON_Data_Completed"], [ts, json_str]])
-    except Exception:
-        pass
-
 def save_backup_to_cloud(serializable_sessions):
     """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt (Rolling: max 20 Einträge)."""
     try:
@@ -177,6 +125,50 @@ def save_backup_to_cloud(serializable_sessions):
     except Exception as e:
         pass
 
+def save_completed_backup(serializable_sessions):
+    """Sicherer Tresor: Führt alte abgeschlossene Spiele mit neuen zusammen (Merge-System) und speichert in einer Zeile."""
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_url(SHEET_URL)
+        
+        try:
+            vault_ws = spreadsheet.worksheet("completed_backup")
+        except:
+            vault_ws = spreadsheet.add_worksheet(title="completed_backup", rows=2, cols=2)
+            vault_ws.append_row(["Last_Updated", "JSON_Data_Completed"])
+            
+        existing_vault_data = []
+        try:
+            val = vault_ws.cell(2, 2).value
+            if val:
+                existing_vault_data = json.loads(val)
+        except Exception:
+            pass
+            
+        vault_dict = {s["id"]: s for s in existing_vault_data}
+        
+        for s in serializable_sessions:
+            if s.get("is_liga") and s.get("is_locked"):
+                vault_dict[s["id"]] = s
+            elif not s.get("is_liga") and s.get("end_time"):
+                vault_dict[s["id"]] = s
+                
+        merged_vault = list(vault_dict.values())
+        
+        from zoneinfo import ZoneInfo
+        ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
+        json_str = json.dumps(merged_vault, ensure_ascii=False)
+        
+        vault_ws.clear()
+        vault_ws.update([["Last_Updated", "JSON_Data_Completed"], [ts, json_str]])
+    except Exception:
+        pass
+
 def save_data(sessions):
     if not sheet_conn:
         return
@@ -208,6 +200,69 @@ def get_local_time_str():
         return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%H:%M")
     except Exception:
         return datetime.now().strftime("%H:%M")
+
+def get_liga_config(sess):
+    t_size = sess.get("team_size", 4)
+    b_count = sess.get("boards_count", 2)
+    
+    if t_size == 12:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 13)]
+        cross = [(f"m{i+12}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+5)%12 + 1}") for i in range(1, 13)]
+        doubles = [(f"m{i+24}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 7)]
+    elif t_size == 10:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 11)]
+        cross = [(f"m{i+10}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+4)%10 + 1}") for i in range(1, 11)]
+        doubles = [(f"m{i+20}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 6)]
+    elif t_size == 8:
+        singles = [(f"m{i}", f"Einzel {i}", f"h{i}", f"g{i}") for i in range(1, 9)]
+        cross = [(f"m{i+8}", f"Kreuz-Einzel {i}", f"h{i}", f"g{(i+3)%8 + 1}") for i in range(1, 9)]
+        doubles = [(f"m{i+16}", f"Doppel {i}", f"hd{i}", f"gd{i}") for i in range(1, 5)]
+    elif t_size == 6:
+        singles = [
+            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
+            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),
+            ("m5", "Einzel 5", "h5", "g5"), ("m6", "Einzel 6", "h6", "g6")
+        ]
+        cross = [
+            ("m7", "Kreuz-Einzel 1", "h1", "g4"), ("m8", "Kreuz-Einzel 2", "h2", "g5"),
+            ("m9", "Kreuz-Einzel 3", "h3", "g6"), ("m10", "Kreuz-Einzel 4", "h4", "g1"),
+            ("m11", "Kreuz-Einzel 5", "h5", "g2"), ("m12", "Kreuz-Einzel 6", "h6", "g3")
+        ]
+        doubles = [
+            ("m13", "Doppel 1", "hd1", "gd1"), ("m14", "Doppel 2", "hd2", "gd2"), ("m15", "Doppel 3", "hd3", "gd3")
+        ]
+    else:
+        singles = [
+            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
+            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4")
+        ]
+        cross = [
+            ("m5", "Einzel 5 (Kreuz)", "h1", "g2"), ("m6", "Einzel 6 (Kreuz)", "h2", "g1"),
+            ("m7", "Einzel 7 (Kreuz)", "h3", "g4"), ("m8", "Einzel 8 (Kreuz)", "h4", "g3")
+        ]
+        doubles = [
+            ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")
+        ]
+        
+    rounds = []
+    for block in [singles, cross, doubles]:
+        for i in range(0, len(block), b_count):
+            rounds.append(block[i:i + b_count])
+    return rounds
+
+def get_boards_list(session, round_num=None):
+    boards_count = session.get("boards_count", 6)
+    modus = session.get("modus", "Up & Down")
+    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
+    singles_rounds = session.get("singles_rounds", total_rounds - 2 if total_rounds > 2 else 4)
+    in_coop_phase = is_standard_training and round_num is not None and round_num > singles_rounds
+    
+    if in_coop_phase or modus == "Koop 2vs2 (Up & Down)":
+        return ["Kaiser B1", "Board 2"]
+        
+    all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
+    return all_boards[:boards_count]
 
 def is_session_completed(sess):
     if sess.get("is_liga"):
@@ -250,7 +305,7 @@ def smart_sync_and_save(updated_sessions):
                 for idx, fs in enumerate(fresh_data):
                     if fs["id"] == sess["id"]:
                         fresh_data[idx] = sess
-        final_data = [s for s in fresh_data if s.get("id") in [u["id"] for u in updated_sessions]]
+        final_data = [s for s in fresh_data if s["id"] in [u["id"] for u in updated_sessions]]
         save_data(final_data)
         st.session_state.sessions_list = final_data
     else:
@@ -382,20 +437,6 @@ def get_or_create_teams(session, all_training_sessions):
     session["coop_teams"] = best_teams
     return best_teams
 
-def get_boards_list(session, round_num=None):
-    boards_count = session.get("boards_count", 6)
-    modus = session.get("modus", "Up & Down")
-    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
-    total_rounds = session.get("total_rounds", 6 if is_standard_training else 4)
-    singles_rounds = session.get("singles_rounds", total_rounds - 2 if total_rounds > 2 else 4)
-    in_coop_phase = is_standard_training and round_num is not None and round_num > singles_rounds
-    
-    if in_coop_phase or modus == "Koop 2vs2 (Up & Down)":
-        return ["Kaiser B1", "Board 2"]
-        
-    all_boards = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
-    return all_boards[:boards_count]
-
 def get_board_players(session, round_num, board_name):
     boards = get_boards_list(session, round_num)
     if board_name not in boards:
@@ -412,6 +453,7 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
+    # Echte 1. Platz / 2. Platz Umkehr für Startaufstellung (Eser/Mak landen auf letztem Board)
     if round_num == 1 and not in_coop_phase and not is_2v2:
         all_sessions = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         try:
@@ -433,20 +475,27 @@ def get_board_players(session, round_num, board_name):
             prev_boards = get_boards_list(prev_sess, target_r)
             prev_results = prev_sess.get("results", {})
             
-            prev_players_top_to_bottom = []
+            w, l = {}, {}
             for pb in prev_boards:
                 match_inf = prev_results.get((target_r, pb))
-                p1, p2 = "-", "-"
-                if match_inf:
-                    p1 = match_inf.get("winner", "-")
-                    p2 = match_inf.get("loser", "-")
+                if match_inf and match_inf.get("winner"):
+                    w[pb] = match_inf["winner"]
+                    l[pb] = match_inf["loser"]
                 else:
-                    p_pair = get_board_players(prev_sess, target_r, pb)
-                    p1, p2 = p_pair[0], p_pair[1]
-                if p1 != "-" and p1 not in prev_players_top_to_bottom:
-                    prev_players_top_to_bottom.append(p1)
-                if p2 != "-" and p2 not in prev_players_top_to_bottom:
-                    prev_players_top_to_bottom.append(p2)
+                    w[pb] = "-"
+                    l[pb] = "-"
+            
+            prev_players_top_to_bottom = []
+            for b_idx_prev, pb in enumerate(prev_boards):
+                if b_idx_prev == 0:
+                    platz1 = w.get("Kaiser B1", "-")
+                    platz2 = w.get("Board 2", "-") if len(prev_boards) > 1 else l.get("Kaiser B1", "-")
+                else:
+                    platz1 = l.get(prev_boards[b_idx_prev-1], "-")
+                    platz2 = w.get(prev_boards[b_idx_prev+1], "-") if b_idx_prev+1 < len(prev_boards) else l.get(prev_boards[b_idx_prev], "-")
+                
+                if platz1 != "-" and platz1 not in prev_players_top_to_bottom: prev_players_top_to_bottom.append(platz1)
+                if platz2 != "-" and platz2 not in prev_players_top_to_bottom: prev_players_top_to_bottom.append(platz2)
             
             prev_players_bottom_to_top = list(reversed(prev_players_top_to_bottom))
             returning_players = [p for p in prev_players_bottom_to_top if p in spieler]
@@ -568,17 +617,18 @@ def is_board_ready(session, board_name, next_r):
     return True
 
 @st.dialog("🔄 Spieler auswechseln")
-def open_substitution_dialog(board_name, session_idx, round_num, slot_num, current_player):
-    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-    sess = all_sessions_sorted[session_idx]
+def open_substitution_dialog(board_name, session_id, round_num, slot_num, current_player):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
     alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
     if "-" not in alle_spieler: alle_spieler.append("-")
     alle_spieler.sort()
 
     st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
     idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
-    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{board_name}_{round_num}_{slot_num}")
-    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{board_name}_{round_num}_{slot_num}")
+    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{session_id}_{board_name}_{round_num}_{slot_num}")
+    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{session_id}_{board_name}_{round_num}_{slot_num}")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -598,9 +648,9 @@ def open_substitution_dialog(board_name, session_idx, round_num, slot_num, curre
             st.rerun()
 
 @st.dialog("📊 Session Endstand & Zusammenfassung")
-def open_session_summary_dialog(session_idx):
-    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-    sess = all_sessions_sorted[session_idx]
+def open_session_summary_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     st.write(f"### Session {sess['id']} vom {sess['datum']}")
     
     start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
@@ -632,12 +682,36 @@ def open_session_summary_dialog(session_idx):
         last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
         if last_played_round > 0:
             st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
-            for b_name in get_boards_list(sess, last_played_round):
-                match_info = res.get((last_played_round, b_name))
-                if match_info and match_info.get("winner"):
-                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{match_info.get('winner')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{match_info.get('loser')}</b></p></div>", unsafe_allow_html=True)
+            
+            w, l = {}, {}
+            b_list = get_boards_list(sess, last_played_round)
+            for b in b_list:
+                m_inf = res.get((last_played_round, b))
+                if m_inf and m_inf.get("winner"):
+                    w[b] = m_inf.get("winner")
+                    l[b] = m_inf.get("loser")
                 else:
-                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-style: italic; color: #888;'>Match ausstehend.</p></div>", unsafe_allow_html=True)
+                    w[b], l[b] = "-", "-"
+            
+            for b_idx, b_name in enumerate(b_list):
+                if b_idx == 0:
+                    platz1 = w.get("Kaiser B1", "-")
+                    platz2 = w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
+                else:
+                    platz1 = l.get(b_list[b_idx-1], "-")
+                    platz2 = w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
+                
+                m_inf = res.get((last_played_round, b_name))
+                m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
+                
+                st.markdown(f"""
+                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                    <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
+                    <p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p>
+                    <p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p>
+                    <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
             st.divider()
         else:
             st.info("Noch keine Einzel-Matches beendet.")
@@ -752,14 +826,14 @@ def open_new_session_dialog():
                 st.rerun()
 
 @st.dialog("⚙️ Session bearbeiten")
-def open_edit_session_dialog(session_idx):
-    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_idx}")
+def open_edit_session_dialog(session_id):
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_id}")
     if pwd != "1521":
         if pwd != "": st.error("Falsches Passwort!")
         return
 
-    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-    sess = all_sessions_sorted[session_idx]
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
     
     try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
@@ -796,7 +870,7 @@ def open_edit_session_dialog(session_idx):
     cols = st.columns(2)
     for i, sp in enumerate(kader):
         with cols[0 if i < len(kader)//2 else 1]:
-            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_idx}"): anwesende.append(sp)
+            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
                 
     curr_gaeste = sess.get("gaeste", [])
     gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
@@ -835,16 +909,20 @@ def open_delete_session_dialog(session_id):
             else: st.error("Falsches Passwort!")
 
 @st.dialog("📋 Board-Erfassung & Tracking")
-def open_board_dialog(board_name, session_idx):
-    all_sessions_sorted = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
-    sess = all_sessions_sorted[session_idx]
+def open_board_dialog(board_name, session_id, edit_round=None):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
     total_rounds = sess.get("total_rounds", 4)
     res = sess.get("results", {})
-    completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
-    current_round = max(completed_rounds) + 1 if completed_rounds else 1
     
-    if current_round > total_rounds:
+    if edit_round:
+        current_round = edit_round
+    else:
+        completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
+        current_round = max(completed_rounds) + 1 if completed_rounds else 1
+    
+    if current_round > total_rounds and not edit_round:
         st.warning(f"{board_name} has completed all rounds.")
         if st.button("Schließen"): st.rerun()
         return
@@ -871,14 +949,14 @@ def open_board_dialog(board_name, session_idx):
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"**Heim:** `{current_p1}`")
-        in_score1 = st.number_input("Legs Heim", 0, 5, score1)
-        in_180_1 = st.number_input("🎯 180er Heim", 0, 20, t1_180)
-        in_avg_1 = st.number_input("📊 Avg Heim", 0.0, 180.0, avg1, step=0.1)
+        in_score1 = st.number_input("Legs Heim", 0, 5, score1, key=f"score1_{session_id}_{board_name}")
+        in_180_1 = st.number_input("🎯 180er Heim", 0, 20, t1_180, key=f"180_1_{session_id}_{board_name}")
+        in_avg_1 = st.number_input("📊 Avg Heim", 0.0, 180.0, avg1, step=0.1, key=f"avg_1_{session_id}_{board_name}")
     with c2:
         st.markdown(f"**Gast:** `{current_p2}`")
-        in_score2 = st.number_input("Legs Gast", 0, 5, score2)
-        in_180_2 = st.number_input("🎯 180er Gast", 0, 20, t2_180)
-        in_avg_2 = st.number_input("📊 Avg Gast", 0.0, 180.0, avg2, step=0.1)
+        in_score2 = st.number_input("Legs Gast", 0, 5, score2, key=f"score2_{session_id}_{board_name}")
+        in_180_2 = st.number_input("🎯 180er Gast", 0, 20, t2_180, key=f"180_2_{session_id}_{board_name}")
+        in_avg_2 = st.number_input("📊 Avg Gast", 0.0, 180.0, avg2, step=0.1, key=f"avg_2_{session_id}_{board_name}")
         
     ergebnis = f"{in_score1}:{in_score2}"
     winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else "-")
@@ -895,7 +973,8 @@ def open_board_dialog(board_name, session_idx):
     
     cb1, cb2 = st.columns(2)
     with cb1:
-        if st.button("Ergebnis abschließen", type="primary", use_container_width=True, disabled=not is_valid_result):
+        btn_text = "Korrektur speichern" if edit_round else "Ergebnis abschließen"
+        if st.button(btn_text, type="primary", use_container_width=True, disabled=not is_valid_result):
             if is_valid_result:
                 if "results" not in sess: sess["results"] = {}
                 sess["results"][(current_round, board_name)] = {
@@ -908,42 +987,22 @@ def open_board_dialog(board_name, session_idx):
     with cb2:
         if st.button("Schließen", use_container_width=True): st.rerun()
 
-def get_liga_config(sess):
-    t_size = sess.get("team_size", 4)
-    b_count = sess.get("boards_count", 2)
-    
-    if t_size == 6:
-        singles = [
-            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
-            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),
-            ("m5", "Einzel 5", "h5", "g5"), ("m6", "Einzel 6", "h6", "g6")
-        ]
-        cross = [
-            ("m7", "Kreuz-Einzel 1", "h1", "g4"), ("m8", "Kreuz-Einzel 2", "h2", "g5"),
-            ("m9", "Kreuz-Einzel 3", "h3", "g6"), ("m10", "Kreuz-Einzel 4", "h4", "g1"),
-            ("m11", "Kreuz-Einzel 5", "h5", "g2"), ("m12", "Kreuz-Einzel 6", "h6", "g3")
-        ]
-        doubles = [
-            ("m13", "Doppel 1", "hd1", "gd1"), ("m14", "Doppel 2", "hd2", "gd2"), ("m15", "Doppel 3", "hd3", "gd3")
-        ]
-    else:
-        singles = [
-            ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
-            ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4")
-        ]
-        cross = [
-            ("m5", "Einzel 5 (Kreuz)", "h1", "g2"), ("m6", "Einzel 6 (Kreuz)", "h2", "g1"),
-            ("m7", "Einzel 7 (Kreuz)", "h3", "g4"), ("m8", "Einzel 8 (Kreuz)", "h4", "g3")
-        ]
-        doubles = [
-            ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")
-        ]
-        
-    rounds = []
-    for block in [singles, cross, doubles]:
-        for i in range(0, len(block), b_count):
-            rounds.append(block[i:i + b_count])
-    return rounds
+def get_running_score_up_to(res, all_keys, target_key):
+    """Berechnet den Spielstand ('Stand') bis einschließlich des aktuellen Matches für den offiziellen Spielbericht."""
+    h_score = 0
+    g_score = 0
+    for k in all_keys:
+        m_data = res.get(k, {})
+        if m_data.get("played"):
+            lh = m_data.get("lh", 0)
+            lg = m_data.get("lg", 0)
+            if lh > lg:
+                h_score += 1
+            elif lg > lh:
+                g_score += 1
+        if k == target_key:
+            break
+    return f"{h_score}:{g_score}"
 
 def generate_spielbericht_pdf(sess):
     try:
@@ -970,7 +1029,13 @@ def generate_spielbericht_pdf(sess):
     auf_g = sess.get("auf_gast", {})
 
     t_size = sess.get("team_size", 4)
-    if t_size == 6:
+    if t_size == 12:
+        y_coords_pdf = {f"m{i}": 650 - i*25 for i in range(1, 37)}
+    elif t_size == 10:
+        y_coords_pdf = {f"m{i}": 650 - i*28 for i in range(1, 31)}
+    elif t_size == 8:
+        y_coords_pdf = {f"m{i}": 630 - i*32 for i in range(1, 25)}
+    elif t_size == 6:
         y_coords_pdf = {
             "m1": 615, "m2": 570, "m3": 525, "m4": 480, "m5": 435, "m6": 390,
             "m7": 345, "m8": 300, "m9": 255, "m10": 210, "m11": 165, "m12": 120,
@@ -1045,19 +1110,24 @@ def generate_spielbericht_pdf(sess):
 @st.dialog("➕ Neues Freundschaftsspiel starten", width="large")
 def open_new_liga_match_dialog():
     st.write("Erstelle hier ein neues Freundschaftsspiel.")
+    
+    match_type = st.radio("Modus-Auswahl", [
+        "🏆 Standard Liga-Spiel (4er-Team, 2 Boards)",
+        "⚙️ Freies Spiel auf Liga-Basis (wählbare Teamgröße & Boards)"
+    ])
+    
     c1, c2 = st.columns(2)
     session_datum = c1.date_input("Datum des Spiels", date.today())
     heim_team = c2.text_input("Heimmannschaft", value="Wehringer Steelers")
     gast_team = st.text_input("Gastmannschaft", placeholder="z.B. DC Irgendwas")
     
-    team_mode = st.selectbox("Spielmodus / Team-Größe", [
-        "4er-Team (Standard: 4 Einzel, 4 Kreuz, 2 Doppel)",
-        "6er-Team (Erweitert: 6 Einzel, 6 Kreuz, 3 Doppel)"
-    ])
-    team_size = 6 if "6er" in team_mode else 4
-
-    b_count = st.selectbox("Anzahl paralleler Boards", [2, 3, 4], index=0)
-    
+    if "Freies Spiel" in match_type:
+        team_size = st.selectbox("Team-Größe", [6, 8, 10, 12], format_func=lambda x: f"{x}er-Team")
+        b_count = st.selectbox("Anzahl paralleler Boards", [1, 2, 3, 4, 5, 6], index=1)
+    else:
+        team_size = 4
+        b_count = 2
+        
     st.write("Wähle die Boards aus (von links nach rechts):")
     board_options = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
     selected_boards = []
@@ -1092,14 +1162,15 @@ def open_new_liga_match_dialog():
             st.rerun()
 
 @st.dialog("⚙️ Freundschaftsspiel bearbeiten")
-def open_edit_liga_session_dialog(session_idx):
-    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_idx}")
+def open_edit_liga_session_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    
+    pwd = st.text_input("Passwort eingeben", type="password", key=f"edit_pwd_{session_id}")
     if pwd != "1521":
         if pwd != "": st.error("Falsches Passwort!")
         return
-    
-    sess = liga_sessions[session_idx]
-    real_idx = st.session_state.sessions_list.index(sess)
     
     try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
     except: curr_date = date.today()
@@ -1117,7 +1188,7 @@ def open_edit_liga_session_dialog(session_idx):
     for i in range(b_count):
         with cols[i % len(cols)]:
             curr_val = curr_boards[i] if i < len(curr_boards) else board_options[i]
-            b_sel = st.selectbox(f"Board {i+1}", board_options, index=board_options.index(curr_val) if curr_val in board_options else 0, key=f"edit_liga_b_{session_idx}_{i}")
+            b_sel = st.selectbox(f"Board {i+1}", board_options, index=board_options.index(curr_val) if curr_val in board_options else 0, key=f"edit_liga_b_{session_id}_{i}")
             new_boards.append(b_sel)
     
     c_btn1, c_btn2 = st.columns(2)
@@ -1136,9 +1207,11 @@ def open_edit_liga_session_dialog(session_idx):
             st.rerun()
 
 @st.dialog("🔒 Einzel-Aufstellung (Verdeckt)")
-def open_liga_aufstellung_einzel(session_idx, is_heim):
-    sess = liga_sessions[session_idx]
+def open_liga_aufstellung_einzel(session_id, is_heim):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
     team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
     t_size = sess.get("team_size", 4)
     st.write(f"### Aufstellung: {team_name}")
@@ -1146,7 +1219,7 @@ def open_liga_aufstellung_einzel(session_idx, is_heim):
     
     inputs = []
     for i in range(t_size):
-        inputs.append(st.text_input(f"Position {i+1}", key=f"auf_{is_heim}_{i}"))
+        inputs.append(st.text_input(f"Position {i+1}", key=f"auf_{session_id}_{is_heim}_{i}"))
         
     if st.button("Speichern", type="primary", use_container_width=True):
         if all(x.strip() for x in inputs):
@@ -1165,14 +1238,17 @@ def open_liga_aufstellung_einzel(session_idx, is_heim):
             st.error(f"Bitte alle {t_size} Positionen eintragen!")
 
 @st.dialog("🔒 Doppel-Aufstellung (Verdeckt)")
-def open_liga_aufstellung_doppel(session_idx, is_heim):
-    sess = liga_sessions[session_idx]
+def open_liga_aufstellung_doppel(session_id, is_heim):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
     team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
     t_size = sess.get("team_size", 4)
-    num_doubles = 3 if t_size == 6 else 2
+    num_doubles = t_size // 2
     
     st.write(f"### Doppel-Aufstellung: {team_name}")
+    st.markdown("🚨 **Wichtig:** Jeder Spieler darf in den Doppel insgesamt nur **1x** vorkommen (keine Dubletten).")
     
     auf_dict = sess.get("auf_heim", {}) if is_heim else sess.get("auf_gast", {})
     bisherige_spieler = []
@@ -1194,25 +1270,31 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
     for d_idx in range(num_doubles):
         st.markdown(f"**Doppel {d_idx+1}**")
         c1, c2 = st.columns(2)
-        p1_sel = c1.selectbox(f"Spieler 1 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p1_sel_{is_heim}")
-        p1 = c1.text_input(f"Name Spieler 1", key=f"d{d_idx+1}_p1_txt_{is_heim}") if p1_sel == "+ Anderen Spieler eingeben..." else p1_sel
+        p1_sel = c1.selectbox(f"Spieler 1 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p1_sel_{session_id}_{is_heim}")
+        p1 = c1.text_input(f"Name Spieler 1", key=f"d{d_idx+1}_p1_txt_{session_id}_{is_heim}") if p1_sel == "+ Anderen Spieler eingeben..." else p1_sel
         
-        p2_sel = c2.selectbox(f"Spieler 2 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p2_sel_{is_heim}")
-        p2 = c2.text_input(f"Name Spieler 2", key=f"d{d_idx+1}_p2_txt_{is_heim}") if p2_sel == "+ Anderen Spieler eingeben..." else p2_sel
+        p2_sel = c2.selectbox(f"Spieler 2 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p2_sel_{session_id}_{is_heim}")
+        p2 = c2.text_input(f"Name Spieler 2", key=f"d{d_idx+1}_p2_txt_{session_id}_{is_heim}") if p2_sel == "+ Anderen Spieler eingeben..." else p2_sel
         doubles_data.append((p1.strip() if p1 else "", p2.strip() if p2 else ""))
         
     if st.button("Speichern", type="primary", use_container_width=True):
         all_selected = []
         for p1, p2 in doubles_data:
-            all_selected.extend([p1, p2])
+            if p1: all_selected.append(p1)
+            if p2: all_selected.append(p2)
+            
+        seen = set()
+        duplicates = set()
+        for player in all_selected:
+            if player in seen:
+                duplicates.add(player)
+            seen.add(player)
             
         if any(not x for x in all_selected):
             st.error("🚨 Bitte alle Spieler für die Doppel ausfüllen!")
-        elif len(set(all_selected)) != len(all_selected):
-            from collections import Counter
-            counts = Counter(all_selected)
-            dup = [name for name, count in counts.items() if count > 1][0]
-            st.error(f"🚨 Fehler: Der Spieler '{dup}' wurde mehrfach verwendet! Jeder Spieler darf in den Doppel insgesamt nur 1x vorkommen.")
+        elif duplicates:
+            dup_names = ", ".join([f"'{d}'" for d in duplicates])
+            st.error(f"🚨 Fehler: Der Spieler {dup_names} steht in mehreren Feldern! Jeder Spieler darf nur 1x in den Doppel aufgestellt werden.")
         else:
             update_dict = {}
             for d_idx, (p1, p2) in enumerate(doubles_data):
@@ -1227,9 +1309,11 @@ def open_liga_aufstellung_doppel(session_idx, is_heim):
             st.rerun()
 
 @st.dialog("🔄 Spieler auswechseln")
-def open_liga_sub_dialog(session_idx, p_key, is_heim, curr_name):
-    sess = liga_sessions[session_idx]
+def open_liga_sub_dialog(session_id, p_key, is_heim, curr_name):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
     st.write(f"Auswechslung für **{curr_name}**")
     new_name = st.text_input("Name des Ersatzspielers:")
         
@@ -1244,9 +1328,11 @@ def open_liga_sub_dialog(session_idx, p_key, is_heim, curr_name):
         st.rerun()
 
 @st.dialog("🎯 Live Board (Freundschaftsspiel)")
-def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p1, p2, is_right_board=False):
-    sess = liga_sessions[session_idx]
+def open_liga_live_board_dialog(session_id, m_key, board_name, m_label, p1, p2, is_right_board=False):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
     res = sess.setdefault("results", {})
     m_data = res.get(m_key, {})
     
@@ -1257,22 +1343,22 @@ def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p1, p2,
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"**Gast (Anwurf links):** `{p1}`")
-            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key="lg")
-            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key="180g")
+            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"lg_{session_id}_{m_key}")
+            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"180g_{session_id}_{m_key}")
         with c2:
             st.markdown(f"**Heim:** `{p2}`")
-            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key="lh")
-            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key="180h")
+            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"lh_{session_id}_{m_key}")
+            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"180h_{session_id}_{m_key}")
     else:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"**Heim (Anwurf links):** `{p1}`")
-            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key="lh")
-            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key="180h")
+            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"lh_{session_id}_{m_key}")
+            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"180h_{session_id}_{m_key}")
         with c2:
             st.markdown(f"**Gast:** `{p2}`")
-            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key="lg")
-            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key="180g")
+            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"lg_{session_id}_{m_key}")
+            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"180g_{session_id}_{m_key}")
 
     is_valid = (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
     if not is_valid:
@@ -1294,9 +1380,11 @@ def open_liga_live_board_dialog(session_idx, m_key, board_name, m_label, p1, p2,
         if st.button("Abbrechen", use_container_width=True): st.rerun()
 
 @st.dialog("📝 Offizieller Spielbericht (Korrektur)", width="large")
-def open_liga_bericht_dialog(session_idx):
-    sess = liga_sessions[session_idx]
+def open_liga_bericht_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
     auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
     res = sess.setdefault("results", {})
     match_map = [match for round in get_liga_config(sess) for match in round]
@@ -1309,9 +1397,9 @@ def open_liga_bericht_dialog(session_idx):
         m_data = res.get(m_key, {})
         with st.expander(f"{label}: {p_heim} vs {p_gast}", expanded=False):
             c_lh, c_vs, c_lg = st.columns([2, 1, 2])
-            lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"blh_{m_key}")
+            lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"blh_{session_id}_{m_key}")
             c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
-            lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"blg_{m_key}")
+            lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"blg_{session_id}_{m_key}")
             
             is_match_valid = (lh == 0 and lg == 0) or (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
             if not is_match_valid:
@@ -1346,7 +1434,7 @@ with tab_übersicht:
         active_sessions_for_btn = [s for s in sorted_for_btn if not is_session_completed(s)]
         if active_sessions_for_btn:
             if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
-                open_edit_session_dialog(training_sessions.index(active_sessions_for_btn[0]))
+                open_edit_session_dialog(active_sessions_for_btn[0]['id'])
         else:
             st.button("⚙️ Bearbeiten", use_container_width=True, disabled=True)
             
@@ -1402,19 +1490,27 @@ with tab_übersicht:
                         sc1, sc2 = st.columns([5, 2])
                         sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
                         with sc2:
-                            if st.button("🔄", key=f"sub1_{b_name}_{next_r}"): open_substitution_dialog(b_name, training_sessions.index(curr_sess), next_r, 1, p1)
+                            if st.button("🔄", key=f"sub1_{curr_sess['id']}_{b_name}_{next_r}"): open_substitution_dialog(b_name, curr_sess['id'], next_r, 1, p1)
                         st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                         sc3, sc4 = st.columns([5, 2])
                         sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
                         with sc4:
-                            if st.button("🔄", key=f"sub2_{b_name}_{next_r}"): open_substitution_dialog(b_name, training_sessions.index(curr_sess), next_r, 2, p2)
+                            if st.button("🔄", key=f"sub2_{curr_sess['id']}_{b_name}_{next_r}"): open_substitution_dialog(b_name, curr_sess['id'], next_r, 2, p2)
                         
                         st.write("")
-                        if st.button("🎯 Eintragen", key=f"live_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
-                            open_board_dialog(b_name, training_sessions.index(curr_sess))
+                        col_e1, col_e2 = st.columns([1, 1])
+                        with col_e1:
+                            if st.button("🎯 Eintragen", key=f"live_{curr_sess['id']}_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
+                                open_board_dialog(b_name, curr_sess['id'])
+                        with col_e2:
+                            prev_r = next_r - 1
+                            if prev_r > 0 and st.button("✏️ Korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{prev_r}", use_container_width=True):
+                                open_board_dialog(b_name, curr_sess['id'], edit_round=prev_r)
                     else:
                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
                         st.success("✅ Abgeschlossen")
+                        if st.button("✏️ Letzte Runde korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{total_rounds}", use_container_width=True):
+                            open_board_dialog(b_name, curr_sess['id'], edit_round=total_rounds)
 
     st.write("")
     st.divider()
@@ -1525,26 +1621,18 @@ with tab_übersicht:
             st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
             st.progress(best_q)
 
-    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
-        all_matches = []
-        for sess in all_sessions_sorted:
-            sess_date = sess.get("datum", "")
-            for (round_num, board_name), m_info in sess.get("results", {}).items():
-                if not m_info.get("winner"): continue
-                all_matches.append({
-                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
-                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
-                })
-                
-        if all_matches:
-            for m in all_matches[:15]: 
-                with st.container(border=True):
-                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
-                    st.caption(f"⚔️ {m['Spieler']}")
-                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+    with st.expander("📋 Ergebnisse der letzten Sessions ansehen", expanded=False):
+        if not all_sessions_sorted:
+            st.info("Noch keine Sessions vorhanden.")
         else:
-            st.info("Bisher wurden keine Board-Matches ausgetragen.")
+            for s in all_sessions_sorted[:5]:
+                col_sd, col_sb = st.columns([3, 1])
+                with col_sd:
+                    st.markdown(f"**{s['datum']}** — ID: {s['id']}")
+                with col_sb:
+                    if st.button("📊 Ergebnisse", key=f"hist_btn_{s['id']}", use_container_width=True):
+                        open_session_summary_dialog(s['id'])
+                st.divider()
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz (Teamtraining)")
@@ -1600,7 +1688,7 @@ with tab_kader:
     for p in kader:
         if stats[p]["Avg_Count"] > 0:
             p_avg = stats[p]["Avg_Sum"] / stats[p]["Avg_Count"]
-            if p_avg > best_avg_val: best_avg_val, best_avg_player = p_avg, p
+            if p_avg > best_avg_val: best_avg_val, best_avg_player = p_avg
     avg_text = f"Ø {best_avg_val:.1f}" if best_avg_val > 0 else "Kein Avg erfasst"
     
     max_180_player = max(kader, key=lambda p: stats[p]["180er"])
@@ -1658,9 +1746,51 @@ with tab_session:
         with c4: st.metric("⏱️ Ø Dauer pro Runde", f"{(gt_min / gt_rounds):.1f} Min." if gt_rounds > 0 else "0.0 Min.", delta="Gesamt-Durchschnitt", delta_color="off")
         with c5: st.metric("🎯 Ø Dauer pro Leg", f"{(gt_min / gt_legs):.1f} Min." if gt_legs > 0 else "0.0 Min.", delta="Gesamt-Durchschnitt", delta_color="off")
 
+    st.write("")
+    st.markdown("### 🤝 Ewige Koop- & Doppel-Tabelle")
+    st.write("Alle Doppel-Paarungen (egal an welchem Abend), die mindestens ein Match absolviert haben.")
+    
+    team_history = {}
+    for sess in training_sessions:
+        for match in sess.get("results", {}).values():
+            winner, loser, s1, s2 = match.get("winner", ""), match.get("loser", ""), match.get("s1", ""), match.get("s2", "")
+            if " & " in s1 or " & " in s2:
+                try: l1, l2 = map(int, match.get("ergebnis", "0:0").split(":"))
+                except ValueError: l1, l2 = 0, 0
+                
+                if " & " in s1:
+                    t = s1
+                    if t not in team_history: team_history[t] = {"matches": 0, "wins": 0, "l_won": 0, "l_lost": 0, "180s": 0}
+                    team_history[t]["matches"] += 1
+                    team_history[t]["l_won"] += l1
+                    team_history[t]["l_lost"] += l2
+                    team_history[t]["180s"] += int(match.get("180_s1", 0))
+                    if winner == t: team_history[t]["wins"] += 1
+                    
+                if " & " in s2:
+                    t = s2
+                    if t not in team_history: team_history[t] = {"matches": 0, "wins": 0, "l_won": 0, "l_lost": 0, "180s": 0}
+                    team_history[t]["matches"] += 1
+                    team_history[t]["l_won"] += l2
+                    team_history[t]["l_lost"] += l1
+                    team_history[t]["180s"] += int(match.get("180_s2", 0))
+                    if winner == t: team_history[t]["wins"] += 1
+
+    valid_teams = {k: v for k, v in team_history.items() if v["matches"] > 0}
+    if not valid_teams:
+        st.info("Noch keine Koop-Matches absolviert.")
+    else:
+        team_rows = [{"Team": t, "Matches": v["matches"], "Siege": v["wins"], "Quote": f"{(v['wins'] / v['matches'] * 100):.0f}%", "Legs": f"{v['l_won']}:{v['l_lost']}", "180er": v["180s"]} for t, v in valid_teams.items()]
+        team_rows.sort(key=lambda x: (x["Siege"], x["Legs"].split(":")[0]), reverse=True)
+        
+        for rank, row in enumerate(team_rows, 1):
+            with st.container(border=True):
+                st.markdown(f"**{rank}. {row['Team']}** — Quote: **{row['Quote']}**")
+                st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 🎯 180er: {row['180er']} | Legs: {row['Legs']}")
+
 with tab_liga:
     st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
+    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
     if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
         open_new_liga_match_dialog()
@@ -1674,7 +1804,6 @@ with tab_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
-            real_idx = st.session_state.sessions_list.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1684,8 +1813,9 @@ with tab_liga:
             auf_h = l_sess.setdefault("auf_heim", {})
             auf_g = l_sess.setdefault("auf_gast", {})
             
-            sets_heim, sets_gast, legs_heim, legs_gast = 0, 0, 0, 0
+            sets_heim, sets_gast, legs_heim, legs_gast, total_180s_liga = 0, 0, 0, 0, 0
             for m_data in res.values():
+                total_180s_liga += int(m_data.get("180_h", 0)) + int(m_data.get("180_g", 0))
                 if m_data.get("played"):
                     lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
                     legs_heim += lh; legs_gast += lg
@@ -1699,9 +1829,15 @@ with tab_liga:
             status = "✅ Abgeschlossen" if is_done else "🔴 Aktiv"
             
             with st.container(border=True):
-                st.markdown(f"### {heim} vs. {gast}")
+                st.markdown(f"### {heim} vs. {gast} — Stand: {sets_heim}:{sets_gast}")
                 st.caption(f"{l_sess['datum']} | ID: {l_sess['id']} | Status: {status}")
-                st.markdown(f"**Sets:** {sets_heim} : {sets_gast} | **Legs:** {legs_heim} : {legs_gast}")
+                
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("Sets", f"{sets_heim} : {sets_gast}")
+                col_s2.metric("Legs", f"{legs_heim} : {legs_gast}")
+                col_s3.metric("Fortschritt", f"{played_matches_count}/{total_matches_count}")
+                col_s4.metric("180er gesamt", f"{total_180s_liga}x")
+                st.divider()
                 
                 t_size = l_sess.get("team_size", 4)
                 h_einzel_ok = bool(auf_h.get(f"h{t_size}"))
@@ -1711,9 +1847,9 @@ with tab_liga:
                     st.warning(f"Phase 1: Alle {t_size} Einzelspieler eintragen (verdeckt)")
                     c_h, c_g = st.columns(2)
                     if not h_einzel_ok and c_h.button("🔒 Heim Aufstellen", key=f"h_setup_{l_sess['id']}"):
-                        open_liga_aufstellung_einzel(real_idx, True)
+                        open_liga_aufstellung_einzel(l_sess['id'], True)
                     if not g_einzel_ok and c_g.button("🔒 Gast Aufstellen", key=f"g_setup_{l_sess['id']}"):
-                        open_liga_aufstellung_einzel(real_idx, False)
+                        open_liga_aufstellung_einzel(l_sess['id'], False)
                 elif not is_done:
                     curr_round_idx = 0
                     for r_idx, round_matches in enumerate(rounds_list):
@@ -1721,35 +1857,30 @@ with tab_liga:
                             curr_round_idx = r_idx
                             break
                             
-                    is_in_doubles = (curr_round_idx >= len(rounds_list) - (3 if t_size == 6 else 2))
+                    singles_batches = math.ceil(t_size / b_count)
+                    cross_batches = math.ceil(t_size / b_count)
+                    is_in_doubles = (curr_round_idx >= singles_batches + cross_batches)
                     
                     if is_in_doubles:
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("Phase 2: Doppel-Aufstellungen eintragen")
+                            st.warning("🚨 Nach der Eingabe der letzten Einzelrunde (Einzel + Kreuz-Einzel) müssen nun beide Teams ihre Doppel-Aufstellungen hinterlegen!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
-                                open_liga_aufstellung_doppel(real_idx, True)
+                                open_liga_aufstellung_doppel(l_sess['id'], True)
                             if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}"):
-                                open_liga_aufstellung_doppel(real_idx, False)
-                    elif curr_round_idx >= 1:
-                        c_opt1, c_opt2 = st.columns(2)
-                        if not auf_h.get("hd1") and c_opt1.button("🔒 Heim Doppel aufstellen", key=f"opt_h_doppel_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(real_idx, True)
-                        if not auf_g.get("gd1") and c_opt2.button("🔒 Gast Doppel aufstellen", key=f"opt_g_doppel_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(real_idx, False)
-                                
-                    if curr_round_idx < len(rounds_list):
+                                open_liga_aufstellung_doppel(l_sess['id'], False)
+                            
+                    if curr_round_idx < len(rounds_list) and not (is_in_doubles and (not auf_h.get("hd1") or not auf_g.get("gd1"))):
                         active_matches = rounds_list[curr_round_idx]
-                        r_titles = ["1. Runde (Einzel)", "2. Runde (Kreuz-Einzel)", "3. Runde (Doppel)"]
-                        round_title_str = r_titles[curr_round_idx] if curr_round_idx < len(r_titles) else f"Runde {curr_round_idx + 1}"
-                        st.markdown(f"**{round_title_str} läuft — Alle Spiele auf einen Blick:**")
+                        st.markdown(f"**Runde {curr_round_idx + 1} / {len(rounds_list)} läuft:**")
                         
-                        is_kreuz_round = ("Kreuz" in round_title_str)
+                        current_board_matches = active_matches[:b_count]
+                        waiting_queue = active_matches[b_count:]
                         
-                        cols_boards = st.columns(min(len(active_matches), 3))
-                        for i, (m_key, m_label, h_key, g_key) in enumerate(active_matches):
+                        cols_boards = st.columns(min(len(current_board_matches), 3) if len(current_board_matches) > 0 else 1)
+                        for i, (m_key, m_label, h_key, g_key) in enumerate(current_board_matches):
                             b_name = boards[i % len(boards)]
                             p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
                             is_played = res.get(m_key, {}).get("played", False)
@@ -1758,33 +1889,45 @@ with tab_liga:
                                 with st.container(border=True):
                                     st.write(f"*{b_name}* — {m_label}")
                                     
+                                    all_match_keys = [match[0] for round in rounds_list for match in round]
+                                    stand_str = get_running_score_up_to(res, all_match_keys, m_key)
+                                    st.caption(f"Stand: **{stand_str}**")
+                                    
+                                    show_sub_btn = ("Kreuz" in m_label) and not is_played
+                                    
                                     if i % 2 == 1:
                                         st.markdown(f"Gast (links): **{p_gast}**")
-                                        if not is_played and not "d" in g_key and is_kreuz_round:
-                                            if st.button("🔄", key=f"sub_g_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(real_idx, g_key, False, p_gast)
+                                        if show_sub_btn and not "d" in g_key:
+                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                         st.markdown(f"Heim: **{p_heim}**")
-                for b_idx, b_name in enumerate(b_list):
-                    if b_idx == 0:
-                        platz1 = w.get("Kaiser B1", "-")
-                        platz2 = w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
-                    else:
-                        platz1 = l.get(b_list[b_idx-1], "-")
-                        platz2 = w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
-                    
-                    m_inf = res.get((last_played_round, b_name))
-                    m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
-                    
-                    st.markdown(f"""
-                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
-                        <p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p>
-                        <p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p>
-                        <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                st.divider()
+                                        if show_sub_btn and not "d" in h_key:
+                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
+                                    else:
+                                        st.markdown(f"Heim (links): **{p_heim}**")
+                                        if show_sub_btn and not "d" in h_key:
+                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
+                                        st.markdown(f"Gast: **{p_gast}**")
+                                        if show_sub_btn and not "d" in g_key:
+                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
+                                    
+                                    if is_played:
+                                        m_inf = res[m_key]
+                                        st.success(f"Ergebnis: {m_inf['lh']}:{m_inf['lg']}")
+                                    else:
+                                        if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True):
+                                            open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
+
+                        if waiting_queue:
+                            st.write("")
+                            st.markdown("##### 📋 Warteschlange (Nächste Spiele auf den Boards):")
+                            for wi, (wm_key, wm_label, wh_key, wg_key) in enumerate(waiting_queue):
+                                wp_h, wp_g = auf_h.get(wh_key, "-"), auf_g.get(wg_key, "-")
+                                st.caption(f"• **{wm_label}**: {wp_h} vs {wp_g}")
+
+                if is_done or (h_einzel_ok and g_einzel_ok):
+                    st.divider()
                     if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
-                        open_liga_bericht_dialog(real_idx)
+                        open_liga_bericht_dialog(l_sess['id'])
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
@@ -1834,7 +1977,6 @@ with tab_archiv:
         )
         
         for sess in sorted_sessions:
-            orig_idx = st.session_state.sessions_list.index(sess)
             is_l = sess.get("is_liga", False)
             
             with st.container(border=True):
@@ -1845,10 +1987,10 @@ with tab_archiv:
                     c1, c2, c3 = st.columns(3)
                     with c1:
                         if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True):
-                            open_liga_bericht_dialog(orig_idx)
+                            open_liga_bericht_dialog(sess['id'])
                     with c2:
                         if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True):
-                            open_edit_liga_session_dialog(liga_sessions.index(sess))
+                            open_edit_liga_session_dialog(sess['id'])
                     with c3:
                         if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True):
                             open_delete_session_dialog(sess['id'])
@@ -1861,9 +2003,9 @@ with tab_archiv:
                     
                     c1, c2, c3 = st.columns(3)
                     with c1:
-                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(training_sessions.index(sess))
+                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
-                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(training_sessions.index(sess))
+                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
                     with c3:
                         if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
                         
@@ -1942,7 +2084,7 @@ with tab_archiv:
 with tab_regeln:
     st.subheader("🎯 Modus & Spielablauf")
     st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
-    
+
     with st.container(border=True):
         st.markdown("### 🏆 Freundschaftsspiele")
         st.markdown("""
@@ -1952,7 +2094,7 @@ with tab_regeln:
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
-        
+
     with st.container(border=True):
         st.markdown("### 👑 Trainings-Modi & Logik")
         st.markdown("""
