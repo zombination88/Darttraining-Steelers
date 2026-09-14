@@ -1526,6 +1526,93 @@ with tab_übersicht:
         with c3: st.metric(label="Aktueller Kaiser", value=kaiser_winner_text[:12] + "..." if len(kaiser_winner_text) > 12 else kaiser_winner_text, delta="Board 1")
         with c4: st.metric(label="Anwesende", value=str(anwesende_count), delta="Spieler")
 
+    st.write("")
+    with st.expander("Letzte Session & Spitzenreiter", expanded=False):
+        col_l, col_r = st.columns(2)
+        with col_l:
+            st.markdown("### Letzte Session")
+            if display_sess:
+                l_date = display_sess.get('datum', '–')
+                count_180s = {}
+                match_avgs = []
+                for m in display_sess.get('results', {}).values():
+                    s1_name = m.get("s1", "")
+                    s2_name = m.get("s2", "")
+                    if s1_name and " & " not in s1_name:
+                        count_180s[s1_name] = count_180s.get(s1_name, 0) + int(m.get("180_s1", 0))
+                        if float(m.get("avg_s1", 0)) > 0: match_avgs.append((s1_name, float(m.get("avg_s1", 0))))
+                    if s2_name and " & " not in s2_name:
+                        count_180s[s2_name] = count_180s.get(s2_name, 0) + int(m.get("180_s2", 0))
+                        if float(m.get("avg_s2", 0)) > 0: match_avgs.append((s2_name, float(m.get("avg_s2", 0))))
+                
+                most_180_text = "Keine"
+                if count_180s and max(count_180s.values()) > 0:
+                    top_player = max(count_180s, key=count_180s.get)
+                    most_180_text = f"{top_player} ({count_180s[top_player]}x)"
+                
+                best_avg_text = "–"
+                if match_avgs:
+                    top_avg_player, top_avg_val = max(match_avgs, key=lambda x: x[1])
+                    best_avg_text = f"{top_avg_player} ({top_avg_val:.1f})"
+                
+                st.info(f"**Datum:** {l_date}\n\n**Kaiser B1 (Einzel):** 👑 {kaiser_winner_text}\n\n**Höchster Einzel-Average:** 📊 {best_avg_text}\n\n**Meiste 180er:** 🎯 {most_180_text}")
+            else:
+                st.info("Keine Daten vorhanden.")
+
+        with col_r:
+            st.markdown("### Spitzenreiter")
+            stats_temp = {p: {"Matches": 0, "Siege": 0} for p in kader}
+            for sess in training_sessions:
+                for match in sess.get("results", {}).values():
+                    winner = match.get("winner", "")
+                    loser = match.get("loser", "")
+                    if winner and " & " not in winner:
+                        for p in winner.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+                                stats_temp[p]["Siege"] += 1
+                    if loser and " & " not in loser:
+                        for p in loser.split(" & "):
+                            if p in stats_temp:
+                                stats_temp[p]["Matches"] += 1
+
+            best_p = "Keiner"
+            best_q = 0.0
+            best_m = 0
+            for p in kader:
+                m = stats_temp[p]["Matches"]
+                s = stats_temp[p]["Siege"]
+                if m > 0:
+                    q = s / m
+                    if q > best_q or (q == best_q and m > best_m):
+                        best_q = q
+                        best_m = m
+                        best_p = p
+
+            st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
+            st.progress(best_q)
+
+    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
+        all_matches = []
+        for sess in all_sessions_sorted:
+            sess_date = sess.get("datum", "")
+            for (round_num, board_name), m_info in sess.get("results", {}).items():
+                if not m_info.get("winner"): continue
+                all_matches.append({
+                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
+                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
+                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
+                })
+                
+        if all_matches:
+            for m in all_matches[:15]: 
+                with st.container(border=True):
+                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
+                    st.caption(f"⚔️ {m['Spieler']}")
+                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+        else:
+            st.info("Bisher wurden keine Board-Matches ausgetragen.")
+
 with tab_kader:
     st.subheader("Kader & Spielerbilanz (Teamtraining)")
     
