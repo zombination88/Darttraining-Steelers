@@ -635,15 +635,35 @@ def open_session_summary_dialog(session_id):
         avg_leg = total_minutes / total_legs if total_legs > 0 else 0
         st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
         st.divider()
+
+    # NEU: Auflistung aller Runden und exakten Ergebnisse
+    st.markdown("#### 📋 Alle Spielergebnisse")
+    for r in range(1, total_rounds + 1):
+        matches_in_round = []
+        for b_name in get_boards_list(sess, r):
+            m = res.get((r, b_name))
+            if m and m.get("winner"):
+                matches_in_round.append({"board": b_name, "s1": m.get("s1", "-"), "s2": m.get("s2", "-"), "erg": m.get("ergebnis", "0:0"), "winner": m.get("winner", "-")})
+        if matches_in_round:
+            r_label = f"Runde {r}"
+            if is_standard_training and r <= singles_rounds: r_label += " (Einzel)"
+            elif is_standard_training and r > singles_rounds: r_label = f"Doppelrunde {r - singles_rounds} (Coop)"
+            elif is_pure_coop: r_label += " (Koop)"
+                
+            with st.expander(f"🎯 {r_label}", expanded=False):
+                for match in matches_in_round:
+                    st.markdown(f"**{match['board']}:** {match['s1']} vs {match['s2']} ➔ **{match['erg']}** *(Sieger: {match['winner']})*")
+    st.divider()
     
     if singles_rounds > 0 and not is_pure_coop:
         last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
         if last_played_round > 0:
-            st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
+            st.markdown(f"#### 🎯 Einzel-Phase (Endstand nach Runde {last_played_round}/{singles_rounds})")
             for b_name in get_boards_list(sess, last_played_round):
                 match_info = res.get((last_played_round, b_name))
                 if match_info and match_info.get("winner"):
-                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{match_info.get('winner')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{match_info.get('loser')}</b></p></div>", unsafe_allow_html=True)
+                    # NEU: Das Match-Ergebnis wird direkt in den Block geschrieben!
+                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0 0 5px 0; font-size: 0.9em; color: #aaa;'>{match_info.get('s1')} vs {match_info.get('s2')} ➔ <b>{match_info.get('ergebnis')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{match_info.get('winner')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{match_info.get('loser')}</b></p></div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-style: italic; color: #888;'>Match ausstehend.</p></div>", unsafe_allow_html=True)
             st.divider()
