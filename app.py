@@ -1592,26 +1592,22 @@ with tab_übersicht:
             st.markdown(f"**{best_p}** (Siegquote: {(best_q*100):.0f}% bei {best_m} Matches)")
             st.progress(best_q)
 
-    with st.expander("Zuletzt ausgetragene Board-Matches", expanded=False):
-        all_matches = []
-        for sess in all_sessions_sorted:
-            sess_date = sess.get("datum", "")
-            for (round_num, board_name), m_info in sess.get("results", {}).items():
-                if not m_info.get("winner"): continue
-                all_matches.append({
-                    "Datum": sess_date, "Runde": round_num, "Board": board_name,
-                    "Spieler": f"{m_info['s1']} vs {m_info['s2']}",
-                    "Ergebnis": m_info['ergebnis'], "Sieger": m_info['winner']
-                })
-                
-        if all_matches:
-            for m in all_matches[:15]: 
-                with st.container(border=True):
-                    st.markdown(f"**{m['Datum']} - {m['Board']}** (Runde {m['Runde']})")
-                    st.caption(f"⚔️ {m['Spieler']}")
-                    st.markdown(f"Ergebnis: {m['Ergebnis']} | Sieger: **{m['Sieger']}**")
+    with st.expander("📋 Ergebnisse der letzten Sessions ansehen", expanded=False):
+        recent_sessions = [s for s in all_sessions_sorted if not s.get("is_liga")][:5]
+        if not recent_sessions:
+            st.info("Bisher wurden keine Sessions ausgetragen.")
         else:
-            st.info("Bisher wurden keine Board-Matches ausgetragen.")
+            st.write("Klicke auf '📊 Ergebnisse', um dir alle Matches und den Endstand der jeweiligen Session in einem neuen Fenster anzusehen.")
+            for r_sess in recent_sessions:
+                with st.container(border=True):
+                    c_info, c_btn = st.columns([3, 1])
+                    with c_info:
+                        status = "✅ Abgeschlossen" if is_session_completed(r_sess) else "🔴 Aktiv"
+                        st.markdown(f"**{r_sess['datum']}** (ID: {r_sess['id']}) — {status}")
+                        st.caption(f"{r_sess.get('modus', '')}")
+                    with c_btn:
+                        if st.button("📊 Ergebnisse", key=f"btn_quickview_{r_sess['id']}", use_container_width=True):
+                            open_session_summary_dialog(r_sess['id'])
 
 with tab_kader:
     st.subheader("Kader & Spielerbilanz (Teamtraining)")
