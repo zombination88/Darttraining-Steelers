@@ -1927,7 +1927,7 @@ with tab_liga:
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
                     if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
-                        open_liga_bericht_dialog(l_sess['id'])
+                        open_liga_bericht_dialog(liga_sessions.index(l_sess))
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
