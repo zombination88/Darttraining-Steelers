@@ -1670,11 +1670,12 @@ with tab_liga:
     active_liga = [l for l in liga_sessions if not l.get("is_locked", False)]
     completed_liga = [l for l in liga_sessions if l.get("is_locked", False)]
     
+# ... existing code ...
     if not active_liga:
         st.info("Keine aktiven Freundschaftsspiele vorhanden. Starte oben ein neues Spiel.")
     else:
         for l_sess in active_liga:
-            real_idx = st.session_state.sessions_list.index(l_sess)
+            l_idx = liga_sessions.index(l_sess)
             heim = l_sess.get("heim_team", "Heim")
             gast = l_sess.get("gast_team", "Gast")
             res = l_sess.setdefault("results", {})
@@ -1711,9 +1712,9 @@ with tab_liga:
                     st.warning(f"Phase 1: Alle {t_size} Einzelspieler eintragen (verdeckt)")
                     c_h, c_g = st.columns(2)
                     if not h_einzel_ok and c_h.button("🔒 Heim Aufstellen", key=f"h_setup_{l_sess['id']}"):
-                        open_liga_aufstellung_einzel(real_idx, True)
+                        open_liga_aufstellung_einzel(l_idx, True)
                     if not g_einzel_ok and c_g.button("🔒 Gast Aufstellen", key=f"g_setup_{l_sess['id']}"):
-                        open_liga_aufstellung_einzel(real_idx, False)
+                        open_liga_aufstellung_einzel(l_idx, False)
                 elif not is_done:
                     curr_round_idx = 0
                     for r_idx, round_matches in enumerate(rounds_list):
@@ -1730,15 +1731,15 @@ with tab_liga:
                             st.warning("Phase 2: Doppel-Aufstellungen eintragen")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
-                                open_liga_aufstellung_doppel(real_idx, True)
+                                open_liga_aufstellung_doppel(l_idx, True)
                             if not g_doppel_ok and c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}"):
-                                open_liga_aufstellung_doppel(real_idx, False)
+                                open_liga_aufstellung_doppel(l_idx, False)
                     elif curr_round_idx >= 1:
                         c_opt1, c_opt2 = st.columns(2)
                         if not auf_h.get("hd1") and c_opt1.button("🔒 Heim Doppel aufstellen", key=f"opt_h_doppel_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(real_idx, True)
+                            open_liga_aufstellung_doppel(l_idx, True)
                         if not auf_g.get("gd1") and c_opt2.button("🔒 Gast Doppel aufstellen", key=f"opt_g_doppel_{l_sess['id']}"):
-                            open_liga_aufstellung_doppel(real_idx, False)
+                            open_liga_aufstellung_doppel(l_idx, False)
                                 
                     if curr_round_idx < len(rounds_list):
                         active_matches = rounds_list[curr_round_idx]
@@ -1761,31 +1762,51 @@ with tab_liga:
                                     if i % 2 == 1:
                                         st.markdown(f"Gast (links): **{p_gast}**")
                                         if not is_played and not "d" in g_key and is_kreuz_round:
-                                            if st.button("🔄", key=f"sub_g_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(real_idx, g_key, False, p_gast)
+                                            if st.button("🔄", key=f"sub_g_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(l_idx, g_key, False, p_gast)
                                         st.markdown(f"Heim: **{p_heim}**")
-                for b_idx, b_name in enumerate(b_list):
-                    if b_idx == 0:
-                        platz1 = w.get("Kaiser B1", "-")
-                        platz2 = w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
-                    else:
-                        platz1 = l.get(b_list[b_idx-1], "-")
-                        platz2 = w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
-                    
-                    m_inf = res.get((last_played_round, b_name))
-                    m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
-                    
-                    st.markdown(f"""
-                    <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
-                        <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
-                        <p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p>
-                        <p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p>
-                        <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                st.divider()
-                    if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
-                        open_liga_bericht_dialog(real_idx)
+                                        if not is_played and not "d" in h_key and is_kreuz_round:
+                                            if st.button("🔄", key=f"sub_h_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(l_idx, h_key, True, p_heim)
+                                    else:
+                                        st.markdown(f"Heim (links): **{p_heim}**")
+                                        if not is_played and not "d" in h_key and is_kreuz_round:
+                                            if st.button("🔄", key=f"sub_h_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(l_idx, h_key, True, p_heim)
+                                        st.markdown(f"Gast: **{p_gast}**")
+                                        if not is_played and not "d" in g_key and is_kreuz_round:
+                                            if st.button("🔄", key=f"sub_g_{m_key}_{l_sess['id']}"): open_liga_sub_dialog(l_idx, g_key, False, p_gast)
+                                            
+                                    if is_played:
+                                        m_inf = res[m_key]
+                                        st.success(f"Ergebnis: {m_inf['lh']}:{m_inf['lg']}")
+                                    else:
+                                        if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True):
+                                            open_liga_live_board_dialog(l_idx, m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
 
+                if is_done or (h_einzel_ok and g_einzel_ok):
+                    st.divider()
+                    if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
+                        open_liga_bericht_dialog(l_idx)
+
+    st.write("")
+    st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
+# ... existing code ...
+```
+
+### 2. Kleine Reparatur im Reiter "Match-Archiv" (`tab_archiv`)
+Auch im Match-Archiv wurde der falsche Index `orig_idx` an die Spielbericht-Dialogbox gesendet. Tausche dort diesen kleinen 3-Spalten-Block aus:
+
+```python:Wehringer Steelers - App:app.py
+# ... existing code ...
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True):
+                            open_liga_bericht_dialog(liga_sessions.index(sess))
+                    with c2:
+                        if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True):
+                            open_edit_liga_session_dialog(liga_sessions.index(sess))
+# ... existing code ...
+```
+
+Damit sind die fehlerhafte Überschneidung der Ansichten und die fehlerhafte Einrückung komplett repariert. Der Button zum Einsehen des Spielberichts taucht nun wieder nahtlos und anklickbar unter den Runden auf!
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
     st.write("Hier findest du alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
