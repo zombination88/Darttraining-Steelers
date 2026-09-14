@@ -2016,19 +2016,107 @@ with tab_liga:
                 except Exception as e:
                     st.error(f"PDF-Generierung fehlgeschlagen: {e}")
 
+@st.dialog("📆 Steelers Saison-Kalender", width="large")
+def open_saison_kalender_dialog():
+    import calendar
+    wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wettkampf")]
+    
+    d_list = []
+    for s in wettkampf_sessions:
+        try: d_list.append(datetime.strptime(s["datum"], "%d.%m.%Y").date())
+        except: pass
+        
+    if not d_list:
+        st.info("Noch keine Liga-Spiele vorhanden. Bitte Spielplan importieren.")
+        if st.button("Schließen"): st.rerun()
+        return
+        
+    min_d, max_d = min(d_list), max(d_list)
+    
+    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wehringer Steelers//DE"]
+    def add_ics_event(dt, title):
+        ds = dt.strftime("%Y%m%d")
+        ics_lines.extend(["BEGIN:VEVENT", f"DTSTART;VALUE=DATE:{ds}", f"SUMMARY:{title}", "END:VEVENT"])
+
+    html_blocks = ["<div style='color: white;'>"]
+    html_blocks.append("""<style>
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 20px;}
+    .c-head { text-align: center; font-weight: bold; background: #333; padding: 4px; border-radius: 4px; font-size:0.85em;}
+    .c-day { border: 1px solid #444; border-radius: 4px; min-height: 70px; padding: 4px; font-size: 0.8em; background: #1e1e1e;}
+    .c-empty { border: none; background: transparent; }
+    .e-h { background: #2e7d32; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
+    .e-g { background: #d84315; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
+    .e-t { background: #1976d2; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; text-align:center;}
+    </style>""")
+    
+    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
+    
+    games_by_date = {}
+    games_by_week = set()
+    for s in wettkampf_sessions:
+        try:
+            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
+            is_h = (s.get("heim_team", "") == "FSV Wehringen")
+            gegner = s.get("gast_team") if is_h else s.get("heim_team")
+            games_by_date[d] = {"heim": is_h, "gegner": gegner}
+            games_by_week.add(d.isocalendar()[:2])
+        except: pass
+
+    curr_year, curr_month = min_d.year, min_d.month
+    while True:
+        html_blocks.append(f"<h4 style='margin-bottom:10px; margin-top:20px; color:#fff;'>{month_names[curr_month]} {curr_year}</h4><div class='c-grid'>")
+        for dw in days_of_week: html_blocks.append(f"<div class='c-head'>{dw}</div>")
+            
+        for week in calendar.monthcalendar(curr_year, curr_month):
+            for day in week:
+                if day == 0:
+                    html_blocks.append("<div class='c-day c-empty'></div>")
+                else:
+                    curr_date = date(curr_year, curr_month, day)
+                    content = f"<div style='color:#aaa; margin-bottom:2px;'>{day}</div>"
+                    
+                    if curr_date in games_by_date:
+                        g = games_by_date[curr_date]
+                        if g["heim"]:
+                            content += f"<div class='e-h'>🏠 Heim<br><span style='font-size:0.8em; font-weight:normal;'>vs {g['gegner']}</span></div>"
+                            add_ics_event(curr_date, f"🎯 Heimspiel vs {g['gegner']}")
+                        else:
+                            content += f"<div class='e-g'>🚌 Auswärts<br><span style='font-size:0.8em; font-weight:normal;'>@ {g['gegner']}</span></div>"
+                            add_ics_event(curr_date, f"🎯 Auswärts @ {g['gegner']}")
+                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
+                        content += "<div class='e-t'>🎯 Training</div>"
+                        add_ics_event(curr_date, "🎯 Steelers Teamtraining")
+                                
+                    html_blocks.append(f"<div class='c-day'>{content}</div>")
+        html_blocks.append("</div>")
+        if curr_year == max_d.year and curr_month == max_d.month: break
+        curr_month += 1
+        if curr_month > 12: curr_month, curr_year = 1, curr_year + 1
+
+    html_blocks.append("</div>")
+    ics_lines.append("END:VCALENDAR")
+    st.markdown("".join(html_blocks), unsafe_allow_html=True)
+    st.divider()
+    st.download_button("📥 Kalender exportieren (.ics für Handy/Outlook)", data="\r\n".join(ics_lines), file_name="steelers_saison.ics", mime="text/calendar", type="primary", use_container_width=True)
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
 with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
     
-    c_btn_w1, c_btn_w2 = st.columns(2)
+    c_btn_w1, c_btn_w2, c_btn_w3 = st.columns(3)
     with c_btn_w1:
-        if st.button("➕ Neuen Liga-Spieltag manuell erfassen", type="primary", use_container_width=True):
+        if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True):
             open_new_wettkampf_dialog()
     with c_btn_w2:
-        if st.button("📅 Offiziellen Spielplan 26/27 importieren", use_container_width=True):
+        if st.button("📅 Spielplan importieren", use_container_width=True):
             import_liga_spielplan()
             st.success("Spielplan wurde erfolgreich importiert!")
             st.rerun()
+    with c_btn_w3:
+        if st.button("📆 Saison-Kalender öffnen", use_container_width=True):
+            open_saison_kalender_dialog()
         
     st.divider()
     
