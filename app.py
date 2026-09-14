@@ -1688,7 +1688,7 @@ with tab_kader:
     for p in kader:
         if stats[p]["Avg_Count"] > 0:
             p_avg = stats[p]["Avg_Sum"] / stats[p]["Avg_Count"]
-            if p_avg > best_avg_val: best_avg_val, best_avg_player = p_avg
+            if p_avg > best_avg_val: best_avg_val, best_avg_player = p_avg, p
     avg_text = f"Ø {best_avg_val:.1f}" if best_avg_val > 0 else "Kein Avg erfasst"
     
     max_180_player = max(kader, key=lambda p: stats[p]["180er"])
