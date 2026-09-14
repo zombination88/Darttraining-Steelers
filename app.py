@@ -678,6 +678,21 @@ def open_session_summary_dialog(session_id):
         st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
         st.divider()
     
+    st.markdown("#### 📋 Alle Spielergebnisse (Detail-Ansicht)")
+    for r in range(1, total_rounds + 1):
+        r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
+        
+        # Prüfen, ob in dieser Runde bereits Matches beendet wurden
+        has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
+        
+        if has_matches:
+            with st.expander(f"🎯 {r_head}"):
+                for b_name in get_boards_list(sess, r):
+                    m_info = res.get((r, b_name))
+                    if m_info and m_info.get("winner"):
+                        st.markdown(f"**{b_name}:** {m_info['s1']} vs {m_info['s2']} ➔ **{m_info['ergebnis']}** *(Sieger: {m_info['winner']})*")
+    st.divider()
+
     if singles_rounds > 0 and not is_pure_coop:
         last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
         if last_played_round > 0:
@@ -1927,7 +1942,7 @@ with tab_liga:
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
                     if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
-                        open_liga_bericht_dialog(liga_sessions.index(l_sess))
+                        open_liga_bericht_dialog(l_sess['id'])
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
