@@ -659,11 +659,33 @@ def open_session_summary_dialog(session_id):
         last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
         if last_played_round > 0:
             st.markdown(f"#### 🎯 Einzel-Phase (Endstand nach Runde {last_played_round}/{singles_rounds})")
-            for b_name in get_boards_list(sess, last_played_round):
+            
+            boards_in_last_round = get_boards_list(sess, last_played_round)
+            w = {}
+            l = {}
+            for b in boards_in_last_round:
+                m_info = res.get((last_played_round, b))
+                if m_info and m_info.get("winner"):
+                    w[b] = m_info["winner"]
+                    l[b] = m_info["loser"]
+                else:
+                    w[b] = "-"
+                    l[b] = "-"
+
+            for b_idx, b_name in enumerate(boards_in_last_round):
                 match_info = res.get((last_played_round, b_name))
                 if match_info and match_info.get("winner"):
-                    # NEU: Das Match-Ergebnis wird direkt in den Block geschrieben!
-                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0 0 5px 0; font-size: 0.9em; color: #aaa;'>{match_info.get('s1')} vs {match_info.get('s2')} ➔ <b>{match_info.get('ergebnis')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{match_info.get('winner')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{match_info.get('loser')}</b></p></div>", unsafe_allow_html=True)
+                    # Berechne den WAHREN Endstand (wer steht NACH diesem Match auf diesem Board)
+                    if b_idx == 0:
+                        next_p1 = w.get(boards_in_last_round[0], "-")
+                        next_p2 = w.get(boards_in_last_round[1], "-") if len(boards_in_last_round) > 1 else next_p1
+                    else:
+                        prev_board = boards_in_last_round[b_idx - 1]
+                        next_board = boards_in_last_round[b_idx + 1] if b_idx + 1 < len(boards_in_last_round) else None
+                        next_p1 = l.get(prev_board, "-")
+                        next_p2 = w.get(next_board, "-") if next_board else l.get(boards_in_last_round[b_idx], "-")
+
+                    st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0 0 5px 0; font-size: 0.9em; color: #aaa;'>{match_info.get('s1')} vs {match_info.get('s2')} ➔ <b>{match_info.get('ergebnis')}</b></p><p style='margin: 0; font-size: 0.95em;'>🥇 1. Platz: <b>{next_p1}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{next_p2}</b></p></div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-style: italic; color: #888;'>Match ausstehend.</p></div>", unsafe_allow_html=True)
             st.divider()
