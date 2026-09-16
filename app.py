@@ -416,7 +416,7 @@ def open_wettkampf_blitz_dialog(session_id):
     st.info("Lade ein Foto des BDV-Spielberichts hoch. Es wird dir hier groß als Hilfe angezeigt, um die Daten bequem abzutippen.")
     uploaded_file = st.file_uploader("Foto wählen", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
     if uploaded_file is not None:
-        st.image(uploaded_file, use_column_width=True)
+        st.image(uploaded_file, use_container_width=True)
         
     st.divider()
     st.write("### 🎯 Aufstellung & Ergebnisse eintragen")
@@ -624,6 +624,7 @@ def get_board_players(session, round_num, board_name):
     
     spieler = session["spieler"].copy()
     
+    # Echte 1. Platz / 2. Platz Umkehr für Startaufstellung (Eser/Mak landen auf letztem Board)
     if round_num == 1 and not in_coop_phase and not is_2v2:
         all_sessions = sorted(training_sessions, key=lambda x: int(x['id'].split('-')[1]) if 'id' in x and '-' in x['id'] else 0, reverse=True)
         try:
@@ -852,6 +853,7 @@ def open_session_summary_dialog(session_id):
     for r in range(1, total_rounds + 1):
         r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
         
+        # Prüfen, ob in dieser Runde bereits Matches beendet wurden
         has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
         
         if has_matches:
@@ -1290,6 +1292,260 @@ def generate_spielbericht_pdf(sess):
 
     pdf_out.seek(0)
     return pdf_out
+
+def generate_calendar_pdf(wettkampf_sessions, min_d, max_d):
+    import io
+    import calendar
+    from datetime import date
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+
+    packet = io.BytesIO()
+    doc = SimpleDocTemplate(packet, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(name='Title', parent=styles['Heading1'], fontSize=18, spaceAfter=15)
+    day_style = ParagraphStyle(name='Day', fontSize=10, textColor=colors.black, spaceAfter=5)
+    event_style_heim = ParagraphStyle(name='EvH', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#2e7d32'), alignment=1, spaceBefore=2, spaceAfter=2)
+    event_style_gast = ParagraphStyle(name='EvG', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#d84315'), alignment=1, spaceBefore=2, spaceAfter=2)
+    event_style_train = ParagraphStyle(name='EvT', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#1976d2'), alignment=1, spaceBefore=2, spaceAfter=2)
+
+    games_by_date = {}
+    games_by_week = set()
+    for s in wettkampf_sessions:
+        try:
+            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
+            is_h = (s.get("heim_team", "") == "FSV Wehringen")
+            gegner = s.get("gast_team") if is_h else s.get("heim_team")
+            games_by_date[d] = {"heim": is_h, "gegner": gegner}
+            games_by_week.add(d.isocalendar()[:2])
+        except: pass
+
+    curr_year, curr_month = min_d.year, min_d.month
+    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
+    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+    while True:
+        elements.append(Paragraph(f"{month_names[curr_month]} {curr_year}", title_style))
+        
+        data = [days_of_week]
+        for week in calendar.monthcalendar(curr_year, curr_month):
+            row = []
+            for day in week:
+                if day == 0:
+                    row.append("")
+                else:
+                    curr_date = date(curr_year, curr_month, day)
+                    cell_content = [Paragraph(str(day), day_style)]
+                    
+                    if curr_date in games_by_date:
+                        g = games_by_date[curr_date]
+                        if g["heim"]:
+                            cell_content.append(Paragraph(f"Heim vs<br/>{g['gegner']}", event_style_heim))
+                        else:
+                            cell_content.append(Paragraph(f"Ausw. @<br/>{g['gegner']}", event_style_gast))
+                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
+                        cell_content.append(Paragraph("Training", event_style_train))
+                    
+                    row.append(cell_content)
+            data.append(row)
+        
+        t = Table(data, colWidths=[110] * 7)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+        ]))
+        
+        for i in range(1, len(data)):
+            t._argH[i] = 60
+            
+        elements.append(t)
+        elements.append(Spacer(1, 30))
+        
+        if curr_year == max_d.year and curr_month == max_d.month:
+            break
+        curr_month += 1
+        if curr_month > 12:
+            curr_month = 1
+            curr_year += 1
+
+    doc.build(elements)
+    return packet.getvalue()
+
+def import_liga_spielplan():
+    plan = [
+        ("15.09.2026", "FSV Wehringen", "DC Bavarian Knights Hurlach III"),
+        ("21.09.2026", "SV Bergheim Darts III", "FSV Wehringen"),
+        ("29.09.2026", "FSV Wehringen", "SC Eurasburg"),
+        ("12.10.2026", "Rabbits Lechfeld II", "FSV Wehringen"),
+        ("27.10.2026", "FSV Wehringen", "SC Eurasburg II"),
+        ("10.11.2026", "FSV Wehringen", "DJK Lechhausen VII"),
+        ("23.11.2026", "SV Bergheim Darts II", "FSV Wehringen"),
+        ("01.12.2026", "FSV Wehringen", "TSV Schmiechen"),
+        ("17.12.2026", "TSV Schmiechen II", "FSV Wehringen"),
+        ("12.01.2027", "FSV Wehringen", "Dartfreunde Umbach III"),
+        ("04.02.2027", "DC Bavarian Knights Hurlach III", "FSV Wehringen"),
+        ("16.02.2027", "FSV Wehringen", "SV Bergheim Darts III"),
+        ("01.03.2027", "SC Eurasburg", "FSV Wehringen"),
+        ("09.03.2027", "FSV Wehringen", "Rabbits Lechfeld II"),
+        ("17.03.2027", "SC Eurasburg II", "FSV Wehringen"),
+        ("07.04.2027", "DJK Lechhausen VII", "FSV Wehringen"),
+        ("13.04.2027", "FSV Wehringen", "SV Bergheim Darts II"),
+        ("27.04.2027", "TSV Schmiechen", "FSV Wehringen"),
+        ("11.05.2027", "FSV Wehringen", "TSV Schmiechen II"),
+        ("31.05.2027", "Dartfreunde Umbach III", "FSV Wehringen")
+    ]
+    changed = False
+    for datum, heim, gast in plan:
+        exists = any(s.get("is_wettkampf") and s.get("datum") == datum for s in st.session_state.sessions_list)
+        if not exists:
+            max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
+            new_session = {
+                "id": f"W-{max_id + 1}",
+                "datum": datum,
+                "is_wettkampf": True,
+                "heim_team": heim,
+                "gast_team": gast,
+                "is_heimspiel": heim == "FSV Wehringen",
+                "auf_heim": {},
+                "auf_gast": {},
+                "results": {},
+                "is_locked": False
+            }
+            st.session_state.sessions_list.append(new_session)
+            changed = True
+    if changed:
+        smart_sync_and_save(st.session_state.sessions_list)
+
+@st.dialog("🏆 Neuen Liga-Spieltag manuell erfassen", width="large")
+def open_new_wettkampf_dialog():
+    c1, c2 = st.columns(2)
+    session_datum = c1.date_input("Datum des Spieltags", date.today(), key="wk_datum")
+    is_heimspiel = c2.checkbox("🏠 Heimspiel (FSV Wehringen ist Team 1)", value=True)
+    gegner = st.text_input("Gegnerische Mannschaft", placeholder="z.B. DC Irgendwas")
+    
+    cb1, cb2 = st.columns(2)
+    with cb1:
+        if st.button("Abbrechen", use_container_width=True, key="wk_cancel"): st.rerun()
+    with cb2:
+        if st.button("Spieltag anlegen", type="primary", use_container_width=True, key="wk_save"):
+            if not gegner.strip():
+                st.error("Bitte Gegner eintragen!")
+            else:
+                max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
+                heim_team = "FSV Wehringen" if is_heimspiel else gegner.strip()
+                gast_team = gegner.strip() if is_heimspiel else "FSV Wehringen"
+                
+                new_session = {
+                    "id": f"W-{max_id + 1}",
+                    "datum": session_datum.strftime("%d.%m.%Y"),
+                    "is_wettkampf": True,
+                    "heim_team": heim_team,
+                    "gast_team": gast_team,
+                    "is_heimspiel": is_heimspiel,
+                    "auf_heim": {},
+                    "auf_gast": {},
+                    "results": {},
+                    "is_locked": False
+                }
+                st.session_state.sessions_list.append(new_session)
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+
+@st.dialog("⚡ Blitz-Erfassung: Liga-Spielbericht", width="large")
+def open_wettkampf_blitz_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    
+    st.write("### 📸 Abtipp-Hilfe")
+    st.info("Lade ein Foto des BDV-Spielberichts hoch. Es wird dir hier groß als Hilfe angezeigt, um die Daten bequem abzutippen.")
+    uploaded_file = st.file_uploader("Foto wählen", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+    if uploaded_file is not None:
+        st.image(uploaded_file, use_container_width=True)
+        
+    st.divider()
+    st.write("### 🎯 Aufstellung & Ergebnisse eintragen")
+    
+    auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
+    res = sess.setdefault("results", {})
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**Heim:** {sess['heim_team']}")
+        for i in range(1, 5): auf_h[f"h{i}"] = st.text_input(f"Heim Einzel {i}", auf_h.get(f"h{i}", ""), key=f"wk_h{i}_{sess['id']}")
+        auf_h["hd1"] = st.text_input("Heim Doppel 1", auf_h.get("hd1", ""), key=f"wk_hd1_{sess['id']}")
+        auf_h["hd2"] = st.text_input("Heim Doppel 2", auf_h.get("hd2", ""), key=f"wk_hd2_{sess['id']}")
+    with c2:
+        st.markdown(f"**Gast:** {sess['gast_team']}")
+        for i in range(1, 5): auf_g[f"g{i}"] = st.text_input(f"Gast Einzel {i}", auf_g.get(f"g{i}", ""), key=f"wk_g{i}_{sess['id']}")
+        auf_g["gd1"] = st.text_input("Gast Doppel 1", auf_g.get("gd1", ""), key=f"wk_gd1_{sess['id']}")
+        auf_g["gd2"] = st.text_input("Gast Doppel 2", auf_g.get("gd2", ""), key=f"wk_gd2_{sess['id']}")
+
+    st.divider()
+    
+    match_plan = [
+        ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
+        ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),
+        ("m5", "Kreuz 1", "h1", "g2"), ("m6", "Kreuz 2", "h2", "g1"),
+        ("m7", "Kreuz 3", "h3", "g4"), ("m8", "Kreuz 4", "h4", "g3"),
+        ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")
+    ]
+    
+    all_valid = True
+    for m_key, label, h_key, g_key in match_plan:
+        p_heim = auf_h.get(h_key, "-") if auf_h.get(h_key, "") else "-"
+        p_gast = auf_g.get(g_key, "-") if auf_g.get(g_key, "") else "-"
+        m_data = res.get(m_key, {})
+        
+        with st.expander(f"{label}: {p_heim} vs {p_gast}", expanded=False):
+            c_lh, c_vs, c_lg = st.columns([2, 1, 2])
+            lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"wk_lh_{m_key}_{sess['id']}")
+            c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
+            lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"wk_lg_{m_key}_{sess['id']}")
+            
+            c_stats1, c_stats2 = st.columns(2)
+            h180 = c_stats1.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"wk_180h_{m_key}_{sess['id']}")
+            h_hf = c_stats1.number_input("High Finish Heim (>99)", 0, 170, m_data.get("hf_h", 0), key=f"wk_hfh_{m_key}_{sess['id']}")
+            h_sl = c_stats1.number_input("Short Leg Heim (<19)", 0, 18, m_data.get("sl_h", 0), key=f"wk_slh_{m_key}_{sess['id']}")
+            
+            g180 = c_stats2.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"wk_180g_{m_key}_{sess['id']}")
+            g_hf = c_stats2.number_input("High Finish Gast (>99)", 0, 170, m_data.get("hf_g", 0), key=f"wk_hfg_{m_key}_{sess['id']}")
+            g_sl = c_stats2.number_input("Short Leg Gast (<19)", 0, 18, m_data.get("sl_g", 0), key=f"wk_slg_{m_key}_{sess['id']}")
+
+            is_played = (lh > 0 or lg > 0)
+            if is_played and not ((lh == 3 and lg < 3) or (lg == 3 and lh < 3)):
+                st.error("🚨 Best of 5: Ein Spieler muss exakt 3 Legs haben!")
+                all_valid = False
+                
+            res[m_key] = {
+                "lh": lh, "lg": lg, "played": is_played, 
+                "180_h": h180, "180_g": g180,
+                "hf_h": h_hf, "hf_g": g_hf,
+                "sl_h": h_sl, "sl_g": g_sl
+            }
+
+    st.divider()
+    is_locked = sess.get("is_locked", False)
+    lock_spiel = st.checkbox("🔒 Spieltag abschließen (Wertung endgültig speichern)", value=is_locked, key=f"wk_lock_{sess['id']}")
+
+    if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True, disabled=not all_valid):
+        sess["auf_heim"] = auf_h
+        sess["auf_gast"] = auf_g
+        sess["is_locked"] = lock_spiel
+        sess["results"] = res
+        st.session_state.sessions_list[real_idx] = sess
+        smart_sync_and_save(st.session_state.sessions_list)
+        st.rerun()
 
 @st.dialog("➕ Neues Freundschaftsspiel starten", width="large")
 def open_new_liga_match_dialog():
@@ -2449,7 +2705,7 @@ with tab_regeln:
         st.markdown("""
         * Eigener Bereich im Tab **Freundschaftsspiele**.
         * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup). Doppel dürfen erst aufgestellt werden, wenn alle Einzel und Kreuz-Einzel gespielt sind.
-        * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er- oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
+        * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.
         """)
