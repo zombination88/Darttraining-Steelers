@@ -423,20 +423,37 @@ def open_wettkampf_blitz_dialog(session_id):
     
     auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
     res = sess.setdefault("results", {})
+    is_heimspiel = sess.get("is_heimspiel", True)
+    kader_list = ["-"] + sorted(kader)
     
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"**Heim:** {sess['heim_team']}")
-        for i in range(1, 5): auf_h[f"h{i}"] = st.text_input(f"Heim Einzel {i}", auf_h.get(f"h{i}", ""), key=f"wk_h{i}_{sess['id']}")
+        for i in range(1, 5): 
+            val = auf_h.get(f"h{i}", "")
+            if is_heimspiel:
+                idx = kader_list.index(val) if val in kader_list else 0
+                auf_h[f"h{i}"] = st.selectbox(f"Heim Pos {i}", kader_list, index=idx, key=f"wk_h{i}_{sess['id']}")
+            else:
+                auf_h[f"h{i}"] = st.text_input(f"Heim Pos {i}", val, key=f"wk_h{i}_{sess['id']}")
         auf_h["hd1"] = st.text_input("Heim Doppel 1", auf_h.get("hd1", ""), key=f"wk_hd1_{sess['id']}")
         auf_h["hd2"] = st.text_input("Heim Doppel 2", auf_h.get("hd2", ""), key=f"wk_hd2_{sess['id']}")
+        
     with c2:
         st.markdown(f"**Gast:** {sess['gast_team']}")
-        for i in range(1, 5): auf_g[f"g{i}"] = st.text_input(f"Gast Einzel {i}", auf_g.get(f"g{i}", ""), key=f"wk_g{i}_{sess['id']}")
+        for i in range(1, 5): 
+            val = auf_g.get(f"g{i}", "")
+            if not is_heimspiel:
+                idx = kader_list.index(val) if val in kader_list else 0
+                auf_g[f"g{i}"] = st.selectbox(f"Gast Pos {i}", kader_list, index=idx, key=f"wk_g{i}_{sess['id']}")
+            else:
+                auf_g[f"g{i}"] = st.text_input(f"Gast Pos {i}", val, key=f"wk_g{i}_{sess['id']}")
         auf_g["gd1"] = st.text_input("Gast Doppel 1", auf_g.get("gd1", ""), key=f"wk_gd1_{sess['id']}")
         auf_g["gd2"] = st.text_input("Gast Doppel 2", auf_g.get("gd2", ""), key=f"wk_gd2_{sess['id']}")
 
     st.divider()
+    st.write("### ⚔️ Match-Ergebnisse & Auswechslungen")
+    st.caption("Falls in einem Match (z.B. bei den Kreuz-Einzeln) jemand ausgewechselt wurde, ändere den Namen direkt hier beim Match!")
     
     match_plan = [
         ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
@@ -448,11 +465,31 @@ def open_wettkampf_blitz_dialog(session_id):
     
     all_valid = True
     for m_key, label, h_key, g_key in match_plan:
-        p_heim = auf_h.get(h_key, "-") if auf_h.get(h_key, "") else "-"
-        p_gast = auf_g.get(g_key, "-") if auf_g.get(g_key, "") else "-"
         m_data = res.get(m_key, {})
+        def_h = m_data.get("s1", auf_h.get(h_key, "-") if auf_h.get(h_key, "") else "-")
+        def_g = m_data.get("s2", auf_g.get(g_key, "-") if auf_g.get(g_key, "") else "-")
         
-        with st.expander(f"{label}: {p_heim} vs {p_gast}", expanded=False):
+        with st.expander(f"{label}: {def_h} vs {def_g}", expanded=False):
+            c_name1, c_name2 = st.columns(2)
+            is_doppel = "Doppel" in label
+            
+            if is_heimspiel:
+                if is_doppel:
+                    s1 = c_name1.text_input("Heim Spieler (Doppel)", def_h, key=f"s1_{m_key}_{sess['id']}")
+                else:
+                    idx_h = kader_list.index(def_h) if def_h in kader_list else 0
+                    s1 = c_name1.selectbox("Heim Spieler", kader_list, index=idx_h, key=f"s1_{m_key}_{sess['id']}")
+                s2 = c_name2.text_input("Gast Spieler", def_g, key=f"s2_{m_key}_{sess['id']}")
+            else:
+                s1 = c_name1.text_input("Heim Spieler", def_h, key=f"s1_{m_key}_{sess['id']}")
+                if is_doppel:
+                    s2 = c_name2.text_input("Gast Spieler (Doppel)", def_g, key=f"s2_{m_key}_{sess['id']}")
+                else:
+                    idx_g = kader_list.index(def_g) if def_g in kader_list else 0
+                    s2 = c_name2.selectbox("Gast Spieler", kader_list, index=idx_g, key=f"s2_{m_key}_{sess['id']}")
+
+            st.write("")
+            
             c_lh, c_vs, c_lg = st.columns([2, 1, 2])
             lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"wk_lh_{m_key}_{sess['id']}")
             c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
@@ -473,6 +510,7 @@ def open_wettkampf_blitz_dialog(session_id):
                 all_valid = False
                 
             res[m_key] = {
+                "s1": s1, "s2": s2,
                 "lh": lh, "lg": lg, "played": is_played, 
                 "180_h": h180, "180_g": g180,
                 "hf_h": h_hf, "hf_g": g_hf,
@@ -1249,8 +1287,9 @@ def generate_spielbericht_pdf(sess):
             m_data = res[m_key]
             y = y_coords_pdf.get(m_key, 500)
             
-            h_name = str(auf_h.get(h_key, ""))
-            g_name = str(auf_g.get(g_key, ""))
+            # Liest den Match-spezifischen Namen aus (wichtig für Auswechslungen!), ansonsten die Startaufstellung
+            h_name = str(m_data.get("s1", auf_h.get(h_key, "")))
+            g_name = str(m_data.get("s2", auf_g.get(g_key, "")))
             
             c.drawString(x_name_heim, y, h_name)
             c.drawString(x_name_gast, y, g_name)
@@ -1478,20 +1517,37 @@ def open_wettkampf_blitz_dialog(session_id):
     
     auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
     res = sess.setdefault("results", {})
+    is_heimspiel = sess.get("is_heimspiel", True)
+    kader_list = ["-"] + sorted(kader)
     
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"**Heim:** {sess['heim_team']}")
-        for i in range(1, 5): auf_h[f"h{i}"] = st.text_input(f"Heim Einzel {i}", auf_h.get(f"h{i}", ""), key=f"wk_h{i}_{sess['id']}")
+        for i in range(1, 5): 
+            val = auf_h.get(f"h{i}", "")
+            if is_heimspiel:
+                idx = kader_list.index(val) if val in kader_list else 0
+                auf_h[f"h{i}"] = st.selectbox(f"Heim Pos {i}", kader_list, index=idx, key=f"wk_h{i}_{sess['id']}")
+            else:
+                auf_h[f"h{i}"] = st.text_input(f"Heim Pos {i}", val, key=f"wk_h{i}_{sess['id']}")
         auf_h["hd1"] = st.text_input("Heim Doppel 1", auf_h.get("hd1", ""), key=f"wk_hd1_{sess['id']}")
         auf_h["hd2"] = st.text_input("Heim Doppel 2", auf_h.get("hd2", ""), key=f"wk_hd2_{sess['id']}")
+        
     with c2:
         st.markdown(f"**Gast:** {sess['gast_team']}")
-        for i in range(1, 5): auf_g[f"g{i}"] = st.text_input(f"Gast Einzel {i}", auf_g.get(f"g{i}", ""), key=f"wk_g{i}_{sess['id']}")
+        for i in range(1, 5): 
+            val = auf_g.get(f"g{i}", "")
+            if not is_heimspiel:
+                idx = kader_list.index(val) if val in kader_list else 0
+                auf_g[f"g{i}"] = st.selectbox(f"Gast Pos {i}", kader_list, index=idx, key=f"wk_g{i}_{sess['id']}")
+            else:
+                auf_g[f"g{i}"] = st.text_input(f"Gast Pos {i}", val, key=f"wk_g{i}_{sess['id']}")
         auf_g["gd1"] = st.text_input("Gast Doppel 1", auf_g.get("gd1", ""), key=f"wk_gd1_{sess['id']}")
         auf_g["gd2"] = st.text_input("Gast Doppel 2", auf_g.get("gd2", ""), key=f"wk_gd2_{sess['id']}")
 
     st.divider()
+    st.write("### ⚔️ Match-Ergebnisse & Auswechslungen")
+    st.caption("Falls in einem Match (z.B. bei den Kreuz-Einzeln) jemand ausgewechselt wurde, ändere den Namen direkt hier beim Match!")
     
     match_plan = [
         ("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),
@@ -1503,11 +1559,31 @@ def open_wettkampf_blitz_dialog(session_id):
     
     all_valid = True
     for m_key, label, h_key, g_key in match_plan:
-        p_heim = auf_h.get(h_key, "-") if auf_h.get(h_key, "") else "-"
-        p_gast = auf_g.get(g_key, "-") if auf_g.get(g_key, "") else "-"
         m_data = res.get(m_key, {})
+        def_h = m_data.get("s1", auf_h.get(h_key, "-") if auf_h.get(h_key, "") else "-")
+        def_g = m_data.get("s2", auf_g.get(g_key, "-") if auf_g.get(g_key, "") else "-")
         
-        with st.expander(f"{label}: {p_heim} vs {p_gast}", expanded=False):
+        with st.expander(f"{label}: {def_h} vs {def_g}", expanded=False):
+            c_name1, c_name2 = st.columns(2)
+            is_doppel = "Doppel" in label
+            
+            if is_heimspiel:
+                if is_doppel:
+                    s1 = c_name1.text_input("Heim Spieler (Doppel)", def_h, key=f"s1_{m_key}_{sess['id']}")
+                else:
+                    idx_h = kader_list.index(def_h) if def_h in kader_list else 0
+                    s1 = c_name1.selectbox("Heim Spieler", kader_list, index=idx_h, key=f"s1_{m_key}_{sess['id']}")
+                s2 = c_name2.text_input("Gast Spieler", def_g, key=f"s2_{m_key}_{sess['id']}")
+            else:
+                s1 = c_name1.text_input("Heim Spieler", def_h, key=f"s1_{m_key}_{sess['id']}")
+                if is_doppel:
+                    s2 = c_name2.text_input("Gast Spieler (Doppel)", def_g, key=f"s2_{m_key}_{sess['id']}")
+                else:
+                    idx_g = kader_list.index(def_g) if def_g in kader_list else 0
+                    s2 = c_name2.selectbox("Gast Spieler", kader_list, index=idx_g, key=f"s2_{m_key}_{sess['id']}")
+
+            st.write("")
+            
             c_lh, c_vs, c_lg = st.columns([2, 1, 2])
             lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"wk_lh_{m_key}_{sess['id']}")
             c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
@@ -1528,6 +1604,7 @@ def open_wettkampf_blitz_dialog(session_id):
                 all_valid = False
                 
             res[m_key] = {
+                "s1": s1, "s2": s2,
                 "lh": lh, "lg": lg, "played": is_played, 
                 "180_h": h180, "180_g": g180,
                 "hf_h": h_hf, "hf_g": g_hf,
