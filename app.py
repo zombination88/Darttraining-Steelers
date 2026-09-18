@@ -54,96 +54,108 @@ def init_connection():
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
-        sheet = client.open_by_url(SHEET_URL).worksheet("sessions")
-        return sheet
+        # Wir geben nun das gesamte Spreadsheet-Objekt zurück, um verschiedene Reiter anzusprechen
+        return client.open_by_url(SHEET_URL)
     except Exception as e:
         return None
 
-sheet_conn = init_connection()
+spreadsheet = init_connection()
+
+def ensure_worksheet(sheet_obj, title):
+    """Erstellt ein Tabellenblatt falls es nicht existiert."""
+    try:
+        return sheet_obj.worksheet(title)
+    except:
+        ws = sheet_obj.add_worksheet(title=title, rows=100, cols=2)
+        ws.update([["json_data"]])
+        return ws
+
+def load_chunked(ws):
+    """Lädt zerteilte JSON-Strings, um das 50.000-Zeichen-Limit von Google Sheets zu umgehen."""
+    data = ws.get_all_records()
+    if not data: return []
+    raw_str = "".join([str(r.get("json_data", "")) for r in data])
+    if raw_str:
+        return json.loads(raw_str)
+    return []
+
+def chunked_save(ws, data_list):
+    """Speichert JSON in 40.000-Zeichen-Blöcken auf mehrere Zeilen verteilt ab."""
+    json_str = json.dumps(data_list, ensure_ascii=False)
+    chunks = [json_str[i:i+40000] for i in range(0, len(json_str), 40000)]
+    rows = [["json_data"]] + [[c] for c in chunks]
+    ws.clear()
+    ws.update(rows)
 
 def load_data():
-    if not sheet_conn:
+    if not spreadsheet:
         return []
     try:
-        data = sheet_conn.get_all_records()
-        if data and "json_data" in data[0]:
-            raw_str = data[0]["json_data"]
-            if raw_str:
-                raw_data = json.loads(raw_str)
-                sessions = []
-                for sess in raw_data:
-                    fixed_results = {}
-                    for k, v in sess.get("results", {}).items():
-                        parts = k.split("_", 1)
-                        if len(parts) == 2 and not sess.get("is_liga") and not sess.get("is_wettkampf"):
-                            r_num = int(parts[0])
-                            b_name = parts[1]
-                            fixed_results[(r_num, b_name)] = v
-                        else:
-                            fixed_results[k] = v
-                    sess["results"] = fixed_results
-                    sessions.append(sess)
-                return sessions
+        all_sessions = []
+        
+        # 1. Lade normales Teamtraining
+        try:
+            ws_normal = spreadsheet.worksheet("sessions")
+            all_sessions.extend(load_chunked(ws_normal))
+        except Exception:
+            pass
+            
+        # 2. Lade Liga-Spiele (Aus dem neuen Reiter)
+        try:
+            ws_liga = spreadsheet.worksheet("liga_sessions")
+            all_sessions.extend(load_chunked(ws_liga))
+        except Exception:
+            pass
+            
+        # Alte Tuple-Umwandlung für Boards beibehalten
+        sessions = []
+        for sess in all_sessions:
+            fixed_results = {}
+            for k, v in sess.get("results", {}).items():
+                parts = k.split("_", 1)
+                if len(parts) == 2 and not sess.get("is_liga") and not sess.get("is_wettkampf"):
+                    r_num = int(parts[0])
+                    b_name = parts[1]
+                    fixed_results[(r_num, b_name)] = v
+                else:
+                    fixed_results[k] = v
+            sess["results"] = fixed_results
+            sessions.append(sess)
+        return sessions
     except Exception as e:
         st.error(f"Fehler beim Laden aus Google Sheets: {e}")
     return []
 
 def save_backup_to_cloud(serializable_sessions):
-    """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt (Rolling: max 20 Einträge)."""
+    """Erstellt vollautomatisch einen zeitgestempelten Snapshot im 'backups' Tabellenblatt."""
     try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_url(SHEET_URL)
-        
-        try:
-            backup_ws = spreadsheet.worksheet("backups")
-        except:
-            backup_ws = spreadsheet.add_worksheet(title="backups", rows=100, cols=2)
-            backup_ws.append_row(["Timestamp", "JSON_Data"])
-        
+        if not spreadsheet: return
+        ws = ensure_worksheet(spreadsheet, "backups")
         from zoneinfo import ZoneInfo
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(serializable_sessions, ensure_ascii=False)
-        backup_ws.append_row([ts, json_str])
+        ws.append_row([ts, json_str])
         
         try:
-            all_vals = backup_ws.get_all_values()
+            all_vals = ws.get_all_values()
             if len(all_vals) > 21:
                 rows_to_delete = len(all_vals) - 21
                 for _ in range(rows_to_delete):
                     try:
-                        backup_ws.delete_rows(2)
+                        ws.delete_rows(2)
                     except AttributeError:
-                        backup_ws.delete_row(2)
+                        ws.delete_row(2)
         except Exception:
             pass
     except Exception as e:
         pass
 
 def save_completed_backup(serializable_sessions):
-    """Sicherer Tresor: Führt alte abgeschlossene Spiele mit neuen zusammen (Merge-System) und speichert in einer Zeile."""
+    """Sicherer Tresor für alte Trainings-Sessions (Merge-System)."""
     try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_url(SHEET_URL)
+        if not spreadsheet: return
+        vault_ws = ensure_worksheet(spreadsheet, "completed_backup")
         
-        try:
-            vault_ws = spreadsheet.worksheet("completed_backup")
-        except:
-            vault_ws = spreadsheet.add_worksheet(title="completed_backup", rows=2, cols=2)
-            vault_ws.append_row(["Last_Updated", "JSON_Data_Completed"])
-            
         existing_vault_data = []
         try:
             val = vault_ws.cell(2, 2).value
@@ -155,24 +167,19 @@ def save_completed_backup(serializable_sessions):
         vault_dict = {s["id"]: s for s in existing_vault_data}
         
         for s in serializable_sessions:
-            if (s.get("is_liga") or s.get("is_wettkampf")) and s.get("is_locked"):
-                vault_dict[s["id"]] = s
-            elif not s.get("is_liga") and not s.get("is_wettkampf") and s.get("end_time"):
+            if not s.get("is_liga") and not s.get("is_wettkampf") and s.get("end_time"):
                 vault_dict[s["id"]] = s
                 
         merged_vault = list(vault_dict.values())
-        
-        from zoneinfo import ZoneInfo
-        ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         json_str = json.dumps(merged_vault, ensure_ascii=False)
         
         vault_ws.clear()
-        vault_ws.update([["Last_Updated", "JSON_Data_Completed"], [ts, json_str]])
+        vault_ws.update([["Last_Updated", "JSON_Data_Completed"], [get_local_time_str(), json_str]])
     except Exception:
         pass
 
 def save_data(sessions):
-    if not sheet_conn:
+    if not spreadsheet:
         return
     serializable_sessions = []
     for sess in sessions:
@@ -188,9 +195,21 @@ def save_data(sessions):
         
     try:
         sichere_sessions = make_serializable(serializable_sessions)
-        json_str = json.dumps(sichere_sessions, ensure_ascii=False)
-        sheet_conn.clear()
-        sheet_conn.update([["json_data"], [json_str]])
+        
+        # Aufteilung der Daten auf die einzelnen Sheets
+        normal_sessions = [s for s in sichere_sessions if not s.get("is_wettkampf")]
+        liga_sessions_list = [s for s in sichere_sessions if s.get("is_wettkampf")]
+        completed_liga_list = [s for s in liga_sessions_list if s.get("is_locked")]
+        
+        ws_normal = ensure_worksheet(spreadsheet, "sessions")
+        chunked_save(ws_normal, normal_sessions)
+        
+        ws_liga = ensure_worksheet(spreadsheet, "liga_sessions")
+        chunked_save(ws_liga, liga_sessions_list)
+        
+        ws_completed_liga = ensure_worksheet(spreadsheet, "completed_liga")
+        chunked_save(ws_completed_liga, completed_liga_list)
+        
         save_backup_to_cloud(sichere_sessions)
         save_completed_backup(sichere_sessions)
     except Exception as e:
@@ -327,6 +346,51 @@ def delete_session(session_id):
     else:
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
+
+def import_liga_spielplan():
+    plan = [
+        ("15.09.2026", "FSV Wehringen", "DC Bavarian Knights Hurlach III"),
+        ("21.09.2026", "SV Bergheim Darts III", "FSV Wehringen"),
+        ("29.09.2026", "FSV Wehringen", "SC Eurasburg"),
+        ("12.10.2026", "Rabbits Lechfeld II", "FSV Wehringen"),
+        ("27.10.2026", "FSV Wehringen", "SC Eurasburg II"),
+        ("10.11.2026", "FSV Wehringen", "DJK Lechhausen VII"),
+        ("23.11.2026", "SV Bergheim Darts II", "FSV Wehringen"),
+        ("01.12.2026", "FSV Wehringen", "TSV Schmiechen"),
+        ("17.12.2026", "TSV Schmiechen II", "FSV Wehringen"),
+        ("12.01.2027", "FSV Wehringen", "Dartfreunde Umbach III"),
+        ("04.02.2027", "DC Bavarian Knights Hurlach III", "FSV Wehringen"),
+        ("16.02.2027", "FSV Wehringen", "SV Bergheim Darts III"),
+        ("01.03.2027", "SC Eurasburg", "FSV Wehringen"),
+        ("09.03.2027", "FSV Wehringen", "Rabbits Lechfeld II"),
+        ("17.03.2027", "SC Eurasburg II", "FSV Wehringen"),
+        ("07.04.2027", "DJK Lechhausen VII", "FSV Wehringen"),
+        ("13.04.2027", "FSV Wehringen", "SV Bergheim Darts II"),
+        ("27.04.2027", "TSV Schmiechen", "FSV Wehringen"),
+        ("11.05.2027", "FSV Wehringen", "TSV Schmiechen II"),
+        ("31.05.2027", "Dartfreunde Umbach III", "FSV Wehringen")
+    ]
+    changed = False
+    for datum, heim, gast in plan:
+        exists = any(s.get("is_wettkampf") and s.get("datum") == datum for s in st.session_state.sessions_list)
+        if not exists:
+            max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
+            new_session = {
+                "id": f"W-{max_id + 1}",
+                "datum": datum,
+                "is_wettkampf": True,
+                "heim_team": heim,
+                "gast_team": gast,
+                "is_heimspiel": heim == "FSV Wehringen",
+                "auf_heim": {},
+                "auf_gast": {},
+                "results": {},
+                "is_locked": False
+            }
+            st.session_state.sessions_list.append(new_session)
+            changed = True
+    if changed:
+        smart_sync_and_save(st.session_state.sessions_list)
 
 @st.dialog("🏆 Neuen Liga-Spieltag manuell erfassen", width="large")
 def open_new_wettkampf_dialog():
@@ -803,10 +867,9 @@ def open_liga_rollback_dialog():
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
-        spreadsheet = client.open_by_url(SHEET_URL)
         
         try:
-            backup_ws = spreadsheet.worksheet("backups")
+            backup_ws = client.open_by_url(SHEET_URL).worksheet("backups")
             all_vals = backup_ws.get_all_values()
             
             if len(all_vals) > 1:
@@ -833,12 +896,8 @@ def open_liga_rollback_dialog():
                                 current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
                                 
                                 merged_data = current_other + backup_liga
-                                
-                                sichere_sessions = make_serializable(merged_data)
-                                new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
-                                sheet_conn.clear()
-                                sheet_conn.update([["json_data"], [new_json_str]])
                                 st.session_state.sessions_list = merged_data
+                                save_data(st.session_state.sessions_list)
                                 st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
                                 st.rerun()
                             except Exception as e:
@@ -1211,6 +1270,7 @@ def open_session_summary_dialog(session_id):
     for r in range(1, total_rounds + 1):
         r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
         
+        # Prüfen, ob in dieser Runde bereits Matches beendet wurden
         has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
         
         if has_matches:
@@ -1292,6 +1352,10 @@ def open_session_summary_dialog(session_id):
                 rank += 1
 
     if st.button("Schließen", use_container_width=True): st.rerun()
+
+def get_max_boards_for_players(num_players):
+    if num_players < 2: return 0
+    return num_players // 2
 
 @st.dialog("➕ Neue Session starten")
 def open_new_session_dialog():
@@ -1967,7 +2031,7 @@ with tab_liga:
                         h_doppel_ok = bool(auf_h.get("hd1"))
                         g_doppel_ok = bool(auf_g.get("gd1"))
                         if not h_doppel_ok or not g_doppel_ok:
-                            st.warning("🚨 Nach der Eingabe der letzten Einzelrunde (Einzel + Kreuz-Einzel) müssen nun beide Teams Doppel-Aufstellungen hinterlegen!")
+                            st.warning("🚨 Nach der Eingabe der letzten Einzelrunde (Einzel + Kreuz-Einzel) müssen nun beide Teams ihre Doppel-Aufstellungen hinterlegen!")
                             c_dh, c_dg = st.columns(2)
                             if not h_doppel_ok and c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
                                 open_liga_aufstellung_doppel(l_sess['id'], True)
@@ -2057,21 +2121,21 @@ with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
     
-    c_btn_w1, c_btn_w2, c_btn_w3 = st.columns(3)
+    c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
     with c_btn_w1:
         if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True):
             open_new_wettkampf_dialog()
-    with c_btn_w2:
+    with c_btn_w3:
         if st.button("📆 Saison-Kalender öffnen", use_container_width=True):
             open_saison_kalender_dialog()
-    with c_btn_w3:
+    with c_btn_w4:
         if st.button("♻️ Liga-Backup laden", use_container_width=True):
             open_liga_rollback_dialog()
         
     st.divider()
     
     if not wettkampf_sessions:
-        st.info("Noch keine Liga-Spiele eingetragen. Lege ein Spiel manuell an oder importiere Daten.")
+        st.info("Noch keine Liga-Spiele eingetragen. Lege ein Spiel manuell an.")
     else:
         l_stats = {p: {"Matches": 0, "Siege": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "HFs": [], "SLs": []} for p in kader}
         for sess in wettkampf_sessions:
@@ -2101,7 +2165,7 @@ with tab_wettkampf:
                                 if hf_val >= 100: l_stats[p]["HFs"].append(hf_val)
                                 if 0 < sl_val <= 18: l_stats[p]["SLs"].append(sl_val)
 
-        with st.expander("📊 Spieler-Statistik (Gesamte Saison)"):
+        with st.expander("📊 Spieler-Statistik (Gesamte Saison)", expanded=True):
             table_rows = []
             for p in kader:
                 if l_stats[p]["Matches"] > 0:
@@ -2125,70 +2189,97 @@ with tab_wettkampf:
             except: return datetime.min
         
         sorted_w_sessions = sorted(wettkampf_sessions, key=parse_w_date)
-        active_w_sessions = [s for s in sorted_w_sessions if not s.get("is_locked", False)]
-        completed_w_sessions = [s for s in sorted_w_sessions if s.get("is_locked", False)]
+        
+        active_games = [s for s in sorted_w_sessions if not s.get("is_locked", False)]
+        completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
+        
+        for w_sess in active_games:
+            with st.container(border=True):
+                st.markdown(f"### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
+                
+                res = w_sess.get("results", {})
+                sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
+                hfs, sls, maxs = [], [], []
+                
+                for m_key, m_data in res.items():
+                    if m_data.get("played"):
+                        lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+                        legs_h += lh; legs_g += lg
+                        if lh > lg: sets_h += 1
+                        elif lg > lh: sets_g += 1
+                        
+                        if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
+                        if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
+                        if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
+                        if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                        if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
+                        if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
 
-        if completed_w_sessions:
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Sets", f"{sets_h} : {sets_g}")
+                col2.metric("Legs", f"{legs_h} : {legs_g}")
+                col3.markdown(f"**Status:** 🔴 Aktiv/Ausstehend")
+                
+                if hfs or sls or maxs:
+                    st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
+
+                c_b1, c_b2, c_b3 = st.columns(3)
+                with c_b1:
+                    if st.button("⚡ Blitz-Erfassung", key=f"wk_blitz_{w_sess['id']}", use_container_width=True):
+                        open_wettkampf_blitz_dialog(w_sess['id'])
+                with c_b2:
+                    if w_sess.get("image_b64"):
+                        if st.button("📸 Foto ansehen", key=f"wk_img_{w_sess['id']}", use_container_width=True):
+                            open_image_dialog(w_sess["image_b64"])
+                    else:
+                        st.button("📸 Kein Foto", key=f"wk_img_no_{w_sess['id']}", disabled=True, use_container_width=True)
+                with c_b3:
+                    if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True):
+                        open_delete_session_dialog(w_sess['id'])
+
+        if completed_games:
+            st.write("")
             with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
-                for c_sess in completed_w_sessions:
-                    c1, c2, c3 = st.columns([2, 1, 1])
-                    c1.markdown(f"**{c_sess['datum']}** | {c_sess['heim_team']} vs. {c_sess['gast_team']}")
-                    with c2:
-                        if st.button("📊 Ergebnisse", key=f"view_res_{c_sess['id']}", use_container_width=True):
-                            open_wettkampf_view_dialog(c_sess['id'])
-                    with c3:
-                        if c_sess.get("image_b64"):
-                            if st.button("📸 Foto", key=f"view_img_{c_sess['id']}", use_container_width=True):
-                                open_image_dialog(c_sess["image_b64"])
-                        else:
-                            st.button("📸 Kein Foto", key=f"no_img_{c_sess['id']}", disabled=True, use_container_width=True)
-                    st.divider()
+                for w_sess in completed_games:
+                    with st.container(border=True):
+                        st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
+                        
+                        res = w_sess.get("results", {})
+                        sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
+                        hfs, sls, maxs = [], [], []
+                        
+                        for m_key, m_data in res.items():
+                            if m_data.get("played"):
+                                lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+                                legs_h += lh; legs_g += lg
+                                if lh > lg: sets_h += 1
+                                elif lg > lh: sets_g += 1
+                                
+                                if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
+                                if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
+                                if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
+                                if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                                if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
+                                if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
 
-        st.markdown("### 🔴 Aktive / Ausstehende Spieltage")
-        if not active_w_sessions:
-            st.success("Aktuell gibt es keine offenen Spieltage.")
-        else:
-            for w_sess in active_w_sessions:
-                with st.container(border=True):
-                    st.markdown(f"### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
-                    
-                    res = w_sess.get("results", {})
-                    sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
-                    hfs, sls, maxs = [], [], []
-                    
-                    for m_key, m_data in res.items():
-                        if m_data.get("played"):
-                            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-                            legs_h += lh; legs_g += lg
-                            if lh > lg: sets_h += 1
-                            elif lg > lh: sets_g += 1
-                            
-                            if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
-                            if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
-                            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
-                            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
-                            if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
-                            if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
+                        st.markdown(f"**Sets:** {sets_h}:{sets_g} | **Legs:** {legs_h}:{legs_g} | ✅ Abgeschlossen")
+                        if hfs or sls or maxs:
+                            st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
 
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Sets", f"{sets_h} : {sets_g}")
-                    col2.metric("Legs", f"{legs_h} : {legs_g}")
-                    col3.markdown(f"**Status:** 🔴 Aktiv/Ausstehend")
-                    
-                    if hfs or sls or maxs:
-                        st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
-
-                    c_b1, c_b2 = st.columns(2)
-                    with c_b1:
-                        if st.button("⚡ Blitz-Erfassung (Abtippen)", key=f"wk_blitz_{w_sess['id']}", use_container_width=True):
-                            open_wettkampf_blitz_dialog(w_sess['id'])
-                    with c_b2:
-                        if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True):
-                            open_delete_session_dialog(w_sess['id'])
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            if st.button("📊 Ergebnisse", key=f"wk_res_{w_sess['id']}", use_container_width=True):
+                                open_wettkampf_view_dialog(w_sess['id'])
+                        with col_b:
+                            if w_sess.get("image_b64"):
+                                if st.button("📸 Foto ansehen", key=f"wk_img_arch_{w_sess['id']}", use_container_width=True):
+                                    open_image_dialog(w_sess["image_b64"])
+                            else:
+                                st.button("📸 Kein Foto", key=f"wk_img_arch_no_{w_sess['id']}", disabled=True, use_container_width=True)
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
-    st.caption("Die neueste Session steht hier immer ganz oben. Enthält nur Training und Freundschaftsspiele.")
+    st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
     if st.session_state.sessions_list:
         safe_data_for_export = make_serializable(st.session_state.sessions_list)
