@@ -766,6 +766,80 @@ def open_image_dialog(b64_str):
     st.image(base64.b64decode(b64_str), use_container_width=True)
     if st.button("Schließen", use_container_width=True): st.rerun()
 
+@st.dialog("♻️ Notfall-Wiederherstellung", width="large")
+def open_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies überschreibt die aktuellen Live-Daten unwiderruflich mit dem gewählten Backup!")
+    
+    tab_cloud, tab_local = st.tabs(["☁️ Cloud-Backups (Automatisch)", "📁 Lokale Datei (Manuell)"])
+    
+    with tab_cloud:
+        st.write("Die letzten 20 Aktionen werden im Hintergrund gesichert. Hier kannst du zurückspringen:")
+        try:
+            creds_dict = json.loads(st.secrets["google_json"])
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            client = gspread.authorize(creds)
+            spreadsheet = client.open_by_url(SHEET_URL)
+            
+            try:
+                backup_ws = spreadsheet.worksheet("backups")
+                all_vals = backup_ws.get_all_values()
+                
+                if len(all_vals) > 1:
+                    backups = list(reversed(all_vals[1:]))
+                    confirm = st.checkbox("Ja, ich möchte alte Daten aus der Cloud laden.")
+                    
+                    for i, b in enumerate(backups[:10]):
+                        ts = b[0]
+                        json_str = b[1]
+                        try:
+                            data_preview = json.loads(json_str)
+                            data_info = f"{len(data_preview)} Sessions"
+                        except:
+                            data_info = "Fehlerhaftes JSON"
+                            
+                        c_t, c_b = st.columns([3, 1])
+                        c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                        with c_b:
+                            if st.button("Laden", key=f"rest_{i}", disabled=not confirm, use_container_width=True):
+                                try:
+                                    data = json.loads(json_str)
+                                    sichere_sessions = make_serializable(data)
+                                    new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                                    sheet_conn.clear()
+                                    sheet_conn.update([["json_data"], [new_json_str]])
+                                    st.session_state.sessions_list = data
+                                    st.success("✅ Backup erfolgreich wiederhergestellt!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Fehler: {e}")
+                        st.divider()
+                else:
+                    st.info("Noch keine Cloud-Backups vorhanden.")
+            except Exception as e:
+                st.error("Konnte Backup-Tabelle nicht finden.")
+        except Exception as e:
+            st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+            
+    with tab_local:
+        st.write("Lade hier eine zuvor heruntergeladene .json Backup-Datei hoch:")
+        uploaded_backup = st.file_uploader("JSON Backup wählen", type=["json"])
+        if uploaded_backup is not None:
+            if st.button("⚠️ Daten aus lokaler Datei überschreiben", type="primary", use_container_width=True):
+                try:
+                    data = json.load(uploaded_backup)
+                    sichere_sessions = make_serializable(data)
+                    new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                    sheet_conn.clear()
+                    sheet_conn.update([["json_data"], [new_json_str]])
+                    st.session_state.sessions_list = data
+                    st.success("✅ Backup erfolgreich wiederhergestellt!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fehler: {e}")
+
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
     for logo_path in ["logo.png.png", "logo.png"]:
@@ -1060,6 +1134,155 @@ def is_board_ready(session, board_name, next_r):
                 break
         if not found: return False
     return True
+
+@st.dialog("🔄 Spieler auswechseln")
+def open_substitution_dialog(board_name, session_id, round_num, slot_num, current_player):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    alle_spieler = list(set(sess.get("spieler", kader) + [current_player]))
+    if "-" not in alle_spieler: alle_spieler.append("-")
+    alle_spieler.sort()
+
+    st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
+    idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
+    new_sel = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{session_id}_{board_name}_{round_num}_{slot_num}")
+    new_txt = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{session_id}_{board_name}_{round_num}_{slot_num}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True): st.rerun()
+    with col2:
+        if st.button("Änderung speichern", type="primary", use_container_width=True):
+            final_name = new_txt.strip() if new_txt.strip() else new_sel
+            if "results" not in sess: sess["results"] = {}
+            if (round_num, board_name) not in sess["results"]:
+                auto_p = get_board_players(sess, round_num, board_name)
+                sess["results"][(round_num, board_name)] = {
+                    "s1": auto_p[0], "s2": auto_p[1], "ergebnis": "0:0", "winner": "", "loser": "", "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0
+                }
+            if slot_num == 1: sess["results"][(round_num, board_name)]["s1"] = final_name
+            else: sess["results"][(round_num, board_name)]["s2"] = final_name
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+
+@st.dialog("📊 Session Endstand & Zusammenfassung")
+def open_session_summary_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    st.write(f"### Session {sess['id']} vom {sess['datum']}")
+    
+    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
+    total_minutes = 0
+    if start_t != "–" and end_t != "–":
+        try:
+            t1 = datetime.strptime(start_t, "%H:%M")
+            t2 = datetime.strptime(end_t, "%H:%M")
+            diff_min = (t2 - t1).total_seconds() / 60
+            if diff_min < 0: diff_min += 24 * 60
+            total_minutes = diff_min
+        except: pass
+        
+    total_rounds = sess.get("total_rounds", 4)
+    modus = sess.get("modus", "Up & Down")
+    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    is_pure_coop = (modus == "Koop 2vs2 (Up & Down)")
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+    res = sess.get("results", {})
+    
+    if total_minutes > 0:
+        total_legs = sum([sum(map(int, m.get("ergebnis", "0:0").split(":"))) for m in res.values() if ":" in m.get("ergebnis", "")])
+        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
+        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
+        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
+        st.divider()
+    
+    st.markdown("#### 📋 Alle Spielergebnisse (Detail-Ansicht)")
+    for r in range(1, total_rounds + 1):
+        r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
+        
+        # Prüfen, ob in dieser Runde bereits Matches beendet wurden
+        has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
+        
+        if has_matches:
+            with st.expander(f"🎯 {r_head}"):
+                for b_name in get_boards_list(sess, r):
+                    m_info = res.get((r, b_name))
+                    if m_info and m_info.get("winner"):
+                        st.markdown(f"**{b_name}:** {m_info['s1']} vs {m_info['s2']} ➔ **{m_info['ergebnis']}** *(Sieger: {m_info['winner']})*")
+    st.divider()
+
+    if singles_rounds > 0 and not is_pure_coop:
+        last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
+        if last_played_round > 0:
+            st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
+            
+            w, l = {}, {}
+            b_list = get_boards_list(sess, last_played_round)
+            for b in b_list:
+                m_inf = res.get((last_played_round, b))
+                if m_inf and m_inf.get("winner"):
+                    w[b] = m_inf.get("winner")
+                    l[b] = m_inf.get("loser")
+                else:
+                    w[b], l[b] = "-", "-"
+            
+            for b_idx, b_name in enumerate(b_list):
+                if b_idx == 0:
+                    platz1 = w.get("Kaiser B1", "-")
+                    platz2 = w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
+                else:
+                    platz1 = l.get(b_list[b_idx-1], "-")
+                    platz2 = w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
+                
+                m_inf = res.get((last_played_round, b_name))
+                m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
+                
+                st.markdown(f"""
+                <div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'>
+                    <h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5>
+                    <p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p>
+                    <p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p>
+                    <p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+            st.divider()
+        else:
+            st.info("Noch keine Einzel-Matches beendet.")
+            
+    coop_start_round = singles_rounds + 1 if is_standard_training else 1
+    has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
+    
+    if has_coop:
+        st.markdown("#### 🤝 Koop / Doppel-Phase — Gesamtwertung")
+        teams = sess.get("coop_teams", [])
+        team_stats = {t: {"wins": 0, "losses": 0, "legs_won": 0, "legs_lost": 0, "matches": 0} for t in teams}
+        
+        for r in range(coop_start_round, total_rounds + 1):
+            for b_name in get_boards_list(sess, r):
+                m_info = res.get((r, b_name))
+                if m_info and m_info.get("winner"):
+                    winner, s1, s2 = m_info.get("winner"), m_info.get("s1"), m_info.get("s2")
+                    try: l1, l2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
+                    except: l1, l2 = 0, 0
+                    
+                    for s_team, (w_l, l_l) in [(s1, (l1, l2) if winner == s1 else (l2, l1)), (s2, (l2, l1) if winner == s2 else (l1, l2))]:
+                        if s_team in team_stats:
+                            team_stats[s_team]["matches"] += 1
+                            if winner == s_team: team_stats[s_team]["wins"] += 1
+                            else: team_stats[s_team]["losses"] += 1
+                            team_stats[s_team]["legs_won"] += w_l
+                            team_stats[s_team]["legs_lost"] += l_l
+
+        sorted_teams = sorted(team_stats.items(), key=lambda x: (x[1]["wins"], x[1]["legs_won"] - x[1]["legs_lost"], x[1]["legs_won"]), reverse=True)
+        rank = 1
+        for team_name, stats in sorted_teams:
+            if stats["matches"] > 0 or len(sorted_teams) <= 5:
+                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
+                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'><p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p><p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p></div>", unsafe_allow_html=True)
+                rank += 1
+
+    if st.button("Schließen", use_container_width=True): st.rerun()
 
 with tab_übersicht:
     col_btn1, col_btn2 = st.columns(2)
@@ -1588,6 +1811,80 @@ with tab_liga:
                 except Exception as e:
                     st.error(f"PDF-Generierung fehlgeschlagen: {e}")
 
+@st.dialog("♻️ Notfall-Wiederherstellung", width="large")
+def open_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies überschreibt die aktuellen Live-Daten unwiderruflich mit dem gewählten Backup!")
+    
+    tab_cloud, tab_local = st.tabs(["☁️ Cloud-Backups (Automatisch)", "📁 Lokale Datei (Manuell)"])
+    
+    with tab_cloud:
+        st.write("Die letzten 20 Aktionen werden im Hintergrund gesichert. Hier kannst du zurückspringen:")
+        try:
+            creds_dict = json.loads(st.secrets["google_json"])
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            client = gspread.authorize(creds)
+            spreadsheet = client.open_by_url(SHEET_URL)
+            
+            try:
+                backup_ws = spreadsheet.worksheet("backups")
+                all_vals = backup_ws.get_all_values()
+                
+                if len(all_vals) > 1:
+                    backups = list(reversed(all_vals[1:]))
+                    confirm = st.checkbox("Ja, ich möchte alte Daten aus der Cloud laden.")
+                    
+                    for i, b in enumerate(backups[:10]):
+                        ts = b[0]
+                        json_str = b[1]
+                        try:
+                            data_preview = json.loads(json_str)
+                            data_info = f"{len(data_preview)} Sessions"
+                        except:
+                            data_info = "Fehlerhaftes JSON"
+                            
+                        c_t, c_b = st.columns([3, 1])
+                        c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                        with c_b:
+                            if st.button("Laden", key=f"rest_{i}", disabled=not confirm, use_container_width=True):
+                                try:
+                                    data = json.loads(json_str)
+                                    sichere_sessions = make_serializable(data)
+                                    new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                                    sheet_conn.clear()
+                                    sheet_conn.update([["json_data"], [new_json_str]])
+                                    st.session_state.sessions_list = data
+                                    st.success("✅ Backup erfolgreich wiederhergestellt!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Fehler: {e}")
+                        st.divider()
+                else:
+                    st.info("Noch keine Cloud-Backups vorhanden.")
+            except Exception as e:
+                st.error("Konnte Backup-Tabelle nicht finden.")
+        except Exception as e:
+            st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+            
+    with tab_local:
+        st.write("Lade hier eine zuvor heruntergeladene .json Backup-Datei hoch:")
+        uploaded_backup = st.file_uploader("JSON Backup wählen", type=["json"])
+        if uploaded_backup is not None:
+            if st.button("⚠️ Daten aus lokaler Datei überschreiben", type="primary", use_container_width=True):
+                try:
+                    data = json.load(uploaded_backup)
+                    sichere_sessions = make_serializable(data)
+                    new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                    sheet_conn.clear()
+                    sheet_conn.update([["json_data"], [new_json_str]])
+                    st.session_state.sessions_list = data
+                    st.success("✅ Backup erfolgreich wiederhergestellt!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fehler: {e}")
+
 with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
@@ -1717,7 +2014,13 @@ with tab_archiv:
     if st.session_state.sessions_list:
         safe_data_for_export = make_serializable(st.session_state.sessions_list)
         backup_json_str = json.dumps(safe_data_for_export, ensure_ascii=False, indent=2)
-        st.download_button(label="📥 Backup als JSON herunterladen", data=backup_json_str, file_name=f"steelers_backup_{date.today().strftime('%Y-%m-%d')}.json", mime="application/json", use_container_width=True)
+        
+        c_dl, c_rest = st.columns(2)
+        with c_dl:
+            st.download_button(label="📥 Backup als JSON herunterladen", data=backup_json_str, file_name=f"steelers_backup_{date.today().strftime('%Y-%m-%d')}.json", mime="application/json", use_container_width=True)
+        with c_rest:
+            if st.button("♻️ Notfall-Wiederherstellung (Cloud)", use_container_width=True):
+                open_rollback_dialog()
         st.write("")
 
     if not st.session_state.sessions_list:
@@ -1730,14 +2033,13 @@ with tab_archiv:
                 return datetime.min
                 
         sorted_sessions = sorted(
-            st.session_state.sessions_list, 
+            [s for s in st.session_state.sessions_list if not s.get("is_wettkampf", False)], 
             key=lambda x: (parse_session_date(x), int(x["id"].split("-")[1]) if "-" in x["id"] and x["id"].split("-")[1].isdigit() else 0), 
             reverse=True
         )
         
         for sess in sorted_sessions:
             is_l = sess.get("is_liga", False)
-            is_w = sess.get("is_wettkampf", False)
             
             with st.container(border=True):
                 if is_l:
@@ -1753,16 +2055,6 @@ with tab_archiv:
                             open_edit_liga_session_dialog(sess['id'])
                     with c3:
                         if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True):
-                            open_delete_session_dialog(sess['id'])
-                elif is_w:
-                    status_text = "✅ [Abgeschlossen]" if sess.get("is_locked", False) else "🔴 [Aktiv/Ausstehend]"
-                    st.markdown(f"**{sess['id']}** (Liga-Spieltag) — {sess['datum']} {status_text}\n\n🏆 {sess.get('heim_team')} vs {sess.get('gast_team')}")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("⚡ Ansehen / Bearbeiten", key=f"arch_wk_e_{sess['id']}", use_container_width=True):
-                            open_wettkampf_blitz_dialog(sess['id'])
-                    with c2:
-                        if st.button("🗑️ Löschen", key=f"arch_wk_d_{sess['id']}", use_container_width=True):
                             open_delete_session_dialog(sess['id'])
                 else:
                     status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
