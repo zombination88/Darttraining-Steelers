@@ -5,7 +5,7 @@
 # 4. ANTI-DOPPEL-PAUSE: Das Freilos in Runde 1 muss rotieren. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
 # 5. ZEITMANAGEMENT: Globale Ø-Zeiten (Min/Runde, Min/Leg) inkl. Nacht-Übergang müssen im Session-Reiter berechnet bleiben.
 # 6. KADER-STATS: Im Reiter Kader werden MVP, Dauerbrenner, Bester Avg und 180er Maschine angezeigt (nicht nur 50% Quoten). Bei Gleichstand: Tooltip!
-# 7. HEADER: Der Titel oben links muss das Logo মিলিটারি beinhaltet und "Wehringer Steelers — Teamtraining" lauten.
+# 7. HEADER: Der Titel oben links muss das Logo beinhalten und "Wehringer Steelers — Teamtraining" lauten.
 # 8. SPIELMODI & LOGIK:
 #    - Standard-Training (Einzel + Coop): X Runden Einzel (max 6 Boards), dann Y Runden Doppel (nur B1 & B2). 
 #    - Koop 2vs2 (Up & Down): Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2.
@@ -563,6 +563,165 @@ def generate_calendar_pdf(wettkampf_sessions, min_d, max_d):
     doc.build(elements)
     return packet.getvalue()
 
+@st.dialog("📆 Steelers Saison-Kalender", width="large")
+def open_saison_kalender_dialog():
+    import calendar
+    wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wettkampf")]
+    
+    d_list = []
+    for s in wettkampf_sessions:
+        try: d_list.append(datetime.strptime(s["datum"], "%d.%m.%Y").date())
+        except: pass
+        
+    if not d_list:
+        st.info("Noch keine Liga-Spiele vorhanden. Bitte Spielplan importieren.")
+        if st.button("Schließen"): st.rerun()
+        return
+        
+    min_d, max_d = min(d_list), max(d_list)
+    
+    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wehringer Steelers//DE"]
+    def add_ics_event(dt, title):
+        ds = dt.strftime("%Y%m%d")
+        ics_lines.extend(["BEGIN:VEVENT", f"DTSTART;VALUE=DATE:{ds}", f"SUMMARY:{title}", "END:VEVENT"])
+
+    html_blocks = ["<div style='color: white;'>"]
+    html_blocks.append("""<style>
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 20px;}
+    .c-head { text-align: center; font-weight: bold; background: #333; padding: 4px; border-radius: 4px; font-size:0.85em;}
+    .c-day { border: 1px solid #444; border-radius: 4px; min-height: 70px; padding: 4px; font-size: 0.8em; background: #1e1e1e;}
+    .c-empty { border: none; background: transparent; }
+    .e-h { background: #2e7d32; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
+    .e-g { background: #d84315; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
+    .e-t { background: #1976d2; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; text-align:center;}
+    </style>""")
+    
+    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
+    
+    games_by_date = {}
+    games_by_week = set()
+    for s in wettkampf_sessions:
+        try:
+            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
+            is_h = (s.get("heim_team", "") == "FSV Wehringen")
+            gegner = s.get("gast_team") if is_h else s.get("heim_team")
+            games_by_date[d] = {"heim": is_h, "gegner": gegner}
+            games_by_week.add(d.isocalendar()[:2])
+        except: pass
+
+    curr_year, curr_month = min_d.year, min_d.month
+    while True:
+        html_blocks.append(f"<h4 style='margin-bottom:10px; margin-top:20px; color:#fff;'>{month_names[curr_month]} {curr_year}</h4><div class='c-grid'>")
+        for dw in days_of_week: html_blocks.append(f"<div class='c-head'>{dw}</div>")
+            
+        for week in calendar.monthcalendar(curr_year, curr_month):
+            for day in week:
+                if day == 0:
+                    html_blocks.append("<div class='c-day c-empty'></div>")
+                else:
+                    curr_date = date(curr_year, curr_month, day)
+                    content = f"<div style='color:#aaa; margin-bottom:2px;'>{day}</div>"
+                    
+                    if curr_date in games_by_date:
+                        g = games_by_date[curr_date]
+                        if g["heim"]:
+                            content += f"<div class='e-h'>🏠 Heim<br><span style='font-size:0.8em; font-weight:normal;'>vs {g['gegner']}</span></div>"
+                            add_ics_event(curr_date, f"🎯 Heimspiel vs {g['gegner']}")
+                        else:
+                            content += f"<div class='e-g'>🚌 Auswärts<br><span style='font-size:0.8em; font-weight:normal;'>@ {g['gegner']}</span></div>"
+                            add_ics_event(curr_date, f"🎯 Auswärts @ {g['gegner']}")
+                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
+                        content += "<div class='e-t'>🎯 Training</div>"
+                        add_ics_event(curr_date, "🎯 Steelers Teamtraining")
+                                
+                    html_blocks.append(f"<div class='c-day'>{content}</div>")
+        html_blocks.append("</div>")
+        if curr_year == max_d.year and curr_month == max_d.month: break
+        curr_month += 1
+        if curr_month > 12: curr_month, curr_year = 1, curr_year + 1
+
+    html_blocks.append("</div>")
+    ics_lines.append("END:VCALENDAR")
+    st.markdown("".join(html_blocks), unsafe_allow_html=True)
+    st.divider()
+    
+    col_pdf, col_ics = st.columns(2)
+    with col_pdf:
+        try:
+            pdf_bytes = generate_calendar_pdf(wettkampf_sessions, min_d, max_d)
+            st.download_button("📥 Kalender als PDF (A4 Querformat)", data=pdf_bytes, file_name="steelers_saison_kalender.pdf", mime="application/pdf", type="primary", use_container_width=True)
+        except Exception as e:
+            st.error(f"PDF konnte nicht erstellt werden: {e}")
+    with col_ics:
+        st.download_button("📥 Kalender exportieren (.ics)", data="\r\n".join(ics_lines), file_name="steelers_saison.ics", mime="text/calendar", use_container_width=True)
+        
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
+@st.dialog("📸 Spielbericht Original", width="large")
+def open_image_dialog(b64_str):
+    st.image(base64.b64decode(b64_str), use_container_width=True)
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
+@st.dialog("♻️ Liga-Notfall-Wiederherstellung", width="large")
+def open_liga_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies stellt NUR gelöschte Liga-Spiele (Wettkämpfe) inkl. Fotos aus der Cloud wieder her. Dein normales Teamtraining bleibt davon komplett unberührt!")
+    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password")
+    if pwd != "1521":
+        if pwd != "": st.error("Nur für Administratoren!")
+        return
+    
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet_obj = client.open_by_url(SHEET_URL)
+        
+        try:
+            backup_ws = spreadsheet_obj.worksheet("backups")
+            all_vals = backup_ws.get_all_values()
+            
+            if len(all_vals) > 1:
+                backups = list(reversed(all_vals[1:]))
+                confirm = st.checkbox("Ja, ich möchte alte Liga-Daten aus der Cloud laden.")
+                
+                for i, b in enumerate(backups[:10]):
+                    ts = b[0]
+                    json_str = b[1]
+                    try:
+                        data_preview = json.loads(json_str)
+                        liga_games = [s for s in data_preview if s.get("is_wettkampf")]
+                        data_info = f"{len(liga_games)} Liga-Spiele gesichert"
+                    except:
+                        data_info = "Fehlerhaftes JSON"
+                        
+                    c_t, c_b = st.columns([3, 1])
+                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                    with c_b:
+                        if st.button("Liga-Daten Laden", key=f"rest_liga_{i}", disabled=not confirm, use_container_width=True):
+                            try:
+                                backup_data = json.loads(json_str)
+                                backup_liga = [s for s in backup_data if s.get("is_wettkampf")]
+                                current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
+                                
+                                merged_data = current_other + backup_liga
+                                st.session_state.sessions_list = merged_data
+                                save_data(st.session_state.sessions_list)
+                                st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Fehler: {e}")
+                    st.divider()
+            else:
+                st.info("Noch keine Cloud-Backups vorhanden.")
+        except Exception as e:
+            st.error("Konnte Backup-Tabelle nicht finden.")
+    except Exception as e:
+        st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+
 @st.dialog("➕ Neue Session starten")
 def open_new_session_dialog():
     session_datum = st.date_input("Datum", date.today())
@@ -787,375 +946,6 @@ def open_board_dialog(board_name, session_id, edit_round=None):
     with cb2:
         if st.button("Schließen", use_container_width=True): st.rerun()
 
-def generate_spielbericht_pdf(sess):
-    try:
-        from pypdf import PdfReader, PdfWriter
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
-    except ImportError:
-        raise ImportError("Fehlende Bibliotheken (pypdf oder reportlab). Bitte in requirements.txt hinterlegen!")
-
-    packet = io.BytesIO()
-    c = canvas.Canvas(packet, pagesize=A4)
-    c.setFont("Helvetica-Bold", 9)
-    
-    heim = sess.get("heim_team", "")
-    gast = sess.get("gast_team", "")
-    datum = sess.get("datum", "")
-    
-    c.drawString(410, 755, datum)
-    c.drawString(100, 722, heim) 
-    c.drawString(330, 722, gast)
-    
-    res = sess.get("results", {})
-    auf_h = sess.get("auf_heim", {})
-    auf_g = sess.get("auf_gast", {})
-
-    t_size = sess.get("team_size", 4)
-    if t_size == 12:
-        y_coords_pdf = {f"m{i}": 650 - i*25 for i in range(1, 37)}
-    elif t_size == 10:
-        y_coords_pdf = {f"m{i}": 650 - i*28 for i in range(1, 31)}
-    elif t_size == 8:
-        y_coords_pdf = {f"m{i}": 630 - i*32 for i in range(1, 25)}
-    elif t_size == 6:
-        y_coords_pdf = {
-            "m1": 615, "m2": 570, "m3": 525, "m4": 480, "m5": 435, "m6": 390,
-            "m7": 345, "m8": 300, "m9": 255, "m10": 210, "m11": 165, "m12": 120,
-            "m13": 80, "m14": 55, "m15": 30
-        }
-    else:
-        y_coords_pdf = {
-            "m1": 615, "m2": 570, "m3": 525, "m4": 480,
-            "m5": 400, "m6": 355, "m7": 310, "m8": 265,
-            "m9": 200, "m10": 155
-        }
-    
-    x_name_heim = 65
-    x_name_gast = 315
-    x_legs_heim = 225
-    x_legs_gast = 285
-    x_180_heim = 95
-    x_180_gast = 340
-    
-    rounds_map = get_liga_config(sess)
-    match_map = [match for round in rounds_map for match in round]
-
-    for m_key, label, h_key, g_key in match_map:
-        if m_key in res and res[m_key].get("played"):
-            m_data = res[m_key]
-            y = y_coords_pdf.get(m_key, 500)
-            
-            # Liest den Match-spezifischen Namen aus (wichtig für Auswechslungen!), ansonsten die Startaufstellung
-            h_name = str(m_data.get("s1", auf_h.get(h_key, "")))
-            g_name = str(m_data.get("s2", auf_g.get(g_key, "")))
-            
-            c.drawString(x_name_heim, y, h_name)
-            c.drawString(x_name_gast, y, g_name)
-            c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
-            c.drawString(x_legs_gast, y, str(m_data.get("lg", 0)))
-            
-            y_sub = y - 12
-            if m_data.get("180_h", 0) > 0:
-                c.drawString(x_180_heim, y_sub, str(m_data.get("180_h", "")))
-            if m_data.get("180_g", 0) > 0:
-                c.drawString(x_180_gast, y_sub, str(m_data.get("180_g", "")))
-
-    c.save()
-    packet.seek(0)
-    
-    pdf_out = io.BytesIO()
-    
-    if os.path.exists("Bez_Schwaben_Spielbericht_2.pdf"):
-        new_pdf = PdfReader(packet)
-        original_pdf = PdfReader(open("Bez_Schwaben_Spielbericht_2.pdf", "rb"))
-        output = PdfWriter()
-        page = original_pdf.pages[0]
-        page.merge_page(new_pdf.pages[0])
-        output.add_page(page)
-        output.write(pdf_out)
-    elif os.path.exists("Bez_Schwaben_Spielbericht.pdf"):
-        new_pdf = PdfReader(packet)
-        original_pdf = PdfReader(open("Bez_Schwaben_Spielbericht.pdf", "rb"))
-        output = PdfWriter()
-        page = original_pdf.pages[0]
-        page.merge_page(new_pdf.pages[0])
-        output.add_page(page)
-        output.write(pdf_out)
-    else:
-        c2 = canvas.Canvas(pdf_out, pagesize=A4)
-        c2.setFont("Helvetica-Bold", 12)
-        c2.drawString(100, 750, "FEHLER: Originaldatei fehlt!")
-        c2.save()
-
-    pdf_out.seek(0)
-    return pdf_out
-
-def generate_calendar_pdf(wettkampf_sessions, min_d, max_d):
-    import io
-    import calendar
-    from datetime import date
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-
-    packet = io.BytesIO()
-    doc = SimpleDocTemplate(packet, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    elements = []
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle(name='Title', parent=styles['Heading1'], fontSize=18, spaceAfter=15)
-    day_style = ParagraphStyle(name='Day', fontSize=10, textColor=colors.black, spaceAfter=5)
-    event_style_heim = ParagraphStyle(name='EvH', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#2e7d32'), alignment=1, spaceBefore=2, spaceAfter=2)
-    event_style_gast = ParagraphStyle(name='EvG', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#d84315'), alignment=1, spaceBefore=2, spaceAfter=2)
-    event_style_train = ParagraphStyle(name='EvT', fontSize=8, textColor=colors.white, backColor=colors.HexColor('#1976d2'), alignment=1, spaceBefore=2, spaceAfter=2)
-
-    games_by_date = {}
-    games_by_week = set()
-    for s in wettkampf_sessions:
-        try:
-            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
-            is_h = (s.get("heim_team", "") == "FSV Wehringen")
-            gegner = s.get("gast_team") if is_h else s.get("heim_team")
-            games_by_date[d] = {"heim": is_h, "gegner": gegner}
-            games_by_week.add(d.isocalendar()[:2])
-        except: pass
-
-    curr_year, curr_month = min_d.year, min_d.month
-    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
-    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-
-    while True:
-        elements.append(Paragraph(f"{month_names[curr_month]} {curr_year}", title_style))
-        
-        data = [days_of_week]
-        for week in calendar.monthcalendar(curr_year, curr_month):
-            row = []
-            for day in week:
-                if day == 0:
-                    row.append("")
-                else:
-                    curr_date = date(curr_year, curr_month, day)
-                    cell_content = [Paragraph(str(day), day_style)]
-                    
-                    if curr_date in games_by_date:
-                        g = games_by_date[curr_date]
-                        if g["heim"]:
-                            cell_content.append(Paragraph(f"Heim vs<br/>{g['gegner']}", event_style_heim))
-                        else:
-                            cell_content.append(Paragraph(f"Ausw. @<br/>{g['gegner']}", event_style_gast))
-                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
-                        cell_content.append(Paragraph("Training", event_style_train))
-                    
-                    row.append(cell_content)
-            data.append(row)
-        
-        t = Table(data, colWidths=[110] * 7)
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('TOPPADDING', (0, 1), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
-        ]))
-        
-        for i in range(1, len(data)):
-            t._argH[i] = 60
-            
-        elements.append(t)
-        elements.append(Spacer(1, 30))
-        
-        if curr_year == max_d.year and curr_month == max_d.month:
-            break
-        curr_month += 1
-        if curr_month > 12:
-            curr_month = 1
-            curr_year += 1
-
-    doc.build(elements)
-    return packet.getvalue()
-
-@st.dialog("📆 Steelers Saison-Kalender", width="large")
-def open_saison_kalender_dialog():
-    import calendar
-    wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wettkampf")]
-    
-    d_list = []
-    for s in wettkampf_sessions:
-        try: d_list.append(datetime.strptime(s["datum"], "%d.%m.%Y").date())
-        except: pass
-        
-    if not d_list:
-        st.info("Noch keine Liga-Spiele vorhanden. Bitte Spielplan importieren.")
-        if st.button("Schließen"): st.rerun()
-        return
-        
-    min_d, max_d = min(d_list), max(d_list)
-    
-    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wehringer Steelers//DE"]
-    def add_ics_event(dt, title):
-        ds = dt.strftime("%Y%m%d")
-        ics_lines.extend(["BEGIN:VEVENT", f"DTSTART;VALUE=DATE:{ds}", f"SUMMARY:{title}", "END:VEVENT"])
-
-    html_blocks = ["<div style='color: white;'>"]
-    html_blocks.append("""<style>
-    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 20px;}
-    .c-head { text-align: center; font-weight: bold; background: #333; padding: 4px; border-radius: 4px; font-size:0.85em;}
-    .c-day { border: 1px solid #444; border-radius: 4px; min-height: 70px; padding: 4px; font-size: 0.8em; background: #1e1e1e;}
-    .c-empty { border: none; background: transparent; }
-    .e-h { background: #2e7d32; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
-    .e-g { background: #d84315; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
-    .e-t { background: #1976d2; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; text-align:center;}
-    </style>""")
-    
-    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
-    
-    games_by_date = {}
-    games_by_week = set()
-    for s in wettkampf_sessions:
-        try:
-            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
-            is_h = (s.get("heim_team", "") == "FSV Wehringen")
-            gegner = s.get("gast_team") if is_h else s.get("heim_team")
-            games_by_date[d] = {"heim": is_h, "gegner": gegner}
-            games_by_week.add(d.isocalendar()[:2])
-        except: pass
-
-    curr_year, curr_month = min_d.year, min_d.month
-    while True:
-        html_blocks.append(f"<h4 style='margin-bottom:10px; margin-top:20px; color:#fff;'>{month_names[curr_month]} {curr_year}</h4><div class='c-grid'>")
-        for dw in days_of_week: html_blocks.append(f"<div class='c-head'>{dw}</div>")
-            
-        for week in calendar.monthcalendar(curr_year, curr_month):
-            for day in week:
-                if day == 0:
-                    html_blocks.append("<div class='c-day c-empty'></div>")
-                else:
-                    curr_date = date(curr_year, curr_month, day)
-                    content = f"<div style='color:#aaa; margin-bottom:2px;'>{day}</div>"
-                    
-                    if curr_date in games_by_date:
-                        g = games_by_date[curr_date]
-                        if g["heim"]:
-                            content += f"<div class='e-h'>🏠 Heim<br><span style='font-size:0.8em; font-weight:normal;'>vs {g['gegner']}</span></div>"
-                            add_ics_event(curr_date, f"🎯 Heimspiel vs {g['gegner']}")
-                        else:
-                            content += f"<div class='e-g'>🚌 Auswärts<br><span style='font-size:0.8em; font-weight:normal;'>@ {g['gegner']}</span></div>"
-                            add_ics_event(curr_date, f"🎯 Auswärts @ {g['gegner']}")
-                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
-                        content += "<div class='e-t'>🎯 Training</div>"
-                        add_ics_event(curr_date, "🎯 Steelers Teamtraining")
-                                
-                    html_blocks.append(f"<div class='c-day'>{content}</div>")
-        html_blocks.append("</div>")
-        if curr_year == max_d.year and curr_month == max_d.month: break
-        curr_month += 1
-        if curr_month > 12: curr_month, curr_year = 1, curr_year + 1
-
-    html_blocks.append("</div>")
-    ics_lines.append("END:VCALENDAR")
-    st.markdown("".join(html_blocks), unsafe_allow_html=True)
-    st.divider()
-    
-    col_pdf, col_ics = st.columns(2)
-    with col_pdf:
-        try:
-            pdf_bytes = generate_calendar_pdf(wettkampf_sessions, min_d, max_d)
-            st.download_button("📥 Kalender als PDF (A4 Querformat)", data=pdf_bytes, file_name="steelers_saison_kalender.pdf", mime="application/pdf", type="primary", use_container_width=True)
-        except Exception as e:
-            st.error(f"PDF konnte nicht erstellt werden: {e}")
-    with col_ics:
-        st.download_button("📥 Kalender exportieren (.ics)", data="\r\n".join(ics_lines), file_name="steelers_saison.ics", mime="text/calendar", use_container_width=True)
-        
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
-@st.dialog("📸 Spielbericht Original", width="large")
-def open_image_dialog(b64_str):
-    import base64
-    st.image(base64.b64decode(b64_str), use_container_width=True)
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
-@st.dialog("♻️ Liga-Notfall-Wiederherstellung", width="large")
-def open_liga_rollback_dialog():
-    st.warning("⚠️ Achtung: Dies stellt NUR gelöschte Liga-Spiele (Wettkämpfe) inkl. Fotos aus der Cloud wieder her. Dein normales Teamtraining bleibt davon komplett unberührt!")
-    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password")
-    if pwd != "1521":
-        if pwd != "": st.error("Nur für Administratoren!")
-        return
-    
-    try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_url(SHEET_URL)
-        
-        try:
-            backup_ws = spreadsheet.worksheet("backups")
-            all_vals = backup_ws.get_all_values()
-            
-            if len(all_vals) > 1:
-                backups = list(reversed(all_vals[1:]))
-                confirm = st.checkbox("Ja, ich möchte alte Liga-Daten aus der Cloud laden.")
-                
-                for i, b in enumerate(backups[:10]):
-                    ts = b[0]
-                    json_str = b[1]
-                    try:
-                        data_preview = json.loads(json_str)
-                        liga_games = [s for s in data_preview if s.get("is_wettkampf")]
-                        data_info = f"{len(liga_games)} Liga-Spiele gesichert"
-                    except:
-                        data_info = "Fehlerhaftes JSON"
-                        
-                    c_t, c_b = st.columns([3, 1])
-                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
-                    with c_b:
-                        if st.button("Liga-Daten Laden", key=f"rest_liga_{i}", disabled=not confirm, use_container_width=True):
-                            try:
-                                backup_data = json.loads(json_str)
-                                backup_liga = [s for s in backup_data if s.get("is_wettkampf")]
-                                current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
-                                
-                                merged_data = current_other + backup_liga
-                                
-                                sichere_sessions = make_serializable(merged_data)
-                                new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
-                                
-                                # Beim Laden auch die Splitt-Architektur bedienen
-                                normal_sessions = [s for s in sichere_sessions if not s.get("is_wettkampf")]
-                                liga_sessions_list = [s for s in sichere_sessions if s.get("is_wettkampf")]
-                                completed_liga_list = [s for s in liga_sessions_list if s.get("is_locked")]
-                                
-                                ws_normal = ensure_worksheet(spreadsheet, "sessions")
-                                chunked_save(ws_normal, normal_sessions)
-                                
-                                ws_liga = ensure_worksheet(spreadsheet, "liga_sessions")
-                                chunked_save(ws_liga, liga_sessions_list)
-                                
-                                ws_completed_liga = ensure_worksheet(spreadsheet, "completed_liga")
-                                chunked_save(ws_completed_liga, completed_liga_list)
-                                
-                                st.session_state.sessions_list = merged_data
-                                st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Fehler: {e}")
-                    st.divider()
-            else:
-                st.info("Noch keine Cloud-Backups vorhanden.")
-        except Exception as e:
-            st.error("Konnte Backup-Tabelle nicht finden.")
-    except Exception as e:
-        st.error(f"Verbindungsfehler zur Google Cloud: {e}")
-
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
     for logo_path in ["logo.png.png", "logo.png"]:
@@ -1202,22 +992,22 @@ wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wet
 
 tab_übersicht, tab_kader, tab_session, tab_liga, tab_wettkampf, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Freundschaftsspiele", "Liga (Punktspiele)", "Match-Archiv", "Modus & Regeln"])
 
+if not is_admin:
+    st.info("🔒 **Gast-Modus aktiv:** Du hast aktuell nur Lese-Rechte. Um Sessions zu starten oder Ergebnisse einzutragen, öffne das Seitenmenü (oben links auf `>` tippen) und logge dich als Spieler ein.")
+
 with tab_übersicht:
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if is_admin:
-            if st.button("➕ Neue Session", type="primary", use_container_width=True, key="quick_start_btn"):
-                open_new_session_dialog()
+        if st.button("➕ Neue Session", type="primary", use_container_width=True, key="quick_start_btn", disabled=not is_admin):
+            open_new_session_dialog()
     with col_btn2:
         sorted_for_btn = sorted(training_sessions, key=lambda x: int(x["id"].split("-")[1]) if "id" in x and '-' in x['id'] else 0, reverse=True)
         active_sessions_for_btn = [s for s in sorted_for_btn if not is_session_completed(s)]
         if active_sessions_for_btn:
-            if is_admin:
-                if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
-                    open_edit_session_dialog(active_sessions_for_btn[0]['id'])
+            if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn", disabled=not is_admin):
+                open_edit_session_dialog(active_sessions_for_btn[0]['id'])
         else:
-            if is_admin:
-                st.button("⚙️ Bearbeiten", use_container_width=True, disabled=True)
+            st.button("⚙️ Bearbeiten", use_container_width=True, disabled=True)
             
     st.write("")
     st.markdown("### 🔴 Laufende Trainings-Session")
@@ -1229,11 +1019,10 @@ with tab_übersicht:
         if not start_t:
             st.info(f"Session **{curr_sess['id']}** wurde erstellt für den **{curr_sess['datum']}**.")
             st.write(f"👥 **Gemeldete Spieler:** {', '.join(curr_sess.get('spieler', []))}")
-            if is_admin:
-                if st.button("🚀 Teamtraining starten", type="primary", use_container_width=True):
-                    curr_sess["start_time"] = get_local_time_str()
-                    smart_sync_and_save(st.session_state.sessions_list)
-                    st.rerun()
+            if st.button("🚀 Teamtraining starten", type="primary", use_container_width=True, disabled=not is_admin):
+                curr_sess["start_time"] = get_local_time_str()
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
         else:
             st.caption(f"Session-ID: **{curr_sess['id']}** vom {curr_sess['datum']} (Start: {start_t} Uhr) | Modus: {curr_sess['modus']}")
             total_rounds = curr_sess.get("total_rounds", 4)
@@ -1272,32 +1061,27 @@ with tab_übersicht:
                         sc1, sc2 = st.columns([5, 2])
                         sc1.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p1}</div>", unsafe_allow_html=True)
                         with sc2:
-                            if is_admin:
-                                if st.button("🔄", key=f"sub1_{curr_sess['id']}_{b_name}_{next_r}"): open_substitution_dialog(b_name, curr_sess['id'], next_r, 1, p1)
+                            if st.button("🔄", key=f"sub1_{curr_sess['id']}_{b_name}_{next_r}", disabled=not is_admin): open_substitution_dialog(b_name, curr_sess['id'], next_r, 1, p1)
                         st.markdown("<div style='text-align: center; color: #ff4b4b; font-size: 0.9em; margin: 2px 0;'>VS</div>", unsafe_allow_html=True)
                         sc3, sc4 = st.columns([5, 2])
                         sc3.markdown(f"<div style='font-weight: bold; font-size: 0.95em; padding-top: 5px;'>{p2}</div>", unsafe_allow_html=True)
                         with sc4:
-                            if is_admin:
-                                if st.button("🔄", key=f"sub2_{curr_sess['id']}_{b_name}_{next_r}"): open_substitution_dialog(b_name, curr_sess['id'], next_r, 2, p2)
+                            if st.button("🔄", key=f"sub2_{curr_sess['id']}_{b_name}_{next_r}", disabled=not is_admin): open_substitution_dialog(b_name, curr_sess['id'], next_r, 2, p2)
                         
                         st.write("")
                         col_e1, col_e2 = st.columns([1, 1])
                         with col_e1:
-                            if is_admin:
-                                if st.button("🎯 Eintragen", key=f"live_{curr_sess['id']}_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
-                                    open_board_dialog(b_name, curr_sess['id'])
+                            if st.button("🎯 Eintragen", key=f"live_{curr_sess['id']}_{b_name}_{next_r}", use_container_width=True, disabled=(not ready or not is_admin)):
+                                open_board_dialog(b_name, curr_sess['id'])
                         with col_e2:
                             prev_r = next_r - 1
-                            if is_admin and prev_r > 0:
-                                if st.button("✏️ Korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{prev_r}", use_container_width=True):
-                                    open_board_dialog(b_name, curr_sess['id'], edit_round=prev_r)
+                            if prev_r > 0 and st.button("✏️ Korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{prev_r}", use_container_width=True, disabled=not is_admin):
+                                open_board_dialog(b_name, curr_sess['id'], edit_round=prev_r)
                     else:
                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
                         st.success("✅ Abgeschlossen")
-                        if is_admin:
-                            if st.button("✏️ Letzte Runde korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{total_rounds}", use_container_width=True):
-                                open_board_dialog(b_name, curr_sess['id'], edit_round=total_rounds)
+                        if st.button("✏️ Letzte Runde korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{total_rounds}", use_container_width=True, disabled=not is_admin):
+                            open_board_dialog(b_name, curr_sess['id'], edit_round=total_rounds)
 
     st.write("")
     st.divider()
@@ -1579,9 +1363,8 @@ with tab_liga:
     st.subheader("Freundschaftsspiele")
     st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
-    if is_admin:
-        if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
-            open_new_liga_match_dialog()
+    if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True, disabled=not is_admin):
+        open_new_liga_match_dialog()
         
     st.divider()
     
@@ -1634,11 +1417,11 @@ with tab_liga:
                 if not h_einzel_ok or not g_einzel_ok:
                     st.warning(f"Phase 1: Alle {t_size} Einzelspieler eintragen (verdeckt)")
                     c_h, c_g = st.columns(2)
-                    if is_admin and not h_einzel_ok:
-                        if c_h.button("🔒 Heim Aufstellen", key=f"h_setup_{l_sess['id']}"):
+                    if not h_einzel_ok:
+                        if c_h.button("🔒 Heim Aufstellen", key=f"h_setup_{l_sess['id']}", disabled=not is_admin):
                             open_liga_aufstellung_einzel(l_sess['id'], True)
-                    if is_admin and not g_einzel_ok:
-                        if c_g.button("🔒 Gast Aufstellen", key=f"g_setup_{l_sess['id']}"):
+                    if not g_einzel_ok:
+                        if c_g.button("🔒 Gast Aufstellen", key=f"g_setup_{l_sess['id']}", disabled=not is_admin):
                             open_liga_aufstellung_einzel(l_sess['id'], False)
                 elif not is_done:
                     curr_round_idx = 0
@@ -1657,11 +1440,11 @@ with tab_liga:
                         if not h_doppel_ok or not g_doppel_ok:
                             st.warning("🚨 Nach der Eingabe der letzten Einzelrunde (Einzel + Kreuz-Einzel) müssen nun beide Teams ihre Doppel-Aufstellungen hinterlegen!")
                             c_dh, c_dg = st.columns(2)
-                            if is_admin and not h_doppel_ok:
-                                if c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}"):
+                            if not h_doppel_ok:
+                                if c_dh.button("🔒 Heim Doppel", key=f"hd_setup_{l_sess['id']}", disabled=not is_admin):
                                     open_liga_aufstellung_doppel(l_sess['id'], True)
-                            if is_admin and not g_doppel_ok:
-                                if c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}"):
+                            if not g_doppel_ok:
+                                if c_dg.button("🔒 Gast Doppel", key=f"gd_setup_{l_sess['id']}", disabled=not is_admin):
                                     open_liga_aufstellung_doppel(l_sess['id'], False)
                             
                     if curr_round_idx < len(rounds_list) and not (is_in_doubles and (not auf_h.get("hd1") or not auf_g.get("gd1"))):
@@ -1689,26 +1472,25 @@ with tab_liga:
                                     
                                     if i % 2 == 1:
                                         st.markdown(f"Gast (links): **{p_gast}**")
-                                        if is_admin and show_sub_btn and not "d" in g_key:
-                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
+                                        if show_sub_btn and not "d" in g_key:
+                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}", disabled=not is_admin): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                         st.markdown(f"Heim: **{p_heim}**")
-                                        if is_admin and show_sub_btn and not "d" in h_key:
-                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
+                                        if show_sub_btn and not "d" in h_key:
+                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}", disabled=not is_admin): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
                                     else:
                                         st.markdown(f"Heim (links): **{p_heim}**")
-                                        if is_admin and show_sub_btn and not "d" in h_key:
-                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
+                                        if show_sub_btn and not "d" in h_key:
+                                            if st.button("🔄", key=f"sub_h_{l_sess['id']}_{m_key}", disabled=not is_admin): open_liga_sub_dialog(l_sess['id'], h_key, True, p_heim)
                                         st.markdown(f"Gast: **{p_gast}**")
-                                        if is_admin and show_sub_btn and not "d" in g_key:
-                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
+                                        if show_sub_btn and not "d" in g_key:
+                                            if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}", disabled=not is_admin): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                     
                                     if is_played:
                                         m_inf = res[m_key]
                                         st.success(f"Ergebnis: {m_inf['lh']}:{m_inf['lg']}")
                                     else:
-                                        if is_admin:
-                                            if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True):
-                                                open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
+                                        if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True, disabled=not is_admin):
+                                            open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
 
                         if waiting_queue:
                             st.write("")
@@ -1719,9 +1501,8 @@ with tab_liga:
 
                 if is_done or (h_einzel_ok and g_einzel_ok):
                     st.divider()
-                    if is_admin:
-                        if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True):
-                            open_liga_bericht_dialog(l_sess['id'])
+                    if st.button("📝 Spielbericht ansehen & abschließen", key=f"l_ber_{l_sess['id']}", use_container_width=True, disabled=not is_admin):
+                        open_liga_bericht_dialog(l_sess['id'])
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
@@ -1749,20 +1530,16 @@ with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
     
-    if is_admin:
-        c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
-        with c_btn_w1:
-            if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True):
-                open_new_wettkampf_dialog()
-        with c_btn_w3:
-            if st.button("📆 Saison-Kalender öffnen", use_container_width=True):
-                open_saison_kalender_dialog()
-        with c_btn_w4:
-            if st.button("♻️ Liga-Backup laden", use_container_width=True):
-                open_liga_rollback_dialog()
-    else:
+    c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
+    with c_btn_w1:
+        if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True, disabled=not is_admin):
+            open_new_wettkampf_dialog()
+    with c_btn_w3:
         if st.button("📆 Saison-Kalender öffnen", use_container_width=True):
             open_saison_kalender_dialog()
+    with c_btn_w4:
+        if st.button("♻️ Liga-Backup laden", use_container_width=True, disabled=not is_admin):
+            open_liga_rollback_dialog()
         
     st.divider()
     
@@ -1858,9 +1635,8 @@ with tab_wettkampf:
                             if st.button("📊 Ergebnisse", key=f"wk_res_{w_sess['id']}", use_container_width=True):
                                 open_wettkampf_view_dialog(w_sess['id'])
                         with col_b:
-                            if is_admin:
-                                if st.button("✏️ Bearbeiten", key=f"wk_edit_arch_{w_sess['id']}", use_container_width=True):
-                                    open_wettkampf_blitz_dialog(w_sess['id'])
+                            if st.button("✏️ Bearbeiten", key=f"wk_edit_arch_{w_sess['id']}", use_container_width=True, disabled=not is_admin):
+                                open_wettkampf_blitz_dialog(w_sess['id'])
                         with col_c:
                             if w_sess.get("image_b64"):
                                 if st.button("📸 Foto ansehen", key=f"wk_img_arch_{w_sess['id']}", use_container_width=True):
@@ -1903,9 +1679,8 @@ with tab_wettkampf:
 
                     c_b1, c_b2, c_b3 = st.columns(3)
                     with c_b1:
-                        if is_admin:
-                            if st.button("⚡ Blitz-Erfassung", key=f"wk_blitz_{w_sess['id']}", use_container_width=True):
-                                open_wettkampf_blitz_dialog(w_sess['id'])
+                        if st.button("⚡ Blitz-Erfassung", key=f"wk_blitz_{w_sess['id']}", use_container_width=True, disabled=not is_admin):
+                            open_wettkampf_blitz_dialog(w_sess['id'])
                     with c_b2:
                         if w_sess.get("image_b64"):
                             if st.button("📸 Foto ansehen", key=f"wk_img_{w_sess['id']}", use_container_width=True):
@@ -1913,9 +1688,8 @@ with tab_wettkampf:
                         else:
                             st.button("📸 Kein Foto", key=f"wk_img_no_{w_sess['id']}", disabled=True, use_container_width=True)
                     with c_b3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True):
-                                open_delete_session_dialog(w_sess['id'])
+                        if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True, disabled=not is_admin):
+                            open_delete_session_dialog(w_sess['id'])
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
@@ -1955,13 +1729,11 @@ with tab_archiv:
                         if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True):
                             open_liga_bericht_dialog(sess['id'])
                     with c2:
-                        if is_admin:
-                            if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True):
-                                open_edit_liga_session_dialog(sess['id'])
+                        if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True, disabled=not is_admin):
+                            open_edit_liga_session_dialog(sess['id'])
                     with c3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True):
-                                open_delete_session_dialog(sess['id'])
+                        if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True, disabled=not is_admin):
+                            open_delete_session_dialog(sess['id'])
                 else:
                     status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
                     start_t = sess.get("start_time", "–")
@@ -1973,11 +1745,9 @@ with tab_archiv:
                     with c1:
                         if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
-                        if is_admin:
-                            if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                        if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True, disabled=not is_admin): open_edit_session_dialog(sess['id'])
                     with c3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True, disabled=not is_admin): open_delete_session_dialog(sess['id'])
                         
                     st.divider()
                     
