@@ -1,3 +1,4 @@
 st-gsheets-connection
 pypdf
 reportlab
+extra-streamlit-components
