@@ -1,18 +1,3 @@
-Das ist ein ganz klassischer Kopierfehler, der schnell mal passiert!
-
-Die Fehlermeldung verrät uns genau, was schiefgelaufen ist: Der Fehler tritt in **Zeile 1970** auf. Da unsere App aber nur gut 900 Zeilen lang ist, bedeutet das, dass beim Einfügen der alte Code vorher nicht komplett gelöscht wurde oder der Text versehentlich doppelt eingefügt wurde. Dadurch sind ganz unten in deiner Datei wieder diese drei Formatierungs-Striche (`'''` bzw. `````) gelandet, an denen sich die App verschluckt.
-
-Ich habe den Code **absolut nicht verändert**, genau wie du es vorgegeben hast. Er ist exakt auf dem Stand, bei dem die Live-Tabelle und die Doppel-Dropdowns perfekt funktionieren.
-
-**So bekommen wir das in 10 Sekunden sauber ans Laufen:**
-
-1. Klicke in deine `app.py` und drücke **`Strg + A`** (alles markieren).
-2. Drücke **`Entf`** (Löschen), sodass die Datei *komplett* leer ist.
-3. Kopiere den Code hier unten (am besten über den "Copy"-Button oben rechts am Kasten) und füge ihn ein.
-
-Hier ist der unberührte, fehlerfreie Code:
-
-```python
 # INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN
 # 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
 # 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel/Datumsformate abzusichern!
