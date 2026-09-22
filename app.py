@@ -2084,3 +2084,84 @@ with tab_archiv:
             is_l = sess.get("is_liga", False)
             with st.container(border=True):
                 if is_l:
+                    status_text = "✅ [Abgeschlossen]" if sess.get("is_locked", False) else "🔴 [Aktiv]"
+                    st.markdown(f"**{sess['id']}** (Freundschaftsspiel) — {sess['datum']} {status_text}\n\n🏆 {sess.get('heim_team')} vs {sess.get('gast_team')}")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True): open_liga_bericht_dialog(sess['id'])
+                    with c2:
+                        if is_admin:
+                            if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True): open_edit_liga_session_dialog(sess['id'])
+                    with c3:
+                        if is_admin:
+                            if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                else:
+                    status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
+                    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
+                    time_display = f" | ⏱️ {start_t} - {end_t} Uhr" if start_t and start_t != "–" else ""
+                    st.markdown(f"**{sess['id']}** (Training) — {sess['datum']}{time_display} {status_text}")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
+                    with c2:
+                        if is_admin:
+                            if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                    with c3:
+                        if is_admin:
+                            if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        
+                    st.divider()
+                    if is_admin:
+                        is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur", key=f"blitz_check_{sess['id']}")
+                        if is_checked:
+                            st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
+                            total_rounds = sess.get("total_rounds", 4)
+                            leg_modus = sess.get("modus_leg", "Best of 5")
+                            for r in range(1, total_rounds + 1):
+                                st.markdown(f"**Runde {r}**")
+                                boards_in_r = get_boards_list(sess, r)
+                                for b_name in boards_in_r:
+                                    m_info = sess.get("results", {}).get((r, b_name))
+                                    p1, p2 = get_board_players(sess, r, b_name) if not m_info else (m_info.get("s1", "-"), m_info.get("s2", "-"))
+                                    try:
+                                        s1 = int(m_info.get("ergebnis", "0:0").split(":")[0]) if m_info else 0
+                                        s2 = int(m_info.get("ergebnis", "0:0").split(":")[1]) if m_info else 0
+                                    except: s1, s2 = 0, 0
+                                        
+                                    with st.container(border=True):
+                                        st.write(f"*{b_name}*")
+                                        c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
+                                        c_p1.markdown(f"**{p1}**")
+                                        c_vs.markdown("vs")
+                                        c_p2.markdown(f"**{p2}**")
+                                        c_in1, c_in2 = st.columns(2)
+                                        val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
+                                        val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
+                                        c_b1, c_b2 = st.columns(2)
+                                        with c_b1:
+                                            if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                req_win = 3 if leg_modus == "Best of 5" else 2
+                                                if p1 == "-" or p2 == "-": pass
+                                                elif val1 == val2: st.error("🚨 Unentschieden nicht möglich.")
+                                                elif val1 > req_win or val2 > req_win: st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
+                                                elif val1 != req_win and val2 != req_win: st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
+                                                else:
+                                                    winner = p1 if val1 > val2 else p2
+                                                    loser = p2 if val1 > val2 else p1
+                                                    if "results" not in sess: sess["results"] = {}
+                                                    if m_info:
+                                                        sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
+                                                        sess["results"][(r, b_name)]["winner"] = winner
+                                                        sess["results"][(r, b_name)]["loser"] = loser
+                                                    else:
+                                                        sess["results"][(r, b_name)] = {"s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}", "winner": winner, "loser": loser, "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0}
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+                                        with c_b2:
+                                            if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                if (r, b_name) in sess["results"]:
+                                                    del sess["results"][(r, b_name)]
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+
+with tab_regeln:
