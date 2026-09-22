@@ -81,7 +81,7 @@ def init_connection():
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         return client.open_by_url(SHEET_URL)
-    except Exception as e:
+    except Exception:
         return None
 
 spreadsheet = init_connection()
@@ -95,12 +95,13 @@ def ensure_worksheet(sheet_obj, title):
 
 def load_chunked(ws):
     try:
-        data = ws.get_all_values()
-        if len(data) <= 1: return []
-        raw_str = "".join([str(row[0]) for row in data[1:] if len(row) > 0])
-        if raw_str: return json.loads(raw_str)
-    except Exception:
-        pass
+        data = ws.get_all_records()
+        if not data: return []
+        raw_str = "".join([str(r.get("json_data", "")) for r in data])
+        if raw_str: 
+            return json.loads(raw_str)
+    except Exception as e:
+        st.error(f"System-Fehler beim Laden von Tab '{ws.title}': {e}")
     return []
 
 def chunked_save(ws, data_list):
@@ -109,8 +110,10 @@ def chunked_save(ws, data_list):
         chunks = [json_str[i:i+40000] for i in range(0, len(json_str), 40000)]
         rows = [["json_data"]] + [[c] for c in chunks]
         ws.clear()
-        try: ws.update("A1", rows)
-        except: ws.update(rows)
+        try:
+            ws.update("A1", rows)
+        except:
+            ws.update(rows)
     except Exception as e:
         st.error(f"Speicher-Fehler: {e}")
 
@@ -148,11 +151,10 @@ def save_backup_to_cloud(serializable_sessions):
         from zoneinfo import ZoneInfo
         ts = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
         
-        # Gigantische Fotos filtern, um das Google-Zellenlimit nicht zu sprengen
+        # Gigantische Fotos filtern, um das Google-Zellenlimit (50.000 Zeichen) nicht zu sprengen
         slim_sessions = []
         for s in serializable_sessions:
-            s_slim = s.copy()
-            if "image_b64" in s_slim: del s_slim["image_b64"]
+            s_slim = {k: v for k, v in s.items() if k != "image_b64"}
             slim_sessions.append(s_slim)
             
         json_str = json.dumps(slim_sessions, ensure_ascii=False)
@@ -308,39 +310,6 @@ def delete_session(session_id):
     else:
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
-
-def import_liga_spielplan():
-    plan = [
-        ("15.09.2026", "FSV Wehringen", "DC Bavarian Knights Hurlach III"),
-        ("21.09.2026", "SV Bergheim Darts III", "FSV Wehringen"),
-        ("29.09.2026", "FSV Wehringen", "SC Eurasburg"),
-        ("12.10.2026", "Rabbits Lechfeld II", "FSV Wehringen"),
-        ("27.10.2026", "FSV Wehringen", "SC Eurasburg II"),
-        ("10.11.2026", "FSV Wehringen", "DJK Lechhausen VII"),
-        ("23.11.2026", "SV Bergheim Darts II", "FSV Wehringen"),
-        ("01.12.2026", "FSV Wehringen", "TSV Schmiechen"),
-        ("17.12.2026", "TSV Schmiechen II", "FSV Wehringen"),
-        ("12.01.2027", "FSV Wehringen", "Dartfreunde Umbach III"),
-        ("04.02.2027", "DC Bavarian Knights Hurlach III", "FSV Wehringen"),
-        ("16.02.2027", "FSV Wehringen", "SV Bergheim Darts III"),
-        ("01.03.2027", "SC Eurasburg", "FSV Wehringen"),
-        ("09.03.2027", "FSV Wehringen", "Rabbits Lechfeld II"),
-        ("17.03.2027", "SC Eurasburg II", "FSV Wehringen"),
-        ("07.04.2027", "DJK Lechhausen VII", "FSV Wehringen"),
-        ("13.04.2027", "FSV Wehringen", "SV Bergheim Darts II"),
-        ("27.04.2027", "TSV Schmiechen", "FSV Wehringen"),
-        ("11.05.2027", "FSV Wehringen", "TSV Schmiechen II"),
-        ("31.05.2027", "Dartfreunde Umbach III", "FSV Wehringen")
-    ]
-    changed = False
-    for datum, heim, gast in plan:
-        exists = any(s.get("is_wettkampf") and s.get("datum") == datum for s in st.session_state.sessions_list)
-        if not exists:
-            max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
-            new_session = {"id": f"W-{max_id + 1}", "datum": datum, "is_wettkampf": True, "heim_team": heim, "gast_team": gast, "is_heimspiel": heim == "FSV Wehringen", "auf_heim": {}, "auf_gast": {}, "results": {}, "is_locked": False}
-            st.session_state.sessions_list.append(new_session)
-            changed = True
-    if changed: smart_sync_and_save(st.session_state.sessions_list)
 
 def get_running_score_up_to(res, all_keys, target_key):
     h_score, g_score = 0, 0
@@ -1254,6 +1223,68 @@ def open_wettkampf_blitz_dialog(session_id):
         smart_sync_and_save(st.session_state.sessions_list)
         st.rerun()
 
+@st.dialog("📸 Spielbericht Original", width="large")
+def open_image_dialog(b64_str):
+    st.image(base64.b64decode(b64_str), use_container_width=True)
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
+@st.dialog("♻️ Liga-Notfall-Wiederherstellung", width="large")
+def open_liga_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies stellt NUR gelöschte Liga-Spiele (Wettkämpfe) inkl. Fotos aus der Cloud wieder her. Dein normales Teamtraining bleibt davon komplett unberührt!")
+    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password")
+    if pwd != "1521":
+        if pwd != "": st.error("Nur für Administratoren!")
+        return
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet_obj = client.open_by_url(SHEET_URL)
+        try:
+            backup_ws = spreadsheet_obj.worksheet("backups")
+            all_vals = backup_ws.get_all_values()
+            if len(all_vals) > 1:
+                backups = list(reversed(all_vals[1:]))
+                confirm = st.checkbox("Ja, ich möchte alte Liga-Daten aus der Cloud laden.")
+                for i, b in enumerate(backups[:10]):
+                    ts = b[0]
+                    json_str = b[1]
+                    try:
+                        data_preview = json.loads(json_str)
+                        liga_games = [s for s in data_preview if s.get("is_wettkampf")]
+                        data_info = f"{len(liga_games)} Liga-Spiele gesichert"
+                    except: data_info = "Fehlerhaftes JSON"
+                    c_t, c_b = st.columns([3, 1])
+                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                    with c_b:
+                        if st.button("Liga-Daten Laden", key=f"rest_liga_{i}", disabled=not confirm, use_container_width=True):
+                            try:
+                                backup_data = json.loads(json_str)
+                                backup_liga = [s for s in backup_data if s.get("is_wettkampf")]
+                                current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
+                                merged_data = current_other + backup_liga
+                                sichere_sessions = make_serializable(merged_data)
+                                new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                                normal_sessions = [s for s in sichere_sessions if not s.get("is_wettkampf")]
+                                liga_sessions_list = [s for s in sichere_sessions if s.get("is_wettkampf")]
+                                completed_liga_list = [s for s in liga_sessions_list if s.get("is_locked")]
+                                ws_normal = ensure_worksheet(spreadsheet_obj, "sessions")
+                                chunked_save(ws_normal, normal_sessions)
+                                ws_liga = ensure_worksheet(spreadsheet_obj, "liga_sessions")
+                                chunked_save(ws_liga, liga_sessions_list)
+                                ws_completed_liga = ensure_worksheet(spreadsheet_obj, "completed_liga")
+                                chunked_save(ws_completed_liga, completed_liga_list)
+                                st.session_state.sessions_list = merged_data
+                                st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Fehler: {e}")
+                    st.divider()
+            else: st.info("Noch keine Cloud-Backups vorhanden.")
+        except Exception as e: st.error("Konnte Backup-Tabelle nicht finden.")
+    except Exception as e: st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+
 @st.dialog("📊 Liga-Spielbericht", width="large")
 def open_wettkampf_view_dialog(session_id):
     sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
@@ -1332,7 +1363,7 @@ training_sessions = [s for s in st.session_state.sessions_list if not s.get("is_
 liga_sessions = [s for s in st.session_state.sessions_list if s.get("is_liga")]
 wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wettkampf")]
 
-tab_übersicht, tab_kader, tab_session, tab_liga, tab_wettkampf, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Freundschaftsspiele", "Liga (Punktspiele)", "Match-Archiv", "Modus & Regeln"])
+tab_übersicht, tab_kader, tab_session, tab_fs, tab_liga, tab_archiv, tab_regeln = st.tabs(["Übersicht", "Kader", "Session", "Freundschaftsspiele", "Liga (Punktspiele)", "Match-Archiv", "Modus & Regeln"])
 
 if not is_admin:
     st.info("🔒 **Gast-Modus aktiv:** Du hast aktuell nur Lese-Rechte. Um Sessions zu starten oder Ergebnisse einzutragen, öffne das Seitenmenü (oben links auf `>` tippen) und logge dich als Spieler ein.")
@@ -1679,59 +1710,12 @@ with tab_session:
                 st.markdown(f"**{rank}. {row['Team']}** — Quote: **{row['Quote']}**")
                 st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 🎯 180er: {row['180er']} | Legs: {row['Legs']}")
 
-with tab_liga:
-    st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
-    @st.cache_data(ttl=3600)
-    def fetch_bdv_table():
-        import pandas as pd
-        import urllib.request
-        import io
-        url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            response = urllib.request.urlopen(req, timeout=10)
-            html = response.read().decode('utf-8', errors='replace')
-            try: dfs = pd.read_html(io.StringIO(html))
-            except: dfs = pd.read_html(html)
-            
-            for df in dfs:
-                # Robuste Suche über alle Zellen, selbst wenn die Tabelle extrem breit ist
-                flat_text = " ".join([str(x).lower() for x in df.columns]) + " " + " ".join([str(x).lower() for x in df.values.flatten()])
-                if "mannschaft" in flat_text and ("punkte" in flat_text or "spiele" in flat_text):
-                    # Header reparieren, falls nuLiga sie seltsam verschachtelt hat
-                    if 'Mannschaft' not in df.columns:
-                        for idx, row in df.iterrows():
-                            if any(isinstance(val, str) and 'Mannschaft' in val for val in row.values):
-                                df.columns = row.values
-                                df = df.iloc[idx+1:].reset_index(drop=True)
-                                break
-                    # Leere Platzhalter-Spalten vom BDV löschen und leere Zellen säubern
-                    df = df.dropna(how='all', axis=1)
-                    df = df.fillna("")
-                    df.columns = [str(c) if not str(c).startswith("Unnamed") else "" for c in df.columns]
-                    return df, ""
-            return pd.DataFrame(), "Tabelle nicht gefunden."
-        except Exception as e:
-            return pd.DataFrame(), str(e)
-            
-    bdv_df, err_msg = fetch_bdv_table()
+with tab_fs:
+    st.subheader("Freundschaftsspiele")
+    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
-    if not bdv_df.empty:
-        def highlight_fsv(val):
-            if isinstance(val, str) and "Wehringen" in val: return 'background-color: rgba(46, 125, 50, 0.6); color: white;'
-            return ''
-        try:
-            st.dataframe(bdv_df.style.map(highlight_fsv), use_container_width=True, hide_index=True)
-        except AttributeError:
-            st.dataframe(bdv_df.style.applymap(highlight_fsv), use_container_width=True, hide_index=True)
-    else:
-        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert oder es fehlt ein Paket (System-Meldung: {err_msg}). Als Fallback wird die Original-Tabelle eingeblendet:")
-        st.markdown(f'<iframe src="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" width="100%" height="450px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
-        
-    st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
-    st.divider()
-
-    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
+    if is_admin:
+        if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
             open_new_liga_match_dialog()
         
     st.divider()
@@ -1840,8 +1824,7 @@ with tab_liga:
                                         if is_admin and show_sub_btn and not "d" in g_key:
                                             if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                     if is_played:
-                                        m_inf = res[m_key]
-                                        st.success(f"Ergebnis: {m_inf['lh']}:{m_inf['lg']}")
+                                        st.success(f"Ergebnis: {m_data['lh']}:{m_data['lg']}")
                                     else:
                                         if is_admin:
                                             if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True): open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
@@ -1877,7 +1860,7 @@ with tab_liga:
                     st.download_button(label="📥 Offiziellen Spielbericht als PDF laden", data=pdf_file, file_name=f"Spielbericht_{c_sess.get('heim_team')}_vs_{c_sess.get('gast_team')}.pdf", mime="application/pdf", key=f"dl_pdf_{c_sess['id']}")
                 except Exception as e: st.error(f"PDF-Generierung fehlgeschlagen: {e}")
 
-with tab_wettkampf:
+with tab_liga:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     
     st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
@@ -1888,23 +1871,23 @@ with tab_wettkampf:
         import io
         url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             response = urllib.request.urlopen(req, timeout=5)
             html = response.read().decode('utf-8', errors='replace')
             try: dfs = pd.read_html(io.StringIO(html))
             except: dfs = pd.read_html(html)
             
             for df in dfs:
-                df_str = df.to_string().lower()
-                if "mannschaft" in df_str and "punkte" in df_str:
+                flat_text = " ".join([str(x).lower() for x in df.columns]) + " " + " ".join([str(x).lower() for x in df.values.flatten()])
+                if "mannschaft" in flat_text and "punkte" in flat_text:
                     if 'Mannschaft' not in df.columns:
                         for idx, row in df.iterrows():
-                            if any(str(val).strip() == 'Mannschaft' for val in row.values):
+                            if any("Mannschaft" in str(val) for val in row.values):
                                 df.columns = row.values
                                 df = df.iloc[idx+1:].reset_index(drop=True)
                                 break
                     df = df.dropna(how='all', axis=1)
-                    df.columns = [str(c) if not str(c).startswith("Unnamed") else "" for c in df.columns]
+                    df.columns = [str(c) if "Unnamed" not in str(c) else "" for c in df.columns]
                     return df, ""
             return pd.DataFrame(), "Tabelle nicht gefunden."
         except Exception as e:
@@ -1927,6 +1910,8 @@ with tab_wettkampf:
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
     st.divider()
 
+    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
+    
     if is_admin:
         c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
         with c_btn_w1:
