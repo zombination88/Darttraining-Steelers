@@ -1,16 +1,3 @@
-Das ist ein absolut verständlicher Wunsch! Wenn du oben die Aufstellung (Einzel 1-4 und Doppel 1-2) machst, sollen diese Namen **vollautomatisch in die 10 Matches unten durchrutschen**. Nur wenn es während des Spiels eine echte Auswechslung gibt, klickst du auf "🔄 Auswechseln".
-
-Das unschöne `- & -` aus deinem Screenshot entstand, weil die App sich im Hintergrund leere Platzhalter gemerkt hat und dachte, das sei schon ein echter Spieler. Dadurch hat sie die automatische Aktualisierung von oben nach unten blockiert.
-
-**Ich habe das nun exakt wie besprochen behoben:**
-
-1. **Intelligente Übernahme:** Egal ob Dropdown (Steelers) oder Textfeld (Gegner) – was du oben bei Doppel 1 & 2 eingibst, wird unten bei den Doppel-Matches sofort sauber angezeigt.
-2. **Keine `- & -` Fehler mehr:** Die App erkennt jetzt, ob ein Name echt ist oder nur ein Platzhalter. Unvollständige Eingaben (wie auf dem Screenshot) filtert sie automatisch heraus.
-3. **Auswechslungen:** Das Häkchen "🔄 Auswechseln" funktioniert jetzt reibungslos für Einzel- und Doppelspieler.
-
-Hier ist der aktualisierte, saubere Code. Kopiere alles und ersetze deine `app.py` – **alle anderen Funktionen (Tabelle, Login, PDF) sind zu 100 % unangetastet geblieben!**
-
-```python:app.py
 # INSTRUKTION: DIESE REGELN DÜRFEN BEI CODE-UPDATES NIEMALS VERLETZT WERDEN
 # 1. BACKUPS: Das Rolling-Backup in Google Sheets darf maximal 20 Einträge umfassen (ältere löschen).
 # 2. JSON-EXPORT: Vor jedem json.dumps() MUSS die Hilfsfunktion make_serializable() aufgerufen werden, um Tupel/Datumsformate abzusichern!
