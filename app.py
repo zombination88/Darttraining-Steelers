@@ -62,7 +62,6 @@ with st.sidebar:
             st.success("Abgemeldet!")
 
 is_admin = st.session_state.role == "Spieler"
-# ------------------------------------------
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
@@ -201,6 +200,45 @@ def get_local_time_str():
         return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%H:%M")
     except: return datetime.now().strftime("%H:%M")
 
+@st.cache_data(ttl=3600)
+def fetch_bdv_table():
+    """Liest die aktuelle Bezirksliga-Tabelle direkt vom BDV aus (nuLiga)."""
+    try:
+        import urllib.request
+        url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        html = urllib.request.urlopen(req).read().decode('utf-8')
+        
+        try:
+            tables = pd.read_html(io.StringIO(html))
+        except ImportError:
+            return pd.DataFrame({"Hinweis": ["Bitte 'lxml' in die requirements.txt der App eintragen, um die Tabelle zu laden!"]})
+            
+        target_df = None
+        # Suche die Tabelle, die eine Spalte 'Mannschaft' enthält
+        for df in tables:
+            if any(isinstance(col, str) and "Mannschaft" in col for col in df.columns):
+                target_df = df
+                break
+        
+        if target_df is None and tables:
+            target_df = tables[0]
+            
+        if target_df is not None:
+            # Komplette leere Spalten (ohne jeglichen Inhalt) entfernen
+            target_df = target_df.dropna(axis=1, how='all')
+            # Leere Zeilen (wo kein Teamname steht) entfernen
+            if 'Mannschaft' in target_df.columns:
+                target_df = target_df.dropna(subset=['Mannschaft'])
+            
+            # Defekte Spaltennamen reparieren (nuLiga fügt oft Unnamed-Spalten ein)
+            target_df.columns = [str(c).replace("Unnamed: ", "") if "Unnamed" in str(c) else c for c in target_df.columns]
+            return target_df
+        else:
+            return pd.DataFrame({"Info": ["Keine Tabelle auf der BDV Seite gefunden."]})
+    except Exception as e:
+        return pd.DataFrame({"Fehler": [f"Konnte nicht geladen werden: {str(e)}"]})
+
 def get_liga_config(sess):
     t_size = sess.get("team_size", 4)
     b_count = sess.get("boards_count", 2)
@@ -293,39 +331,6 @@ def delete_session(session_id):
     else:
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
-
-def import_liga_spielplan():
-    plan = [
-        ("15.09.2026", "FSV Wehringen", "DC Bavarian Knights Hurlach III"),
-        ("21.09.2026", "SV Bergheim Darts III", "FSV Wehringen"),
-        ("29.09.2026", "FSV Wehringen", "SC Eurasburg"),
-        ("12.10.2026", "Rabbits Lechfeld II", "FSV Wehringen"),
-        ("27.10.2026", "FSV Wehringen", "SC Eurasburg II"),
-        ("10.11.2026", "FSV Wehringen", "DJK Lechhausen VII"),
-        ("23.11.2026", "SV Bergheim Darts II", "FSV Wehringen"),
-        ("01.12.2026", "FSV Wehringen", "TSV Schmiechen"),
-        ("17.12.2026", "TSV Schmiechen II", "FSV Wehringen"),
-        ("12.01.2027", "FSV Wehringen", "Dartfreunde Umbach III"),
-        ("04.02.2027", "DC Bavarian Knights Hurlach III", "FSV Wehringen"),
-        ("16.02.2027", "FSV Wehringen", "SV Bergheim Darts III"),
-        ("01.03.2027", "SC Eurasburg", "FSV Wehringen"),
-        ("09.03.2027", "FSV Wehringen", "Rabbits Lechfeld II"),
-        ("17.03.2027", "SC Eurasburg II", "FSV Wehringen"),
-        ("07.04.2027", "DJK Lechhausen VII", "FSV Wehringen"),
-        ("13.04.2027", "FSV Wehringen", "SV Bergheim Darts II"),
-        ("27.04.2027", "TSV Schmiechen", "FSV Wehringen"),
-        ("11.05.2027", "FSV Wehringen", "TSV Schmiechen II"),
-        ("31.05.2027", "Dartfreunde Umbach III", "FSV Wehringen")
-    ]
-    changed = False
-    for datum, heim, gast in plan:
-        exists = any(s.get("is_wettkampf") and s.get("datum") == datum for s in st.session_state.sessions_list)
-        if not exists:
-            max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
-            new_session = {"id": f"W-{max_id + 1}", "datum": datum, "is_wettkampf": True, "heim_team": heim, "gast_team": gast, "is_heimspiel": heim == "FSV Wehringen", "auf_heim": {}, "auf_gast": {}, "results": {}, "is_locked": False}
-            st.session_state.sessions_list.append(new_session)
-            changed = True
-    if changed: smart_sync_and_save(st.session_state.sessions_list)
 
 def get_running_score_up_to(res, all_keys, target_key):
     h_score, g_score = 0, 0
@@ -647,8 +652,10 @@ def generate_calendar_pdf(wettkampf_sessions, min_d, max_d):
                     cell_content = [Paragraph(str(day), day_style)]
                     if curr_date in games_by_date:
                         g = games_by_date[curr_date]
-                        if g["heim"]: cell_content.append(Paragraph(f"Heim vs<br/>{g['gegner']}", event_style_heim))
-                        else: cell_content.append(Paragraph(f"Ausw. @<br/>{g['gegner']}", event_style_gast))
+                        if g["heim"]: 
+                            cell_content.append(Paragraph(f"Heim vs<br/>{g['gegner']}", event_style_heim))
+                        else: 
+                            cell_content.append(Paragraph(f"Ausw. @<br/>{g['gegner']}", event_style_gast))
                     elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
                         cell_content.append(Paragraph("Training", event_style_train))
                     row.append(cell_content)
@@ -665,22 +672,20 @@ def generate_calendar_pdf(wettkampf_sessions, min_d, max_d):
     return packet.getvalue()
 
 def parse_doppel(val):
-    if not val: return "", ""
-    if "&" in val:
-        parts = [p.strip() for p in val.split("&")]
-        return parts[0] if len(parts) > 0 else "", parts[1] if len(parts) > 1 else ""
-    return str(val).strip(), ""
+    if "&" in str(val):
+        parts = [p.strip() for p in str(val).split("&")]
+        if len(parts) >= 2: return parts[:2]
+    return [str(val).strip(), ""]
 
-def format_doppel(p1, p2):
+def build_doppel_str(p1, p2):
     p1_c = str(p1).strip() if p1 and str(p1) != "-" else ""
     p2_c = str(p2).strip() if p2 and str(p2) != "-" else ""
     if p1_c and p2_c: return f"{p1_c} & {p2_c}"
     if p1_c: return p1_c
     if p2_c: return p2_c
-    return "-"
+    return ""
 
 # --- DIALOG FUNKTIONEN ---
-
 @st.dialog("📆 Steelers Saison-Kalender", width="large")
 def open_saison_kalender_dialog():
     import calendar
@@ -1175,7 +1180,51 @@ def open_session_summary_dialog(session_id):
                 rank += 1
     if st.button("Schließen", use_container_width=True): st.rerun()
 
-# --- MAIN UI ---
+@st.dialog("📊 Liga-Spielbericht", width="large")
+def open_wettkampf_view_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    st.write(f"### {sess.get('heim_team')} vs. {sess.get('gast_team')}")
+    st.caption(f"Datum: {sess.get('datum')} | Status: Abgeschlossen")
+    res = sess.get("results", {})
+    sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
+    for m_data in res.values():
+        if m_data.get("played"):
+            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+            legs_h += lh; legs_g += lg
+            if lh > lg: sets_h += 1
+            elif lg > lh: sets_g += 1
+    st.markdown(f"#### Endstand: {sets_h} : {sets_g} Sets ({legs_h} : {legs_g} Legs)")
+    st.divider()
+    match_plan = [("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"), ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"), ("m5", "Kreuz 1", "h1", "g2"), ("m6", "Kreuz 2", "h2", "g1"), ("m7", "Kreuz 3", "h3", "g4"), ("m8", "Kreuz 4", "h4", "g3"), ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")]
+    for m_key, label, h_key, g_key in match_plan:
+        m_data = res.get(m_key, {})
+        if m_data.get("played"):
+            s1, s2 = m_data.get("s1", "-"), m_data.get("s2", "-")
+            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+            hl_h = []
+            if m_data.get("180_h", 0) > 0: hl_h.append(f"{m_data['180_h']}x 180")
+            if m_data.get("hf_h", 0) >= 100: hl_h.append(f"HF {m_data['hf_h']}")
+            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: hl_h.append(f"SL {m_data['sl_h']}")
+            hl_g = []
+            if m_data.get("180_g", 0) > 0: hl_g.append(f"{m_data['180_g']}x 180")
+            if m_data.get("hf_g", 0) >= 100: hl_g.append(f"HF {m_data['hf_g']}")
+            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: hl_g.append(f"SL {m_data['sl_g']}")
+            h_str = f"*{', '.join(hl_h)}*" if hl_h else ""
+            g_str = f"*{', '.join(hl_g)}*" if hl_g else ""
+            ind_180_h = m_data.get("ind_180_h", {})
+            if ind_180_h and "Doppel" in label:
+                ind_h_str = [f"{p}: {v}x 180" for p, v in ind_180_h.items() if v > 0]
+                if ind_h_str: h_str += f" ({', '.join(ind_h_str)})"
+            ind_180_g = m_data.get("ind_180_g", {})
+            if ind_180_g and "Doppel" in label:
+                ind_g_str = [f"{p}: {v}x 180" for p, v in ind_180_g.items() if v > 0]
+                if ind_g_str: g_str += f" ({', '.join(ind_g_str)})"
+            st.markdown(f"**{label}**: {s1} **{lh} : {lg}** {s2}")
+            if h_str or g_str: st.caption(f"Highlights: Heim [{h_str}] | Gast [{g_str}]")
+            st.write("")
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
     for logo_path in ["logo.png.png", "logo.png"]:
@@ -1707,6 +1756,26 @@ with tab_liga:
 
 with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
+    
+    # --- LIVE BDV TABELLE ---
+    st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
+    with st.spinner("Tabelle wird synchronisiert..."):
+        df_tabelle = fetch_bdv_table()
+        if df_tabelle is not None and not df_tabelle.empty:
+            if "Fehler" in df_tabelle.columns or "Hinweis" in df_tabelle.columns or "Info" in df_tabelle.columns:
+                err_msg = df_tabelle.iloc[0, 0]
+                st.error(f"Tabellen-Fehler: {err_msg}")
+            else:
+                def highlight_steelers(row):
+                    is_steelers = any("Wehringen" in str(val) for val in row.values)
+                    if is_steelers:
+                        return ['background-color: rgba(46, 204, 113, 0.3)'] * len(row)
+                    return [''] * len(row)
+                
+                st.dataframe(df_tabelle.style.apply(highlight_steelers, axis=1), hide_index=True, use_container_width=True)
+    st.write("*(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)*")
+    st.divider()
+
     st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
     
     if is_admin:
@@ -1966,5 +2035,3 @@ with tab_regeln:
         st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Fehler Korrigieren:** Über den "✏️ Korrigieren" Button direkt in der laufenden Session kann die zuletzt gespielte Runde sofort repariert werden (fat-finger errors).""")
-
-```
