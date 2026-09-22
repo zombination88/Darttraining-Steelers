@@ -1861,8 +1861,6 @@ with tab_fs:
                 except Exception as e: st.error(f"PDF-Generierung fehlgeschlagen: {e}")
 
 with tab_liga:
-    st.subheader("Liga & Wettkampf (Punktspiele)")
-    
     st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
     @st.cache_data(ttl=3600)
     def fetch_bdv_table():
@@ -1871,25 +1869,44 @@ with tab_liga:
         import io
         url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             response = urllib.request.urlopen(req, timeout=5)
             html = response.read().decode('utf-8', errors='replace')
             try: dfs = pd.read_html(io.StringIO(html))
             except: dfs = pd.read_html(html)
             
             for df in dfs:
-                flat_text = " ".join([str(x).lower() for x in df.columns]) + " " + " ".join([str(x).lower() for x in df.values.flatten()])
-                if "mannschaft" in flat_text and "punkte" in flat_text:
-                    if 'Mannschaft' not in df.columns:
-                        for idx, row in df.iterrows():
-                            if any("Mannschaft" in str(val) for val in row.values):
-                                df.columns = row.values
-                                df = df.iloc[idx+1:].reset_index(drop=True)
-                                break
-                    df = df.dropna(how='all', axis=1)
-                    df.columns = [str(c) if "Unnamed" not in str(c) else "" for c in df.columns]
-                    return df, ""
-            return pd.DataFrame(), "Tabelle nicht gefunden."
+                df_str = df.to_string().lower()
+                # Wir suchen den Container, in dem Wehringen auftaucht
+                if "wehringen" in df_str:
+                    valid_rows = []
+                    for _, row in df.iterrows():
+                        # Panzer-Logik: Suche hart nach den Rängen (1-30) in den ersten beiden Spalten
+                        v0 = str(row.iloc[0]).replace(".", "").strip()
+                        v1 = str(row.iloc[1]).replace(".", "").strip() if len(row) > 1 else ""
+                        
+                        is_rank = False
+                        if v0.isdigit() and 1 <= int(v0) <= 30: is_rank = True
+                        elif v1.isdigit() and 1 <= int(v1) <= 30: is_rank = True
+                        
+                        if is_rank:
+                            # NaN Werte bereinigen und das ".0" von Pandas-Zahlen entfernen
+                            clean_row = ["" if pd.isna(x) else (str(int(x)) if isinstance(x, float) and x.is_integer() else str(x)) for x in row.values]
+                            valid_rows.append(clean_row)
+                            
+                    if valid_rows:
+                        clean_df = pd.DataFrame(valid_rows)
+                        clean_df = clean_df.dropna(how='all', axis=1) # Leere BDV-Formatierungs-Spalten entfernen
+                        
+                        # Eigene saubere Header setzen (BDV ignoriert diese im Code oft)
+                        headers = ["Rang", "Mannschaft", "Spiele", "Punkte", "Sets", "Legs"]
+                        final_headers = headers[:len(clean_df.columns)]
+                        for i in range(len(final_headers), len(clean_df.columns)):
+                            final_headers.append(f"Info {i+1}")
+                        clean_df.columns = final_headers
+                        
+                        return clean_df, ""
+            return pd.DataFrame(), "Ligatabelle konnte nicht aus der BDV-Struktur isoliert werden."
         except Exception as e:
             return pd.DataFrame(), str(e)
             
@@ -1910,24 +1927,7 @@ with tab_liga:
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
     st.divider()
 
-    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
-    
-    if is_admin:
-        c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
-        with c_btn_w1:
-            if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True): open_new_wettkampf_dialog()
-        with c_btn_w3:
-            if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
-        with c_btn_w4:
-            if st.button("♻️ Liga-Backup laden", use_container_width=True): open_liga_rollback_dialog()
-    else:
-        if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
-        
-    st.divider()
-    
-    if not wettkampf_sessions: st.info("Noch keine Liga-Spiele eingetragen. Lege ein Spiel manuell an.")
-    else:
-        l_stats = {p: {"Matches": 0, "Siege": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "HFs": [], "SLs": []} for p in kader}
+    st.subheader("Freundschaftsspiele")
         for sess in wettkampf_sessions:
             if sess.get("is_locked"):
                 is_heim = sess.get("is_heimspiel", True)
