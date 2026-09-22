@@ -1864,33 +1864,28 @@ with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     
     st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
-    
     @st.cache_data(ttl=3600)
     def fetch_bdv_table():
         import pandas as pd
         import urllib.request
         import io
-        import re
         url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
         try:
-            # Etwas freundlicherer User-Agent, um Blockaden zu vermeiden
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-            response = urllib.request.urlopen(req, timeout=8)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            response = urllib.request.urlopen(req, timeout=5)
             html = response.read().decode('utf-8', errors='replace')
-            
-            # Methode 1: Versuch die Tabelle elegant als Pandas Dataframe zu laden (Clean UI)
             try: dfs = pd.read_html(io.StringIO(html))
             except: dfs = pd.read_html(html)
             
             for df in dfs:
                 has_mannschaft = False
                 for col in df.columns:
-                    if any(x in str(col) for x in ["Mannschaft", "Team", "Punkte"]):
+                    if "Mannschaft" in str(col):
                         has_mannschaft = True
                         break
                 if not has_mannschaft:
                     for idx, row in df.iterrows():
-                        if any(any(x in str(val) for x in ["Mannschaft", "Team", "Punkte"]) for val in row.values):
+                        if any("Mannschaft" in str(val) for val in row.values):
                             df.columns = row.values
                             df = df.iloc[idx+1:].reset_index(drop=True)
                             has_mannschaft = True
@@ -1908,19 +1903,12 @@ with tab_wettkampf:
                     
                     if valid_rows:
                         clean_df = pd.DataFrame(valid_rows, columns=df.columns)
-                        return clean_df, "", None
-
-            # Methode 2: HTML Extraction Fallback (Verhindert das Laden der gesamten Webseite im iFrame)
-            table_match = re.search(r'(<table[^>]*class="result-set"[^>]*>.*?</table>)', html, re.IGNORECASE | re.DOTALL)
-            if table_match:
-                raw_html = table_match.group(1).replace('href="/', 'href="https://bdv-dart.liga.nu/')
-                return pd.DataFrame(), "", raw_html
-
-            return pd.DataFrame(), "Tabelle nicht gefunden.", None
+                        return clean_df, ""
+            return pd.DataFrame(), "Tabelle nicht gefunden."
         except Exception as e:
-            return pd.DataFrame(), str(e), None
+            return pd.DataFrame(), str(e)
             
-    bdv_df, err_msg, raw_html = fetch_bdv_table()
+    bdv_df, err_msg = fetch_bdv_table()
     
     if not bdv_df.empty:
         def highlight_fsv(val):
@@ -1930,12 +1918,9 @@ with tab_wettkampf:
             st.dataframe(bdv_df.style.map(highlight_fsv), use_container_width=True, hide_index=True)
         except AttributeError:
             st.dataframe(bdv_df.style.applymap(highlight_fsv), use_container_width=True, hide_index=True)
-    elif raw_html:
-        st.warning("Die Daten-Sauger Methode für die formatierte Tabelle schlug fehl. Es wird ersatzweise die pure HTML-Tabelle eingeblendet:")
-        st.markdown(f'<div style="overflow-x: auto; background: white; padding: 10px; border-radius: 8px; color: black !important;">{raw_html}</div>', unsafe_allow_html=True)
     else:
-        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert (System-Meldung: {err_msg}).")
-        st.markdown(f'<a href="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" target="_blank">🔗 Hier klicken, um direkt zur BDV Tabelle zu gelangen</a>', unsafe_allow_html=True)
+        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert oder es fehlt ein Paket (System-Meldung: {err_msg}). Als Fallback wird die Original-Tabelle eingeblendet:")
+        st.markdown(f'<iframe src="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" width="100%" height="450px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
         
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
     st.divider()
