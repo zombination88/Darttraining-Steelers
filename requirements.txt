@@ -2,3 +2,12 @@ st-gsheets-connection
 pypdf
 reportlab
 extra-streamlit-components
+streamlit
+pandas
+gspread
+google-auth
+extra-streamlit-components
+Pillow
+pypdf
+reportlab
+lxml
