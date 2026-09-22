@@ -1689,21 +1689,25 @@ with tab_liga:
         url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            response = urllib.request.urlopen(req, timeout=5)
+            response = urllib.request.urlopen(req, timeout=10)
             html = response.read().decode('utf-8', errors='replace')
             try: dfs = pd.read_html(io.StringIO(html))
             except: dfs = pd.read_html(html)
             
             for df in dfs:
-                df_str = df.to_string().lower()
-                if "mannschaft" in df_str and "punkte" in df_str:
+                # Robuste Suche über alle Zellen, selbst wenn die Tabelle extrem breit ist
+                flat_text = " ".join([str(x).lower() for x in df.columns]) + " " + " ".join([str(x).lower() for x in df.values.flatten()])
+                if "mannschaft" in flat_text and ("punkte" in flat_text or "spiele" in flat_text):
+                    # Header reparieren, falls nuLiga sie seltsam verschachtelt hat
                     if 'Mannschaft' not in df.columns:
                         for idx, row in df.iterrows():
-                            if any(str(val).strip() == 'Mannschaft' for val in row.values):
+                            if any(isinstance(val, str) and 'Mannschaft' in val for val in row.values):
                                 df.columns = row.values
                                 df = df.iloc[idx+1:].reset_index(drop=True)
                                 break
+                    # Leere Platzhalter-Spalten vom BDV löschen und leere Zellen säubern
                     df = df.dropna(how='all', axis=1)
+                    df = df.fillna("")
                     df.columns = [str(c) if not str(c).startswith("Unnamed") else "" for c in df.columns]
                     return df, ""
             return pd.DataFrame(), "Tabelle nicht gefunden."
@@ -1727,11 +1731,7 @@ with tab_liga:
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
     st.divider()
 
-    st.subheader("Freundschaftsspiele")
-    st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
-    
-    if is_admin:
-        if st.button("➕ Neues Freundschaftsspiel starten", type="primary", use_container_width=True):
+    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
             open_new_liga_match_dialog()
         
     st.divider()
