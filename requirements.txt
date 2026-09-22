@@ -1,5 +1,4 @@
 st-gsheets-connection
-lxml
 pypdf
 reportlab
 extra-streamlit-components
@@ -11,3 +10,4 @@ extra-streamlit-components
 Pillow
 pypdf
 reportlab
+lxml
