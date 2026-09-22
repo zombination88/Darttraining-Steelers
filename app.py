@@ -1938,10 +1938,147 @@ with tab_wettkampf:
         st.markdown(f'<a href="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" target="_blank">🔗 Hier klicken, um direkt zur BDV Tabelle zu gelangen</a>', unsafe_allow_html=True)
         
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
+    st.divider()
+
+    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
+    
+    if is_admin:
+        c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
+        with c_btn_w1:
+            if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True): open_new_wettkampf_dialog()
+        with c_btn_w3:
+            if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
+        with c_btn_w4:
+            if st.button("♻️ Liga-Backup laden", use_container_width=True): open_liga_rollback_dialog()
+    else:
+        if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
+        
+    st.divider()
+    
+    if not wettkampf_sessions: st.info("Noch keine Liga-Spiele eingetragen. Lege ein Spiel manuell an.")
+    else:
+        l_stats = {p: {"Matches": 0, "Siege": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "HFs": [], "SLs": []} for p in kader}
+        for sess in wettkampf_sessions:
+            if sess.get("is_locked"):
+                is_heim = sess.get("is_heimspiel", True)
+                for m_key, m_data in sess.get("results", {}).items():
+                    if m_data.get("played"):
+                        s1, s2 = m_data.get("s1", ""), m_data.get("s2", "")
+                        lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+                        wehringen_players = s1 if is_heim else s2
+                        wehringen_legs_won = lh if is_heim else lg
+                        wehringen_legs_lost = lg if is_heim else lh
+                        wehringen_won = wehringen_legs_won > wehringen_legs_lost
+                        ind_180s = m_data.get("ind_180_h", {}) if is_heim else m_data.get("ind_180_g", {})
+                        hf_val = m_data.get("hf_h", 0) if is_heim else m_data.get("hf_g", 0)
+                        sl_val = m_data.get("sl_h", 0) if is_heim else m_data.get("sl_g", 0)
+                        for p in [p.strip() for p in wehringen_players.split("&")]:
+                            if p in l_stats:
+                                l_stats[p]["Matches"] += 1
+                                if wehringen_won: l_stats[p]["Siege"] += 1
+                                l_stats[p]["Legs_Won"] += wehringen_legs_won
+                                l_stats[p]["Legs_Lost"] += wehringen_legs_lost
+                                l_stats[p]["180er"] += ind_180s.get(p, m_data.get("180_h", 0) if is_heim else m_data.get("180_g", 0))
+                                if hf_val >= 100: l_stats[p]["HFs"].append(hf_val)
+                                if 0 < sl_val <= 18: l_stats[p]["SLs"].append(sl_val)
+
+        with st.expander("📊 Spieler-Statistik (Gesamte Saison)", expanded=True):
+            table_rows = []
+            for p in kader:
+                if l_stats[p]["Matches"] > 0:
+                    hf_str = f"{max(l_stats[p]['HFs'])} (insg. {len(l_stats[p]['HFs'])})" if l_stats[p]['HFs'] else "-"
+                    sl_str = f"{min(l_stats[p]['SLs'])} (insg. {len(l_stats[p]['SLs'])})" if l_stats[p]['SLs'] else "-"
+                    table_rows.append({"Spieler": p, "Matches": l_stats[p]["Matches"], "Siege": l_stats[p]["Siege"], "Quote": f"{(l_stats[p]['Siege'] / l_stats[p]['Matches'] * 100):.0f}%", "Legs": f"{l_stats[p]['Legs_Won']}:{l_stats[p]['Legs_Lost']}", "180er": l_stats[p]["180er"], "High Finish": hf_str, "Bestes SL": sl_str})
+            if table_rows: st.dataframe(pd.DataFrame(table_rows).sort_values("Siege", ascending=False), hide_index=True)
+            else: st.info("Noch keine abgeschlossenen Spiele zur Auswertung vorhanden.")
+
+        st.divider()
+
+        def parse_w_date(sess):
+            try: return datetime.strptime(sess.get("datum", "01.01.2026"), "%d.%m.%Y")
+            except: return datetime.min
+        
+        sorted_w_sessions = sorted(wettkampf_sessions, key=parse_w_date)
+        active_games = [s for s in sorted_w_sessions if not s.get("is_locked", False)]
+        completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
+
+        if completed_games:
+            with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
+                for w_sess in completed_games:
+                    with st.container(border=True):
+                        st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
+                        res = w_sess.get("results", {})
+                        sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
+                        hfs, sls, maxs = [], [], []
+                        for m_key, m_data in res.items():
+                            if m_data.get("played"):
+                                lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+                                legs_h += lh; legs_g += lg
+                                if lh > lg: sets_h += 1
+                                elif lg > lh: sets_g += 1
+                                if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
+                                if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
+                                if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
+                                if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                                if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
+                                if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
+                        st.markdown(f"**Sets:** {sets_h}:{sets_g} | **Legs:** {legs_h}:{legs_g} | ✅ Abgeschlossen")
+                        if hfs or sls or maxs: st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
+
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            if st.button("📊 Ergebnisse", key=f"wk_res_{w_sess['id']}", use_container_width=True): open_wettkampf_view_dialog(w_sess['id'])
+                        with col_b:
+                            if is_admin:
+                                if st.button("✏️ Bearbeiten", key=f"wk_edit_arch_{w_sess['id']}", use_container_width=True): open_wettkampf_blitz_dialog(w_sess['id'])
+                        with col_c:
+                            if w_sess.get("image_b64"):
+                                if st.button("📸 Foto ansehen", key=f"wk_img_arch_{w_sess['id']}", use_container_width=True): open_image_dialog(w_sess["image_b64"])
+                            else: st.button("📸 Kein Foto", key=f"wk_img_arch_no_{w_sess['id']}", disabled=True, use_container_width=True)
+            st.write("")
+
+        if active_games:
+            st.markdown("### 🔴 Ausstehende / Aktive Spiele")
+            for w_sess in active_games:
+                with st.container(border=True):
+                    st.markdown(f"### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
+                    res = w_sess.get("results", {})
+                    sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
+                    hfs, sls, maxs = [], [], []
+                    for m_key, m_data in res.items():
+                        if m_data.get("played"):
+                            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
+                            legs_h += lh; legs_g += lg
+                            if lh > lg: sets_h += 1
+                            elif lg > lh: sets_g += 1
+                            if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
+                            if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
+                            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
+                            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                            if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
+                            if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
+
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Sets", f"{sets_h} : {sets_g}")
+                    col2.metric("Legs", f"{legs_h} : {legs_g}")
+                    col3.markdown(f"**Status:** 🔴 Aktiv/Ausstehend")
+                    if hfs or sls or maxs: st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
+
+                    c_b1, c_b2, c_b3 = st.columns(3)
+                    with c_b1:
+                        if is_admin:
+                            if st.button("⚡ Blitz-Erfassung", key=f"wk_blitz_{w_sess['id']}", use_container_width=True): open_wettkampf_blitz_dialog(w_sess['id'])
+                    with c_b2:
+                        if w_sess.get("image_b64"):
+                            if st.button("📸 Foto ansehen", key=f"wk_img_{w_sess['id']}", use_container_width=True): open_image_dialog(w_sess["image_b64"])
+                        else: st.button("📸 Kein Foto", key=f"wk_img_no_{w_sess['id']}", disabled=True, use_container_width=True)
+                    with c_b3:
+                        if is_admin:
+                            if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True): open_delete_session_dialog(w_sess['id'])
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
-    st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training, Freundschaftsspiele und Ligaspiele.")
+    st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
     if st.session_state.sessions_list:
         safe_data_for_export = make_serializable(st.session_state.sessions_list)
@@ -1956,123 +2093,9 @@ with tab_archiv:
             try: return datetime.strptime(sess.get("datum", "01.01.2026"), "%d.%m.%Y")
             except: return datetime.min
                 
-        sorted_sessions = sorted(st.session_state.sessions_list, key=lambda x: (parse_session_date(x), int(x["id"].split("-")[1]) if "-" in x["id"] and x["id"].split("-")[1].isdigit() else 0), reverse=True)
+        sorted_sessions = sorted([s for s in st.session_state.sessions_list if not s.get("is_wettkampf", False)], key=lambda x: (parse_session_date(x), int(x["id"].split("-")[1]) if "-" in x["id"] and x["id"].split("-")[1].isdigit() else 0), reverse=True)
         
         for sess in sorted_sessions:
             is_l = sess.get("is_liga", False)
-            is_w = sess.get("is_wettkampf", False)
-            
             with st.container(border=True):
-                if is_w:
-                    status_text = "✅ [Abgeschlossen]" if sess.get("is_locked", False) else "🔴 [Aktiv]"
-                    st.markdown(f"**{sess['id']}** (Offizielles Punktspiel) — {sess['datum']} {status_text}\n\n🏆 {sess.get('heim_team')} vs {sess.get('gast_team')}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        if st.button("📊 Ergebnisse", key=f"arch_wk_v_{sess['id']}", use_container_width=True): open_wettkampf_view_dialog(sess['id'])
-                    with c2:
-                        if is_admin:
-                            if st.button("⚡ Bearbeiten", key=f"arch_wk_e_{sess['id']}", use_container_width=True): open_wettkampf_blitz_dialog(sess['id'])
-                    with c3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen", key=f"arch_wk_d_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
-                elif is_l:
-                    status_text = "✅ [Abgeschlossen]" if sess.get("is_locked", False) else "🔴 [Aktiv]"
-                    st.markdown(f"**{sess['id']}** (Freundschaftsspiel) — {sess['datum']} {status_text}\n\n🏆 {sess.get('heim_team')} vs {sess.get('gast_team')}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True): open_liga_bericht_dialog(sess['id'])
-                    with c2:
-                        if is_admin:
-                            if st.button("⚙️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True): open_edit_liga_session_dialog(sess['id'])
-                    with c3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
-                else:
-                    status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
-                    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
-                    time_display = f" | ⏱️ {start_t} - {end_t} Uhr" if start_t and start_t != "–" else ""
-                    st.markdown(f"**{sess['id']}** (Training) — {sess['datum']}{time_display} {status_text}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
-                    with c2:
-                        if is_admin:
-                            if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
-                    with c3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
-                        
-                    st.divider()
-                    if is_admin:
-                        is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur", key=f"blitz_check_{sess['id']}")
-                        if is_checked:
-                            st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
-                            total_rounds = sess.get("total_rounds", 4)
-                            leg_modus = sess.get("modus_leg", "Best of 5")
-                            for r in range(1, total_rounds + 1):
-                                st.markdown(f"**Runde {r}**")
-                                boards_in_r = get_boards_list(sess, r)
-                                for b_name in boards_in_r:
-                                    m_info = sess.get("results", {}).get((r, b_name))
-                                    p1, p2 = get_board_players(sess, r, b_name) if not m_info else (m_info.get("s1", "-"), m_info.get("s2", "-"))
-                                    try:
-                                        s1 = int(m_info.get("ergebnis", "0:0").split(":")[0]) if m_info else 0
-                                        s2 = int(m_info.get("ergebnis", "0:0").split(":")[1]) if m_info else 0
-                                    except: s1, s2 = 0, 0
-                                        
-                                    with st.container(border=True):
-                                        st.write(f"*{b_name}*")
-                                        c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
-                                        c_p1.markdown(f"**{p1}**")
-                                        c_vs.markdown("vs")
-                                        c_p2.markdown(f"**{p2}**")
-                                        c_in1, c_in2 = st.columns(2)
-                                        val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
-                                        val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
-                                        c_b1, c_b2 = st.columns(2)
-                                        with c_b1:
-                                            if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                                                req_win = 3 if leg_modus == "Best of 5" else 2
-                                                if p1 == "-" or p2 == "-": pass
-                                                elif val1 == val2: st.error("🚨 Unentschieden nicht möglich.")
-                                                elif val1 > req_win or val2 > req_win: st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
-                                                elif val1 != req_win and val2 != req_win: st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
-                                                else:
-                                                    winner = p1 if val1 > val2 else p2
-                                                    loser = p2 if val1 > val2 else p1
-                                                    if "results" not in sess: sess["results"] = {}
-                                                    if m_info:
-                                                        sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
-                                                        sess["results"][(r, b_name)]["winner"] = winner
-                                                        sess["results"][(r, b_name)]["loser"] = loser
-                                                    else:
-                                                        sess["results"][(r, b_name)] = {"s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}", "winner": winner, "loser": loser, "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0}
-                                                    smart_sync_and_save(st.session_state.sessions_list)
-                                                    st.rerun()
-                                        with c_b2:
-                                            if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                                                if (r, b_name) in sess["results"]:
-                                                    del sess["results"][(r, b_name)]
-                                                    smart_sync_and_save(st.session_state.sessions_list)
-                                                    st.rerun()
-
-with tab_regeln:
-    st.subheader("🎯 Modus & Spielablauf")
-    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
-    with st.container(border=True):
-        st.markdown("### 🏆 Freundschaftsspiele")
-        st.markdown("""* Eigener Bereich im Tab **Freundschaftsspiele**.
-        * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup). Doppel dürfen erst aufgestellt werden, wenn alle Einzel und Kreuz-Einzel gespielt sind.
-        * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
-        * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
-        * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.""")
-    with st.container(border=True):
-        st.markdown("### 👑 Trainings-Modi & Logik")
-        st.markdown("""* **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
-        * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
-        * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Ri. B1), Verlierer ab. Der Kaiser der Vorsession (Platz 1) sowie der Sieger von Board 2 (Platz 2) starten am folgenden Abend gemeinsam auf dem letzten Board (z.B. Board 4).""")
-    with st.container(border=True):
-        st.markdown("### 👥 Besonderheiten & Zeitmanagement")
-        st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
-        * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
-        * **Fehler Korrigieren:** Über den "✏️ Korrigieren" Button direkt in der laufenden Session kann die zuletzt gespielte Runde sofort repariert werden (fat-finger errors).""")
+                if is_l:
