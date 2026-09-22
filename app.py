@@ -25,7 +25,6 @@ import os
 import random
 import math
 import base64
-import re
 from PIL import Image
 import extra_streamlit_components as stx
 
@@ -420,6 +419,7 @@ def get_board_players(session, round_num, board_name):
                     platz2 = w.get("Board 2", "-") if len(prev_boards) > 1 else l.get("Kaiser B1", "-")
                 else:
                     platz1 = l.get(prev_boards[b_idx_prev-1], "-")
+                    platz2 = w.get("Board 2", "-") if len(prev_boards) > 1 else l.get("Kaiser B1", "-") # corrected fallback
                     platz2 = w.get(prev_boards[b_idx_prev+1], "-") if b_idx_prev+1 < len(prev_boards) else l.get(prev_boards[b_idx_prev], "-")
                 if platz1 != "-" and platz1 not in prev_players_top_to_bottom: prev_players_top_to_bottom.append(platz1)
                 if platz2 != "-" and platz2 not in prev_players_top_to_bottom: prev_players_top_to_bottom.append(platz2)
@@ -1328,6 +1328,7 @@ def open_wettkampf_view_dialog(session_id):
             st.write("")
     if st.button("Schließen", use_container_width=True): st.rerun()
 
+# --- MAIN UI ---
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
     for logo_path in ["logo.png.png", "logo.png"]:
@@ -1848,7 +1849,7 @@ with tab_liga:
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
-    st.write("Hier findet ihr alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
+    st.write("Hier findest du alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
     
     if not completed_liga: st.info("Noch keine abgeschlossenen Freundschaftsspiele im Archiv.")
     else:
@@ -1919,147 +1920,9 @@ with tab_wettkampf:
         except AttributeError:
             st.dataframe(bdv_df.style.applymap(highlight_fsv), use_container_width=True, hide_index=True)
     else:
-        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert oder es fehlt ein Paket (System-Meldung: {err_msg}). Als Fallback wird die Original-Tabelle eingeblendet:")
-        st.markdown(f'<iframe src="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" width="100%" height="450px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame())
         
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
-    st.divider()
-
-    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
-    
-    if is_admin:
-        c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
-        with c_btn_w1:
-            if st.button("➕ Neuer Spieltag", type="primary", use_container_width=True): open_new_wettkampf_dialog()
-        with c_btn_w3:
-            if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
-        with c_btn_w4:
-            if st.button("♻️ Liga-Backup laden", use_container_width=True): open_liga_rollback_dialog()
-    else:
-        if st.button("📆 Saison-Kalender öffnen", use_container_width=True): open_saison_kalender_dialog()
-        
-    st.divider()
-    
-    if not wettkampf_sessions: st.info("Noch keine Liga-Spiele eingetragen. Lege ein Spiel manuell an.")
-    else:
-        l_stats = {p: {"Matches": 0, "Siege": 0, "Legs_Won": 0, "Legs_Lost": 0, "180er": 0, "HFs": [], "SLs": []} for p in kader}
-        for sess in wettkampf_sessions:
-            if sess.get("is_locked"):
-                is_heim = sess.get("is_heimspiel", True)
-                for m_key, m_data in sess.get("results", {}).items():
-                    if m_data.get("played"):
-                        s1, s2 = m_data.get("s1", ""), m_data.get("s2", "")
-                        lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-                        wehringen_players = s1 if is_heim else s2
-                        wehringen_legs_won = lh if is_heim else lg
-                        wehringen_legs_lost = lg if is_heim else lh
-                        wehringen_won = wehringen_legs_won > wehringen_legs_lost
-                        ind_180s = m_data.get("ind_180_h", {}) if is_heim else m_data.get("ind_180_g", {})
-                        hf_val = m_data.get("hf_h", 0) if is_heim else m_data.get("hf_g", 0)
-                        sl_val = m_data.get("sl_h", 0) if is_heim else m_data.get("sl_g", 0)
-                        for p in [p.strip() for p in wehringen_players.split("&")]:
-                            if p in l_stats:
-                                l_stats[p]["Matches"] += 1
-                                if wehringen_won: l_stats[p]["Siege"] += 1
-                                l_stats[p]["Legs_Won"] += wehringen_legs_won
-                                l_stats[p]["Legs_Lost"] += wehringen_legs_lost
-                                l_stats[p]["180er"] += ind_180s.get(p, m_data.get("180_h", 0) if is_heim else m_data.get("180_g", 0))
-                                if hf_val >= 100: l_stats[p]["HFs"].append(hf_val)
-                                if 0 < sl_val <= 18: l_stats[p]["SLs"].append(sl_val)
-
-        with st.expander("📊 Spieler-Statistik (Gesamte Saison)", expanded=True):
-            table_rows = []
-            for p in kader:
-                if l_stats[p]["Matches"] > 0:
-                    hf_str = f"{max(l_stats[p]['HFs'])} (insg. {len(l_stats[p]['HFs'])})" if l_stats[p]['HFs'] else "-"
-                    sl_str = f"{min(l_stats[p]['SLs'])} (insg. {len(l_stats[p]['SLs'])})" if l_stats[p]['SLs'] else "-"
-                    table_rows.append({"Spieler": p, "Matches": l_stats[p]["Matches"], "Siege": l_stats[p]["Siege"], "Quote": f"{(l_stats[p]['Siege'] / l_stats[p]['Matches'] * 100):.0f}%", "Legs": f"{l_stats[p]['Legs_Won']}:{l_stats[p]['Legs_Lost']}", "180er": l_stats[p]["180er"], "High Finish": hf_str, "Bestes SL": sl_str})
-            if table_rows: st.dataframe(pd.DataFrame(table_rows).sort_values("Siege", ascending=False), hide_index=True)
-            else: st.info("Noch keine abgeschlossenen Spiele zur Auswertung vorhanden.")
-
-        st.divider()
-
-        def parse_w_date(sess):
-            try: return datetime.strptime(sess.get("datum", "01.01.2026"), "%d.%m.%Y")
-            except: return datetime.min
-        
-        sorted_w_sessions = sorted(wettkampf_sessions, key=parse_w_date)
-        active_games = [s for s in sorted_w_sessions if not s.get("is_locked", False)]
-        completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
-
-        if completed_games:
-            with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
-                for w_sess in completed_games:
-                    with st.container(border=True):
-                        st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
-                        res = w_sess.get("results", {})
-                        sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
-                        hfs, sls, maxs = [], [], []
-                        for m_key, m_data in res.items():
-                            if m_data.get("played"):
-                                lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-                                legs_h += lh; legs_g += lg
-                                if lh > lg: sets_h += 1
-                                elif lg > lh: sets_g += 1
-                                if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
-                                if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
-                                if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
-                                if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
-                                if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
-                                if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
-                        st.markdown(f"**Sets:** {sets_h}:{sets_g} | **Legs:** {legs_h}:{legs_g} | ✅ Abgeschlossen")
-                        if hfs or sls or maxs: st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
-
-                        col_a, col_b, col_c = st.columns(3)
-                        with col_a:
-                            if st.button("📊 Ergebnisse", key=f"wk_res_{w_sess['id']}", use_container_width=True): open_wettkampf_view_dialog(w_sess['id'])
-                        with col_b:
-                            if is_admin:
-                                if st.button("✏️ Bearbeiten", key=f"wk_edit_arch_{w_sess['id']}", use_container_width=True): open_wettkampf_blitz_dialog(w_sess['id'])
-                        with col_c:
-                            if w_sess.get("image_b64"):
-                                if st.button("📸 Foto ansehen", key=f"wk_img_arch_{w_sess['id']}", use_container_width=True): open_image_dialog(w_sess["image_b64"])
-                            else: st.button("📸 Kein Foto", key=f"wk_img_arch_no_{w_sess['id']}", disabled=True, use_container_width=True)
-            st.write("")
-
-        if active_games:
-            st.markdown("### 🔴 Ausstehende / Aktive Spiele")
-            for w_sess in active_games:
-                with st.container(border=True):
-                    st.markdown(f"### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
-                    res = w_sess.get("results", {})
-                    sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
-                    hfs, sls, maxs = [], [], []
-                    for m_key, m_data in res.items():
-                        if m_data.get("played"):
-                            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-                            legs_h += lh; legs_g += lg
-                            if lh > lg: sets_h += 1
-                            elif lg > lh: sets_g += 1
-                            if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
-                            if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
-                            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
-                            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
-                            if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
-                            if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
-
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Sets", f"{sets_h} : {sets_g}")
-                    col2.metric("Legs", f"{legs_h} : {legs_g}")
-                    col3.markdown(f"**Status:** 🔴 Aktiv/Ausstehend")
-                    if hfs or sls or maxs: st.caption(f"🎯 **Highlights:** 180er: {sum(map(int, maxs))}x | High Finishes: {', '.join(hfs) if hfs else '-'} | Short Legs: {', '.join(sls) if sls else '-'}")
-
-                    c_b1, c_b2, c_b3 = st.columns(3)
-                    with c_b1:
-                        if is_admin:
-                            if st.button("⚡ Blitz-Erfassung", key=f"wk_blitz_{w_sess['id']}", use_container_width=True): open_wettkampf_blitz_dialog(w_sess['id'])
-                    with c_b2:
-                        if w_sess.get("image_b64"):
-                            if st.button("📸 Foto ansehen", key=f"wk_img_{w_sess['id']}", use_container_width=True): open_image_dialog(w_sess["image_b64"])
-                        else: st.button("📸 Kein Foto", key=f"wk_img_no_{w_sess['id']}", disabled=True, use_container_width=True)
-                    with c_b3:
-                        if is_admin:
-                            if st.button("🗑️ Löschen (Admin)", key=f"wk_del_{w_sess['id']}", use_container_width=True): open_delete_session_dialog(w_sess['id'])
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
@@ -2174,13 +2037,11 @@ with tab_regeln:
         * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.""")
-    
     with st.container(border=True):
         st.markdown("### 👑 Trainings-Modi & Logik")
         st.markdown("""* **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
         * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
         * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Ri. B1), Verlierer ab. Der Kaiser der Vorsession (Platz 1) sowie der Sieger von Board 2 (Platz 2) starten am folgenden Abend gemeinsam auf dem letzten Board (z.B. Board 4).""")
-    
     with st.container(border=True):
         st.markdown("### 👥 Besonderheiten & Zeitmanagement")
         st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
