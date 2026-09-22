@@ -1880,6 +1880,53 @@ with tab_liga:
 with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
     
+    st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
+    @st.cache_data(ttl=3600)
+    def fetch_bdv_table():
+        import pandas as pd
+        import urllib.request
+        import io
+        url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+            response = urllib.request.urlopen(req, timeout=5)
+            html = response.read().decode('utf-8', errors='replace')
+            try: dfs = pd.read_html(io.StringIO(html))
+            except: dfs = pd.read_html(html)
+            
+            for df in dfs:
+                df_str = df.to_string().lower()
+                if "mannschaft" in df_str and "punkte" in df_str:
+                    if 'Mannschaft' not in df.columns:
+                        for idx, row in df.iterrows():
+                            if any(str(val).strip() == 'Mannschaft' for val in row.values):
+                                df.columns = row.values
+                                df = df.iloc[idx+1:].reset_index(drop=True)
+                                break
+                    df = df.dropna(how='all', axis=1)
+                    df.columns = [str(c) if not str(c).startswith("Unnamed") else "" for c in df.columns]
+                    return df, ""
+            return pd.DataFrame(), "Tabelle nicht gefunden."
+        except Exception as e:
+            return pd.DataFrame(), str(e)
+            
+    bdv_df, err_msg = fetch_bdv_table()
+    
+    if not bdv_df.empty:
+        def highlight_fsv(val):
+            if isinstance(val, str) and "Wehringen" in val: return 'background-color: rgba(46, 125, 50, 0.6); color: white;'
+            return ''
+        try:
+            st.dataframe(bdv_df.style.map(highlight_fsv), use_container_width=True, hide_index=True)
+        except AttributeError:
+            st.dataframe(bdv_df.style.applymap(highlight_fsv), use_container_width=True, hide_index=True)
+    else:
+        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert oder es fehlt ein Paket (System-Meldung: {err_msg}). Als Fallback wird die Original-Tabelle eingeblendet:")
+        st.markdown(f'<iframe src="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" width="100%" height="450px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
+        
+    st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
+    st.divider()
+
     if is_admin:
         c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
         with c_btn_w1:
