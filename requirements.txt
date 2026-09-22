@@ -11,4 +11,3 @@ extra-streamlit-components
 Pillow
 pypdf
 reportlab
-lxml
