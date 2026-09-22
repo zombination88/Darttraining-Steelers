@@ -64,7 +64,7 @@ with st.sidebar:
 is_admin = st.session_state.role == "Spieler"
 # ------------------------------------------
 
-SHEET_URL = "[https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0](https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0)"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1Z0TqSb-4qCES7gMrFv0MUCVdcnRV5kiaDCokzKTrr-8/edit?gid=0#gid=0"
 
 def make_serializable(data):
     if isinstance(data, dict): return {str(k): make_serializable(v) for k, v in data.items()}
@@ -77,7 +77,7 @@ def init_connection():
     try:
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)", "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"]
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         return client.open_by_url(SHEET_URL)
@@ -569,13 +569,8 @@ def generate_spielbericht_pdf(sess):
         if m_key in res and res[m_key].get("played"):
             m_data = res[m_key]
             y = y_coords_pdf.get(m_key, 500)
-            
-            val_h = m_data.get("s1", "")
-            h_name = str(val_h if val_h and val_h.strip() not in ["", "-"] else auf_h.get(h_key, ""))
-            
-            val_g = m_data.get("s2", "")
-            g_name = str(val_g if val_g and val_g.strip() not in ["", "-"] else auf_g.get(g_key, ""))
-            
+            h_name = str(m_data.get("s1", auf_h.get(h_key, "")))
+            g_name = str(m_data.get("s2", auf_g.get(g_key, "")))
             c.drawString(x_name_heim, y, h_name)
             c.drawString(x_name_gast, y, g_name)
             c.drawString(x_legs_heim, y, str(m_data.get("lh", 0)))
@@ -844,7 +839,7 @@ def open_liga_rollback_dialog():
     try:
         creds_dict = json.loads(st.secrets["google_json"])
         if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)", "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"]
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         spreadsheet_obj = client.open_by_url(SHEET_URL)
@@ -1561,43 +1556,6 @@ with tab_session:
                 st.caption(f"🏆 Siege: {row['Siege']}/{row['Matches']} | 🎯 180er: {row['180er']} | Legs: {row['Legs']}")
 
 with tab_liga:
-    st.markdown("### 🏆 Aktuelle Bezirksliga-Tabelle (Live vom BDV)")
-    @st.cache_data(ttl=3600)
-    def fetch_bdv_table():
-        import pandas as pd
-        import urllib.request
-        import io
-        url = "[https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705](https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705)"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
-            response = urllib.request.urlopen(req)
-            html = response.read().decode('utf-8', errors='replace')
-            try:
-                dfs = pd.read_html(io.StringIO(html))
-            except:
-                dfs = pd.read_html(html)
-            for df in dfs:
-                if any("Mannschaft" in str(col) for col in df.columns):
-                    df = df.dropna(how='all', axis=1) 
-                    return df, ""
-            return pd.DataFrame(), "Keine passende Tabelle gefunden"
-        except Exception as e:
-            return pd.DataFrame(), str(e)
-            
-    bdv_df, err_msg = fetch_bdv_table()
-    
-    if not bdv_df.empty:
-        def highlight_fsv(val):
-            if isinstance(val, str) and "Wehringen" in val: return 'background-color: rgba(46, 125, 50, 0.6); color: white;'
-            return ''
-        st.dataframe(bdv_df.style.map(highlight_fsv), use_container_width=True, hide_index=True)
-    else:
-        st.warning(f"Die Daten-Sauger Methode wird vom BDV blockiert oder es fehlt ein Paket (System-Meldung: {err_msg}). Als Fallback wird die Original-Tabelle eingeblendet:")
-        st.markdown(f'<iframe src="[https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705](https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705)" width="100%" height="600px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
-        
-    st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
-    st.divider()
-
     st.subheader("Freundschaftsspiele")
     st.write("Isolierter Bereich für Freundschaftsspiele (flexibel als 4er- oder 6er-/8er-/10er-/12er-Team mit variablen Boards, Blind Setup, Kreuz-Runde und PDF-Export).")
     
@@ -1679,8 +1637,17 @@ with tab_liga:
                         cols_boards = st.columns(min(len(current_board_matches), 3) if len(current_board_matches) > 0 else 1)
                         for i, (m_key, m_label, h_key, g_key) in enumerate(current_board_matches):
                             b_name = boards[i % len(boards)]
-                            p_heim, p_gast = auf_h.get(h_key, "-"), auf_g.get(g_key, "-")
-                            is_played = res.get(m_key, {}).get("played", False)
+                            m_data = res.get(m_key, {})
+                            is_played = m_data.get("played", False)
+                            
+                            val_h = m_data.get("s1", "")
+                            p_heim = val_h if is_played and val_h and val_h.strip() not in ["", "-"] else auf_h.get(h_key, "-")
+                            if not p_heim: p_heim = "-"
+                            
+                            val_g = m_data.get("s2", "")
+                            p_gast = val_g if is_played and val_g and val_g.strip() not in ["", "-"] else auf_g.get(g_key, "-")
+                            if not p_gast: p_gast = "-"
+                            
                             with cols_boards[i % len(cols_boards)]:
                                 with st.container(border=True):
                                     st.write(f"*{b_name}* — {m_label}")
@@ -1702,12 +1669,10 @@ with tab_liga:
                                         if is_admin and show_sub_btn and not "d" in g_key:
                                             if st.button("🔄", key=f"sub_g_{l_sess['id']}_{m_key}"): open_liga_sub_dialog(l_sess['id'], g_key, False, p_gast)
                                     if is_played:
-                                        m_inf = res[m_key]
-                                        st.success(f"Ergebnis: {m_inf['lh']}:{m_inf['lg']}")
+                                        st.success(f"Ergebnis: {m_data['lh']}:{m_data['lg']}")
                                     else:
                                         if is_admin:
-                                            if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True):
-                                                open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
+                                            if st.button("🎯 Eintragen", key=f"live_{l_sess['id']}_{m_key}", use_container_width=True): open_liga_live_board_dialog(l_sess['id'], m_key, b_name, m_label, p_gast if i%2==1 else p_heim, p_heim if i%2==1 else p_gast, is_right_board=(i%2==1))
                         if waiting_queue:
                             st.write("")
                             st.markdown("##### 📋 Warteschlange (Nächste Spiele auf Boards):")
@@ -1742,6 +1707,7 @@ with tab_liga:
 
 with tab_wettkampf:
     st.subheader("Liga & Wettkampf (Punktspiele)")
+    st.write("Hier trackt ihr eure offiziellen Ligaspiele. Ladet ein Foto des Spielberichts hoch und tippt die Daten in wenigen Sekunden via Blitz-Erfassung ab.")
     
     if is_admin:
         c_btn_w1, c_btn_w3, c_btn_w4 = st.columns(3)
