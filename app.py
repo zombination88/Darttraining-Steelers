@@ -2000,5 +2000,3 @@ with tab_regeln:
         st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Fehler Korrigieren:** Über den "✏️ Korrigieren" Button direkt in der laufenden Session kann die zuletzt gespielte Runde sofort repariert werden (fat-finger errors).""")
-
-```
