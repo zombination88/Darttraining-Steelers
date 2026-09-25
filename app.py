@@ -25,7 +25,6 @@ import os
 import random
 import math
 import base64
-import re
 from PIL import Image
 import extra_streamlit_components as stx
 
@@ -1328,6 +1327,7 @@ def open_wettkampf_view_dialog(session_id):
             st.write("")
     if st.button("Schließen", use_container_width=True): st.rerun()
 
+# --- MAIN UI ---
 c_logo, c_title = st.columns([1, 4])
 with c_logo:
     for logo_path in ["logo.png.png", "logo.png"]:
@@ -1848,7 +1848,7 @@ with tab_liga:
 
     st.write("")
     st.markdown("### 🗄️ Abgeschlossene Freundschaftsspiele (PDF-Export)")
-    st.write("Hier findet ihr alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
+    st.write("Hier findest du alle beendeten Spiele. Die PDF-Ausleitung füllt den offiziellen Spielbericht aus.")
     
     if not completed_liga: st.info("Noch keine abgeschlossenen Freundschaftsspiele im Archiv.")
     else:
@@ -1895,16 +1895,16 @@ with tab_wettkampf:
                     df = df.dropna(how='all', axis=1)
                     df.columns = [str(c) if "Unnamed" not in str(c) else "" for c in df.columns]
                     
-                    valid_rows = []
-                    for idx, row in df.iterrows():
-                        val = str(row.iloc[0]).replace(".", "").strip()
-                        if val.isdigit():
-                            valid_rows.append(row)
-                    
-                    if valid_rows:
-                        clean_df = pd.DataFrame(valid_rows, columns=df.columns)
-                        return clean_df, ""
-            return pd.DataFrame(), "Tabelle nicht gefunden."
+                        valid_rows = []
+                        for idx, row in df.iterrows():
+                            val = str(row.iloc[0]).replace(".", "").strip()
+                            if val.isdigit():
+                                valid_rows.append(row)
+                        
+                        if valid_rows:
+                            clean_df = pd.DataFrame(valid_rows, columns=df.columns)
+                            return clean_df, ""
+            return pd.DataFrame(), "Keine gültige Tabelle gefunden."
         except Exception as e:
             return pd.DataFrame(), str(e)
             
@@ -2174,13 +2174,11 @@ with tab_regeln:
         * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
         * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
         * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.""")
-    
     with st.container(border=True):
         st.markdown("### 👑 Trainings-Modi & Logik")
         st.markdown("""* **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
         * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
         * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Ri. B1), Verlierer ab. Der Kaiser der Vorsession (Platz 1) sowie der Sieger von Board 2 (Platz 2) starten am folgenden Abend gemeinsam auf dem letzten Board (z.B. Board 4).""")
-    
     with st.container(border=True):
         st.markdown("### 👥 Besonderheiten & Zeitmanagement")
         st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
