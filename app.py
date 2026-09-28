@@ -1284,7 +1284,7 @@ def open_wettkampf_blitz_dialog(session_id):
                 ind_180_h = {s1: h180}
                 
             h_hf = c_stats1.number_input("High Finish Heim (>99)", 0, 170, m_data.get("hf_h", 0), key=f"wk_hfh_{m_key}_{sess['id']}")
-            h_sl = c_stats1.number_input("Short Leg Heim (<19)", 0, 18, m_data.get("sl_h", 0), key=f"wk_slh_{m_key}_{sess['id']}")
+            h_sl = c_stats1.number_input("Short Leg Heim (<=21)", 0, 21, m_data.get("sl_h", 0), key=f"wk_slh_{m_key}_{sess['id']}")
             
             ind_180_dict_g = m_data.get("ind_180_g", {})
             if not is_heimspiel and is_doppel:
@@ -1298,7 +1298,7 @@ def open_wettkampf_blitz_dialog(session_id):
                 ind_180_g = {s2: g180}
                 
             g_hf = c_stats2.number_input("High Finish Gast (>99)", 0, 170, m_data.get("hf_g", 0), key=f"wk_hfg_{m_key}_{sess['id']}")
-            g_sl = c_stats2.number_input("Short Leg Gast (<19)", 0, 18, m_data.get("sl_g", 0), key=f"wk_slg_{m_key}_{sess['id']}")
+            g_sl = c_stats2.number_input("Short Leg Gast (<=21)", 0, 21, m_data.get("sl_g", 0), key=f"wk_slg_{m_key}_{sess['id']}")
             is_played = (lh > 0 or lg > 0)
             if is_played and not ((lh == 3 and lg < 3) or (lg == 3 and lh < 3)):
                 st.error("🚨 Best of 5: Ein Spieler muss exakt 3 Legs haben!")
@@ -1341,11 +1341,11 @@ def open_wettkampf_view_dialog(session_id):
             hl_h = []
             if m_data.get("180_h", 0) > 0: hl_h.append(f"{m_data['180_h']}x 180")
             if m_data.get("hf_h", 0) >= 100: hl_h.append(f"HF {m_data['hf_h']}")
-            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: hl_h.append(f"SL {m_data['sl_h']}")
+            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 21: hl_h.append(f"SL {m_data['sl_h']}")
             hl_g = []
             if m_data.get("180_g", 0) > 0: hl_g.append(f"{m_data['180_g']}x 180")
             if m_data.get("hf_g", 0) >= 100: hl_g.append(f"HF {m_data['hf_g']}")
-            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: hl_g.append(f"SL {m_data['sl_g']}")
+            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 21: hl_g.append(f"SL {m_data['sl_g']}")
             h_str = f"*{', '.join(hl_h)}*" if hl_h else ""
             g_str = f"*{', '.join(hl_g)}*" if hl_g else ""
             ind_180_h = m_data.get("ind_180_h", {})
@@ -1996,7 +1996,7 @@ with tab_wettkampf:
                                 l_stats[p]["Legs_Lost"] += wehringen_legs_lost
                                 l_stats[p]["180er"] += ind_180s.get(p, m_data.get("180_h", 0) if is_heim else m_data.get("180_g", 0))
                                 if hf_val >= 100: l_stats[p]["HFs"].append(hf_val)
-                                if 0 < sl_val <= 18: l_stats[p]["SLs"].append(sl_val)
+                                if 0 < sl_val <= 21: l_stats[p]["SLs"].append(sl_val)
 
         with st.expander("📊 Spieler-Statistik (Gesamte Saison)", expanded=True):
             table_rows = []
@@ -2034,8 +2034,8 @@ with tab_wettkampf:
                                 elif lg > lh: sets_g += 1
                                 if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
                                 if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
-                                if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
-                                if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                                if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 21: sls.append(str(m_data["sl_h"]))
+                                if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 21: sls.append(str(m_data["sl_g"]))
                                 if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
                                 if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
                         st.markdown(f"**Sets:** {sets_h}:{sets_g} | **Legs:** {legs_h}:{legs_g} | ✅ Abgeschlossen")
@@ -2069,8 +2069,8 @@ with tab_wettkampf:
                             elif lg > lh: sets_g += 1
                             if m_data.get("hf_h", 0) >= 100: hfs.append(str(m_data["hf_h"]))
                             if m_data.get("hf_g", 0) >= 100: hfs.append(str(m_data["hf_g"]))
-                            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 18: sls.append(str(m_data["sl_h"]))
-                            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 18: sls.append(str(m_data["sl_g"]))
+                            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 21: sls.append(str(m_data["sl_h"]))
+                            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 21: sls.append(str(m_data["sl_g"]))
                             if m_data.get("180_h", 0) > 0: maxs.append(str(m_data["180_h"]))
                             if m_data.get("180_g", 0) > 0: maxs.append(str(m_data["180_g"]))
 
