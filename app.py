@@ -844,6 +844,68 @@ def open_edit_liga_session_dialog(session_id):
             smart_sync_and_save(st.session_state.sessions_list)
             st.rerun()
 
+@st.dialog("📸 Spielbericht Original", width="large")
+def open_image_dialog(b64_str):
+    st.image(base64.b64decode(b64_str), use_container_width=True)
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
+@st.dialog("♻️ Liga-Notfall-Wiederherstellung", width="large")
+def open_liga_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies stellt NUR gelöschte Liga-Spiele (Wettkämpfe) inkl. Fotos aus der Cloud wieder her. Dein normales Teamtraining bleibt davon komplett unberührt!")
+    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password")
+    if pwd != "1521":
+        if pwd != "": st.error("Nur für Administratoren!")
+        return
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet_obj = client.open_by_url(SHEET_URL)
+        try:
+            backup_ws = spreadsheet_obj.worksheet("backups")
+            all_vals = backup_ws.get_all_values()
+            if len(all_vals) > 1:
+                backups = list(reversed(all_vals[1:]))
+                confirm = st.checkbox("Ja, ich möchte alte Liga-Daten aus der Cloud laden.")
+                for i, b in enumerate(backups[:10]):
+                    ts = b[0]
+                    json_str = b[1]
+                    try:
+                        data_preview = json.loads(json_str)
+                        liga_games = [s for s in data_preview if s.get("is_wettkampf")]
+                        data_info = f"{len(liga_games)} Liga-Spiele gesichert"
+                    except: data_info = "Fehlerhaftes JSON"
+                    c_t, c_b = st.columns([3, 1])
+                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                    with c_b:
+                        if st.button("Liga-Daten Laden", key=f"rest_liga_{i}", disabled=not confirm, use_container_width=True):
+                            try:
+                                backup_data = json.loads(json_str)
+                                backup_liga = [s for s in backup_data if s.get("is_wettkampf")]
+                                current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
+                                merged_data = current_other + backup_liga
+                                sichere_sessions = make_serializable(merged_data)
+                                new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
+                                normal_sessions = [s for s in sichere_sessions if not s.get("is_wettkampf")]
+                                liga_sessions_list = [s for s in sichere_sessions if s.get("is_wettkampf")]
+                                completed_liga_list = [s for s in liga_sessions_list if s.get("is_locked")]
+                                ws_normal = ensure_worksheet(spreadsheet_obj, "sessions")
+                                chunked_save(ws_normal, normal_sessions)
+                                ws_liga = ensure_worksheet(spreadsheet_obj, "liga_sessions")
+                                chunked_save(ws_liga, liga_sessions_list)
+                                ws_completed_liga = ensure_worksheet(spreadsheet_obj, "completed_liga")
+                                chunked_save(ws_completed_liga, completed_liga_list)
+                                st.session_state.sessions_list = merged_data
+                                st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Fehler: {e}")
+                    st.divider()
+            else: st.info("Noch keine Cloud-Backups vorhanden.")
+        except Exception as e: st.error("Konnte Backup-Tabelle nicht finden.")
+    except Exception as e: st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+
 @st.dialog("🔒 Einzel-Aufstellung (Verdeckt)")
 def open_liga_aufstellung_einzel(session_id, is_heim):
     sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
