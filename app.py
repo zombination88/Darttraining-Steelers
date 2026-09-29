@@ -1463,8 +1463,8 @@ def open_wettkampf_blitz_dialog(session_id):
                         response = urllib.request.urlopen(req, timeout=45)
                         result = json.loads(response.read().decode('utf-8'))
                         result_json_str = result['choices'][0]['message']['content'].strip()
-                        if result_json_str.startswith("
-```json"):
+     if result_json_str.startswith("
+```" + "json"):
                             result_json_str = result_json_str[7:-3].strip()
                         elif result_json_str.startswith("
 ```"):
