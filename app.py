@@ -1128,44 +1128,46 @@ def open_wettkampf_blitz_dialog(session_id):
         st.success("✅ Ein Spielbericht liegt bereits als Foto im Archiv.")
         
     if sess.get("image_b64"):
-        with st.expander("🪄 KI-Zauberstab: Automatische Erkennung (GPT-4o Vision)", expanded=False):
+        with st.expander("🪄 KI-Zauberstab: Automatische Erkennung (Google Gemini)", expanded=False):
             st.write("Lass die Künstliche Intelligenz die Handschrift entziffern und alle Felder unten automatisch vorbefüllen!")
-            api_key = st.text_input("Dein OpenAI API-Key (sk-...)", type="password", help="Der Key wird nicht gespeichert und nur für diesen Scan verwendet.")
+            api_key = st.text_input("Dein Google Gemini API-Key", type="password", help="Der Key wird nicht gespeichert und nur für diesen Scan verwendet. (Google AI Studio)")
             if st.button("🤖 Bild scannen & Daten eintragen", disabled=not api_key, use_container_width=True):
                 with st.spinner("Die KI studiert die Handschrift... Das dauert ca. 10 bis 20 Sekunden..."):
                     import urllib.request
                     import json
                     prompt_text = "Du bist ein Assistent, der handgeschriebene Dart-Spielberichte liest. Gib EXAKT dieses JSON-Format zurück, ohne Markdown-Codeblöcke: {\"auf_heim\": {\"h1\": \"\", \"h2\": \"\", \"h3\": \"\", \"h4\": \"\", \"hd1\": \"Name & Name\", \"hd2\": \"Name & Name\"}, \"auf_gast\": {\"g1\": \"\", \"g2\": \"\", \"g3\": \"\", \"g4\": \"\", \"gd1\": \"Name & Name\", \"gd2\": \"Name & Name\"}, \"matches\": {\"m1\": {\"lh\": 0, \"lg\": 0, \"180_h\": 0, \"180_g\": 0, \"sl_h\": 0, \"sl_g\": 0, \"hf_h\": 0, \"hf_g\": 0}, \"m2\": {... bis m10}}}\nRegeln: m1-m4=Einzel. m5-m8=Kreuz-Einzel. m9=Doppel1. m10=Doppel2. lh=Legs Heim, lg=Legs Gast. Highlights als Zahlen (0 wenn leer oder strich). Wenn ab den Kreuz-Einzeln nur noch Vornamen stehen, ergänze diese durch logisches Denken mit dem Nachnamen aus Block 1."
                     
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={api_key}"
                     payload = {
-                        "model": "gpt-4o",
-                        "messages": [
+                        "contents": [
                             {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt_text},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{sess['image_b64']}"}}
+                                "parts": [
+                                    {"text": prompt_text},
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/jpeg",
+                                            "data": sess['image_b64']
+                                        }
+                                    }
                                 ]
                             }
                         ],
-                        "max_tokens": 1500,
-                        "temperature": 0.1
+                        "generationConfig": {
+                            "temperature": 0.1
+                        }
                     }
                     
                     req = urllib.request.Request(
-                        "https://api.openai.com/v1/chat/completions",
+                        url,
                         data=json.dumps(payload).encode('utf-8'),
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {api_key}"
-                        },
+                        headers={"Content-Type": "application/json"},
                         method="POST"
                     )
                     
                     try:
                         response = urllib.request.urlopen(req, timeout=45)
                         result = json.loads(response.read().decode('utf-8'))
-                        result_json_str = result['choices'][0]['message']['content'].strip()
+                        result_json_str = result['candidates'][0]['content']['parts'][0]['text'].strip()
                         
                         b_ticks = chr(96) * 3
                         if result_json_str.startswith(b_ticks + "json"):
@@ -1968,7 +1970,7 @@ with tab_wettkampf:
         import io
         url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
             response = urllib.request.urlopen(req, timeout=5)
             html = response.read().decode('utf-8', errors='replace')
             try: dfs = pd.read_html(io.StringIO(html))
@@ -2087,7 +2089,7 @@ with tab_wettkampf:
         completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
 
         if completed_games:
-            with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
+            with st.expander("🗄️️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
                 for w_sess in completed_games:
                     with st.container(border=True):
                         st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
@@ -2204,7 +2206,7 @@ with tab_archiv:
                         if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
                         if is_admin:
-                            if st.button("⚙️️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                            if st.button("⚙ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
                     with c3:
                         if is_admin:
                             if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
@@ -2283,3 +2285,4 @@ with tab_regeln:
         st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
         * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
         * **Fehler Korrigieren:** Über den "✏️ Korrigieren" Button direkt in der laufenden Session kann die zuletzt gespielte Runde sofort repariert werden (fat-finger errors).""")
+```eof
