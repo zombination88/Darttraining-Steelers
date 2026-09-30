@@ -1138,7 +1138,7 @@ def open_wettkampf_blitz_dialog(session_id):
                     api_key_clean = api_key.strip()
                     prompt_text = "Du bist ein Assistent, der handgeschriebene Dart-Spielberichte liest. Gib EXAKT dieses JSON-Format zurück, ohne Markdown-Codeblöcke: {\"auf_heim\": {\"h1\": \"\", \"h2\": \"\", \"h3\": \"\", \"h4\": \"\", \"hd1\": \"Name & Name\", \"hd2\": \"Name & Name\"}, \"auf_gast\": {\"g1\": \"\", \"g2\": \"\", \"g3\": \"\", \"g4\": \"\", \"gd1\": \"Name & Name\", \"gd2\": \"Name & Name\"}, \"matches\": {\"m1\": {\"lh\": 0, \"lg\": 0, \"180_h\": 0, \"180_g\": 0, \"sl_h\": 0, \"sl_g\": 0, \"hf_h\": 0, \"hf_g\": 0}, \"m2\": {... bis m10}}}\nRegeln: m1-m4=Einzel. m5-m8=Kreuz-Einzel. m9=Doppel1. m10=Doppel2. lh=Legs Heim, lg=Legs Gast. Highlights als Zahlen (0 wenn leer oder strich). Wenn ab den Kreuz-Einzeln nur noch Vornamen stehen, ergänze diese durch logisches Denken mit dem Nachnamen aus Block 1."
                     
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key_clean}"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key_clean}"
                     payload = {
                         "contents": [
                             {
@@ -2093,7 +2093,7 @@ with tab_wettkampf:
         completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
 
         if completed_games:
-            with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
+            with st.expander("🗄️️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
                 for w_sess in completed_games:
                     with st.container(border=True):
                         st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
