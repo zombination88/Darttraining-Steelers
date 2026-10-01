@@ -311,6 +311,21 @@ def delete_session(session_id):
         st.session_state.sessions_list = [s for s in st.session_state.sessions_list if s.get("id") != session_id]
         save_data(st.session_state.sessions_list)
 
+@st.dialog("🗑️ Session Löschen (Admin)")
+def open_delete_session_dialog(session_id):
+    st.warning(f"Willst du die Session **{session_id}** wirklich unwiderruflich löschen?")
+    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password", key=f"del_pwd_{session_id}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Abbrechen", use_container_width=True): st.rerun()
+    with c2:
+        if st.button("🗑️ Unwiderruflich löschen", type="primary", use_container_width=True):
+            if pwd == "1521" or pwd == "20Steelers25":
+                delete_session(session_id)
+                st.success("Session wurde erfolgreich gelöscht!")
+                st.rerun()
+            else: st.error("Falsches Admin-Passwort!")
+
 def import_liga_spielplan():
     plan = [
         ("15.09.2026", "FSV Wehringen", "DC Bavarian Knights Hurlach III"),
@@ -1128,47 +1143,44 @@ def open_wettkampf_blitz_dialog(session_id):
         st.success("✅ Ein Spielbericht liegt bereits als Foto im Archiv.")
         
     if sess.get("image_b64"):
-        with st.expander("🪄 KI-Zauberstab: Automatische Erkennung (Google Gemini)", expanded=False):
+        with st.expander("🪄 KI-Zauberstab: Automatische Erkennung (GPT-4o Vision)", expanded=False):
             st.write("Lass die Künstliche Intelligenz die Handschrift entziffern und alle Felder unten automatisch vorbefüllen!")
-            api_key = st.text_input("Dein Google Gemini API-Key", type="password", help="Der Key wird nicht gespeichert und nur für diesen Scan verwendet. (Google AI Studio)")
+            api_key = st.text_input("Dein OpenAI API-Key (sk-...)", type="password", help="Der Key wird nicht gespeichert und nur für diesen Scan verwendet.")
             if st.button("🤖 Bild scannen & Daten eintragen", disabled=not api_key, use_container_width=True):
                 with st.spinner("Die KI studiert die Handschrift... Das dauert ca. 10 bis 20 Sekunden..."):
                     import urllib.request
                     import json
-                    api_key_clean = api_key.strip()
                     prompt_text = "Du bist ein Assistent, der handgeschriebene Dart-Spielberichte liest. Gib EXAKT dieses JSON-Format zurück, ohne Markdown-Codeblöcke: {\"auf_heim\": {\"h1\": \"\", \"h2\": \"\", \"h3\": \"\", \"h4\": \"\", \"hd1\": \"Name & Name\", \"hd2\": \"Name & Name\"}, \"auf_gast\": {\"g1\": \"\", \"g2\": \"\", \"g3\": \"\", \"g4\": \"\", \"gd1\": \"Name & Name\", \"gd2\": \"Name & Name\"}, \"matches\": {\"m1\": {\"lh\": 0, \"lg\": 0, \"180_h\": 0, \"180_g\": 0, \"sl_h\": 0, \"sl_g\": 0, \"hf_h\": 0, \"hf_g\": 0}, \"m2\": {... bis m10}}}\nRegeln: m1-m4=Einzel. m5-m8=Kreuz-Einzel. m9=Doppel1. m10=Doppel2. lh=Legs Heim, lg=Legs Gast. Highlights als Zahlen (0 wenn leer oder strich). Wenn ab den Kreuz-Einzeln nur noch Vornamen stehen, ergänze diese durch logisches Denken mit dem Nachnamen aus Block 1."
                     
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key_clean}"
                     payload = {
-                        "contents": [
+                        "model": "gpt-4o",
+                        "messages": [
                             {
-                                "parts": [
-                                    {"text": prompt_text},
-                                    {
-                                        "inline_data": {
-                                            "mime_type": "image/jpeg",
-                                            "data": sess['image_b64']
-                                        }
-                                    }
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt_text},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{sess['image_b64']}"}}
                                 ]
                             }
                         ],
-                        "generationConfig": {
-                            "temperature": 0.1
-                        }
+                        "max_tokens": 1500,
+                        "temperature": 0.1
                     }
                     
                     req = urllib.request.Request(
-                        url,
+                        "https://api.openai.com/v1/chat/completions",
                         data=json.dumps(payload).encode('utf-8'),
-                        headers={"Content-Type": "application/json"},
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {api_key}"
+                        },
                         method="POST"
                     )
                     
                     try:
                         response = urllib.request.urlopen(req, timeout=45)
                         result = json.loads(response.read().decode('utf-8'))
-                        result_json_str = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                        result_json_str = result['choices'][0]['message']['content'].strip()
                         
                         b_ticks = chr(96) * 3
                         if result_json_str.startswith(b_ticks + "json"):
@@ -1193,10 +1205,7 @@ def open_wettkampf_blitz_dialog(session_id):
                         st.success("✅ Erfolgreich eingelesen! Bitte prüfe die Vorbefüllung unten auf Fehler.")
                         st.rerun()
                     except Exception as e:
-                        err_details = ""
-                        if hasattr(e, 'read'):
-                            err_details = e.read().decode('utf-8')
-                        st.error(f"KI-Fehler: {e} | Details von Google: {err_details}")
+                        st.error(f"KI-Fehler: {e}. Ist der API-Key korrekt?")
 
     st.divider()
     
@@ -1483,7 +1492,7 @@ with tab_übersicht:
         active_sessions_for_btn = [s for s in sorted_for_btn if not is_session_completed(s)]
         if active_sessions_for_btn:
             if is_admin:
-                if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
+                if st.button("⚙️️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
                     open_edit_session_dialog(active_sessions_for_btn[0]['id'])
         else:
             if is_admin:
@@ -2093,7 +2102,7 @@ with tab_wettkampf:
         completed_games = [s for s in sorted_w_sessions if s.get("is_locked", False)]
 
         if completed_games:
-            with st.expander("🗄️️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
+            with st.expander("🗄️ Abgeschlossene Liga-Spiele (Archiv)", expanded=False):
                 for w_sess in completed_games:
                     with st.container(border=True):
                         st.markdown(f"#### {w_sess['datum']} | {w_sess['heim_team']} vs. {w_sess['gast_team']}")
@@ -2210,7 +2219,7 @@ with tab_archiv:
                         if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
                         if is_admin:
-                            if st.button("⚙ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                            if st.button("⚙️ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
                     with c3:
                         if is_admin:
                             if st.button("🗑️ Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
