@@ -2036,6 +2036,57 @@ with tab_wettkampf:
         st.markdown(f'<iframe src="https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705" width="100%" height="600px" style="border: none; border-radius: 8px; background: white;"></iframe>', unsafe_allow_html=True)
         
     st.caption("(Die Tabelle wird stündlich automatisch aus dem nuLiga-System des BDV aktualisiert)")
+    
+    @st.cache_data(ttl=3600)
+    def fetch_bdv_matches():
+        import pandas as pd
+        import urllib.request
+        import io
+        url = "https://bdv-dart.liga.nu/cgi-bin/WebObjects/nuLigaDARTDE.woa/wa/groupPage?championship=Schw+2026%2F27&group=211705"
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            response = urllib.request.urlopen(req, timeout=5)
+            html = response.read().decode('utf-8', errors='replace')
+            try: dfs = pd.read_html(io.StringIO(html))
+            except: dfs = pd.read_html(html)
+            
+            for df in dfs:
+                df_str = df.to_string()
+                # Sucht nach der Tabelle "Letzte Spiele" (hat zwingend Heim- und Gastmannschaft als Spalten)
+                if "Heimmannschaft" in df_str and "Gastmannschaft" in df_str:
+                    if "Heimmannschaft" not in df.columns:
+                        for idx, row in df.iterrows():
+                            row_str = " ".join([str(v) for v in row.values])
+                            if "Heimmannschaft" in row_str:
+                                df.columns = row.values
+                                df = df.iloc[idx+1:].reset_index(drop=True)
+                                break
+                    
+                    df = df.dropna(how='all', axis=1)
+                    df.columns = [str(c) if "Unnamed" not in str(c) else "" for c in df.columns]
+                    
+                    valid_rows = []
+                    for idx, row in df.iterrows():
+                        row_vals = [str(v) for v in row.values if str(v) != 'nan']
+                        if len(row_vals) >= 3 and "Heimmannschaft" not in " ".join(row_vals):
+                            valid_rows.append(row)
+                            
+                    if valid_rows:
+                        clean_df = pd.DataFrame(valid_rows, columns=df.columns)
+                        clean_df = clean_df.loc[:, ~clean_df.columns.duplicated()]
+                        return clean_df, ""
+            return pd.DataFrame(), "Keine Spieletabelle gefunden."
+        except Exception as e:
+            return pd.DataFrame(), str(e)
+
+    match_df, match_err = fetch_bdv_matches()
+    if not match_df.empty:
+        with st.expander("🎯 Ergebnisse vom letzten Spieltag (Live vom BDV)", expanded=False):
+            try:
+                st.dataframe(match_df.style.map(highlight_fsv), use_container_width=True, hide_index=True)
+            except AttributeError:
+                st.dataframe(match_df.style.applymap(highlight_fsv), use_container_width=True, hide_index=True)
+
     st.divider()
 
     st.subheader("Liga & Wettkampf (Punktspiele)")
