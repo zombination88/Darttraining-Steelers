@@ -64,8 +64,7 @@ with st.sidebar:
         if st.button("Ausloggen", use_container_width=True):
             cookie_manager.delete("steelers_role")
             st.session_state.role = "Gast"
-            st.success("Abgemeldet!")
-            st.rerun()
+            st.success("Erfolgreich abgemeldet! (Ansicht aktualisiert sich beim nächsten Klick)")
 
 is_admin = st.session_state.role == "Spieler"
 
