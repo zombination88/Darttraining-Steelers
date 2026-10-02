@@ -1569,7 +1569,7 @@ with tab_übersicht:
         active_sessions_for_btn = [s for s in sorted_for_btn if not is_session_completed(s)]
         if active_sessions_for_btn:
             if is_admin:
-                if st.button("⚙️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
+                if st.button("⚙️️ Bearbeiten", use_container_width=True, key="edit_active_btn"):
                     open_edit_session_dialog(active_sessions_for_btn[0]['id'])
         else:
             if is_admin:
@@ -2125,7 +2125,6 @@ with tab_wettkampf:
             
             for df in dfs:
                 df_str = df.to_string()
-                # Wir suchen GANZ GEZIELT nur die Tabelle, in der "Wehringen" und "Punkte" steht!
                 if "Wehringen" in df_str and "Punkte" in df_str:
                     
                     if "Punkte" not in df.columns and "Mannschaft" not in df.columns:
@@ -2139,7 +2138,6 @@ with tab_wettkampf:
                     df = df.dropna(how='all', axis=1)
                     df.columns = [str(c) if "Unnamed" not in str(c) else "" for c in df.columns]
                     
-                    # Der Cutter: Wirft gnadenlos alle Zeilen (wie den Spielplan) weg, die nicht mit 1, 2, 3... beginnen
                     valid_rows = []
                     for idx, row in df.iterrows():
                         val0 = str(row.iloc[0]).replace(".", "").strip()
@@ -2186,7 +2184,6 @@ with tab_wettkampf:
             
             for df in dfs:
                 df_str = df.to_string()
-                # Sucht nach der Tabelle "Letzte Spiele" (hat zwingend Heim- und Gastmannschaft als Spalten)
                 if "Heimmannschaft" in df_str and "Gastmannschaft" in df_str:
                     if "Heimmannschaft" not in df.columns:
                         for idx, row in df.iterrows():
@@ -2208,6 +2205,16 @@ with tab_wettkampf:
                     if valid_rows:
                         clean_df = pd.DataFrame(valid_rows, columns=df.columns)
                         clean_df = clean_df.loc[:, ~clean_df.columns.duplicated()]
+                        
+                        keep_cols = []
+                        for col in clean_df.columns:
+                            col_lower = str(col).lower()
+                            if any(word in col_lower for word in ["datum", "date", "tag", "runde", "heim", "gast", "spiele", "ergebnis"]):
+                                keep_cols.append(col)
+                        
+                        if keep_cols:
+                            clean_df = clean_df[keep_cols]
+                        
                         return clean_df, ""
             return pd.DataFrame(), "Keine Spieletabelle gefunden."
         except Exception as e:
@@ -2441,4 +2448,57 @@ with tab_archiv:
                                         
                                     with st.container(border=True):
                                         st.write(f"*{b_name}*")
-                                        c_p1, c_vs, c_p2
+                                        c_p1, c_vs, c_p2 = st.columns([4, 1, 4])
+                                        c_p1.markdown(f"**{p1}**")
+                                        c_vs.markdown("vs")
+                                        c_p2.markdown(f"**{p2}**")
+                                        c_in1, c_in2 = st.columns(2)
+                                        val1 = c_in1.number_input("Legs Heim", min_value=0, max_value=5, value=s1, key=f"blitz_l1_{sess['id']}_{r}_{b_name}")
+                                        val2 = c_in2.number_input("Legs Gast", min_value=0, max_value=5, value=s2, key=f"blitz_l2_{sess['id']}_{r}_{b_name}")
+                                        c_b1, c_b2 = st.columns(2)
+                                        with c_b1:
+                                            if st.button("💾 Speichern", key=f"blitz_save_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                req_win = 3 if leg_modus == "Best of 5" else 2
+                                                if p1 == "-" or p2 == "-": pass
+                                                elif val1 == val2: st.error("🚨 Unentschieden nicht möglich.")
+                                                elif val1 > req_win or val2 > req_win: st.error(f"🚨 Bei {leg_modus} max. {req_win} Legs.")
+                                                elif val1 != req_win and val2 != req_win: st.error(f"🚨 Sieger braucht genau {req_win} Legs.")
+                                                else:
+                                                    winner = p1 if val1 > val2 else p2
+                                                    loser = p2 if val1 > val2 else p1
+                                                    if "results" not in sess: sess["results"] = {}
+                                                    if m_info:
+                                                        sess["results"][(r, b_name)]["ergebnis"] = f"{val1}:{val2}"
+                                                        sess["results"][(r, b_name)]["winner"] = winner
+                                                        sess["results"][(r, b_name)]["loser"] = loser
+                                                    else:
+                                                        sess["results"][(r, b_name)] = {"s1": p1, "s2": p2, "ergebnis": f"{val1}:{val2}", "winner": winner, "loser": loser, "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0}
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+                                        with c_b2:
+                                            if st.button("🗑️ Leeren", key=f"blitz_del_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                                                if (r, b_name) in sess["results"]:
+                                                    del sess["results"][(r, b_name)]
+                                                    smart_sync_and_save(st.session_state.sessions_list)
+                                                    st.rerun()
+
+with tab_regeln:
+    st.subheader("🎯 Modus & Spielablauf")
+    st.write("Hier findet ihr die vollständige Anleitung für den Trainingsabend, alle Spielmodi und Freundschaftsspiele.")
+    with st.container(border=True):
+        st.markdown("### 🏆 Freundschaftsspiele")
+        st.markdown("""* Eigener Bereich im Tab **Freundschaftsspiele**.
+        * **Ablauf:** Die Aufstellung erfolgt in 2 Phasen (Einzel und Doppel), verdeckt (Blind Setup). Doppel dürfen erst aufgestellt werden, wenn alle Einzel und Kreuz-Einzel gespielt sind.
+        * **Flexibel wählbar:** Als 4er, 6er, 8er, 10er oder 12er-Team mit variablen Boards (wobei pro Board immer 2 Spieler spielen).
+        * **Live-Tracking & Warteschlange:** Gespielt wird auf frei wählbaren parallelen Boards. Der Live-Spielstand im Header ("Stand") zählt die aktuellen Sets automatisch hoch.
+        * **Archivierung & Regel:** Abgeschlossene Freundschaftsspiele zeigen im Tab 'Freundschaftsspiele' ausschließlich den HTML-Druck-Button für den offiziellen Spielbericht. Der Korrigieren/Bearbeiten-Button ist dort entfernt und ausschließlich im **Match-Archiv** erreichbar.""")
+    with st.container(border=True):
+        st.markdown("### 👑 Trainings-Modi & Logik")
+        st.markdown("""* **Standard-Training (Einzel + Coop):** X Runden Einzel (max 6 Boards), dann Y Runden Doppel (exklusiv auf Kaiser B1 & Board 2).
+        * **Koop 2vs2 (Up & Down):** Reine Doppel-Session (0 Einzel). Gespielt wird exklusiv auf Kaiser B1 & Board 2. Keine exakt gleichen 2er-Teams wie in der Vorsession.
+        * **Up & Down (Einzel - Klassisch):** Sieger steigt auf (Ri. B1), Verlierer ab. Der Kaiser der Vorsession (Platz 1) sowie der Sieger von Board 2 (Platz 2) starten am folgenden Abend gemeinsam auf dem letzten Board (z.B. Board 4).""")
+    with st.container(border=True):
+        st.markdown("### 👥 Besonderheiten & Zeitmanagement")
+        st.markdown("""* **Anti-Doppel-Pause:** Das Freilos in Runde 1 rotiert. Wer im letzten Match pausiert hat, darf nicht nochmal aussetzen.
+        * **Ungerader Kader:** Bei ungerader Spieleranzahl wird auf dem letzten Board ein Platzhalter (`-`) eingesetzt, sodass das Freilos automatisch durchwechselt.
+        * **Fehler Korrigieren:** Über den "✏️ Korrigieren" Button direkt in der laufenden Session kann die zuletzt gespielte Runde sofort repariert werden (fat-finger errors).""")
