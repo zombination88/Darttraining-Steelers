@@ -40,8 +40,14 @@ cookie_manager = stx.CookieManager()
 if "role" not in st.session_state:
     st.session_state.role = "Gast"
 
+# NEU: Ein Schutz-Flag gegen das "Geister-Cookie" (verhindert sofortiges Auto-Login)
+if "logged_out_flag" not in st.session_state:
+    st.session_state.logged_out_flag = False
+
 current_cookie = cookie_manager.get(cookie="steelers_role")
-if current_cookie == "Spieler":
+
+# Wir loggen nur per Cookie ein, wenn der User sich NICHT gerade aktiv abgemeldet hat
+if current_cookie == "Spieler" and not st.session_state.logged_out_flag:
     st.session_state.role = "Spieler"
 
 with st.sidebar:
@@ -51,10 +57,10 @@ with st.sidebar:
         pwd = st.text_input("Passwort (für Steelers-Spieler):", type="password")
         if st.button("Einloggen", use_container_width=True):
             if pwd == "20Steelers25" or pwd == "1521":
+                st.session_state.logged_out_flag = False  # Schutz-Flag zurücksetzen
                 cookie_manager.set("steelers_role", "Spieler", expires_at=datetime.now() + timedelta(days=365))
                 st.session_state.role = "Spieler"
-                st.success("✅ Login erfolgreich! Die Buttons rechts sind nun aktiviert.")
-                st.rerun()
+                st.success("✅ Login erfolgreich! Seite lädt in 1 Sekunde neu...")
             else:
                 st.error("Falsches Passwort!")
         st.markdown("---")
@@ -62,9 +68,10 @@ with st.sidebar:
     else:
         st.success("✅ **Spieler-Modus**: Du hast Schreibrechte für Ergebnisse & Sessions.")
         if st.button("Ausloggen", use_container_width=True):
+            st.session_state.logged_out_flag = True  # Auto-Login sofort sperren
             cookie_manager.delete("steelers_role")
             st.session_state.role = "Gast"
-            st.success("Erfolgreich abgemeldet! (Ansicht aktualisiert sich beim nächsten Klick)")
+            st.success("Erfolgreich abgemeldet! Seite lädt in 1 Sekunde neu...")
 
 is_admin = st.session_state.role == "Spieler"
 
