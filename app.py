@@ -1957,7 +1957,7 @@ with tab_übersicht:
                             if st.button("✏️ Letzte Runde korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{total_rounds}", use_container_width=True):
                                 open_board_dialog(b_name, curr_sess['id'], edit_round=total_rounds)
 
-            # --- NEU: ZURÜCKSPULEN UND KORREKTUR-MENÜ ---
+            # --- HIER IST DAS NEUE KORREKTUR- UND ZURÜCKSPUL-MENÜ ---
             if is_admin:
                 st.write("")
                 with st.expander("🛠️ Falsche Eingabe? Korrigieren oder Zurückspulen", expanded=False):
