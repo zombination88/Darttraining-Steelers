@@ -1899,6 +1899,37 @@ with tab_übersicht:
             is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
             singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
             res = curr_sess.get("results", {})
+
+            # --- HIER IST DAS KORREKTUR- UND ZURÜCKSPUL-MENÜ (JETZT GANZ OBEN!) ---
+            if is_admin:
+                with st.expander("🛠️ Falsche Eingabe? Korrigieren oder Zurückspulen", expanded=False):
+                    st.markdown("**Szenario 1: Tippfehler (Zahlen/Average)**")
+                    st.caption("Sieger bleibt gleich, nur Zahlen waren falsch? Einfach hier das Match wählen und überschreiben.")
+                    gespielte_matches = {k: v for k, v in res.items() if v.get("winner")}
+                    if gespielte_matches:
+                        for (r, b_name), m_info in sorted(gespielte_matches.items(), key=lambda x: (x[0][0], x[0][1])):
+                            c_txt, c_btn = st.columns([3, 1])
+                            c_txt.markdown(f"**Runde {r} | {b_name}**<br>{m_info.get('s1')} vs {m_info.get('s2')} **({m_info.get('ergebnis')})**", unsafe_allow_html=True)
+                            if c_btn.button("✏️ Ändern", key=f"fix_any_{curr_sess['id']}_{r}_{b_name}", use_container_width=True):
+                                open_board_dialog(b_name, curr_sess['id'], edit_round=r)
+                            st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+                    else:
+                        st.info("Noch keine Matches gespielt.")
+                    
+                    st.markdown("**Szenario 2: Falscher Sieger eingetragen (Domino-Effekt)**")
+                    st.caption("Wenn der Sieger falsch war, stimmt die nächste Runde nicht mehr. Nutze diesen Button, um die **aktuellste Runde komplett zu löschen**, damit sie nach der Korrektur neu generiert wird.")
+                    max_r = max([r for (r, b) in res.keys()] + [0])
+                    if max_r > 0:
+                        if st.button(f"⏪ Runde {max_r} komplett löschen (Zurückspulen)", type="primary", use_container_width=True):
+                            keys_to_delete = [k for k in res.keys() if k[0] == max_r]
+                            for k in keys_to_delete:
+                                del res[k]
+                            curr_sess["results"] = res
+                            smart_sync_and_save(st.session_state.sessions_list)
+                            st.rerun()
+                    else:
+                        st.button("⏪ Zurückspulen nicht möglich", disabled=True, use_container_width=True)
+            st.write("")
             
             if modus == "Koop 2vs2 (Up & Down)": active_boards_list = ["Kaiser B1", "Board 2"]
             elif is_standard_training:
@@ -1956,37 +1987,6 @@ with tab_übersicht:
                         if is_admin:
                             if st.button("✏️ Letzte Runde korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{total_rounds}", use_container_width=True):
                                 open_board_dialog(b_name, curr_sess['id'], edit_round=total_rounds)
-
-            # --- HIER IST DAS NEUE KORREKTUR- UND ZURÜCKSPUL-MENÜ ---
-            if is_admin:
-                st.write("")
-                with st.expander("🛠️ Falsche Eingabe? Korrigieren oder Zurückspulen", expanded=False):
-                    st.markdown("**Szenario 1: Tippfehler (Zahlen/Average)**")
-                    st.caption("Sieger bleibt gleich, nur Zahlen waren falsch? Einfach hier das Match wählen und überschreiben.")
-                    gespielte_matches = {k: v for k, v in res.items() if v.get("winner")}
-                    if gespielte_matches:
-                        for (r, b_name), m_info in sorted(gespielte_matches.items(), key=lambda x: (x[0][0], x[0][1])):
-                            c_txt, c_btn = st.columns([3, 1])
-                            c_txt.markdown(f"**Runde {r} | {b_name}**<br>{m_info.get('s1')} vs {m_info.get('s2')} **({m_info.get('ergebnis')})**", unsafe_allow_html=True)
-                            if c_btn.button("✏️ Ändern", key=f"fix_any_{curr_sess['id']}_{r}_{b_name}", use_container_width=True):
-                                open_board_dialog(b_name, curr_sess['id'], edit_round=r)
-                            st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
-                    else:
-                        st.info("Noch keine Matches gespielt.")
-                    
-                    st.markdown("**Szenario 2: Falscher Sieger eingetragen (Domino-Effekt)**")
-                    st.caption("Wenn der Sieger falsch war, stimmt die nächste Runde nicht mehr. Nutze diesen Button, um die **aktuellste Runde komplett zu löschen**, damit sie nach der Korrektur neu generiert wird.")
-                    max_r = max([r for (r, b) in res.keys()] + [0])
-                    if max_r > 0:
-                        if st.button(f"⏪ Runde {max_r} komplett löschen (Zurückspulen)", type="primary", use_container_width=True):
-                            keys_to_delete = [k for k in res.keys() if k[0] == max_r]
-                            for k in keys_to_delete:
-                                del res[k]
-                            curr_sess["results"] = res
-                            smart_sync_and_save(st.session_state.sessions_list)
-                            st.rerun()
-                    else:
-                        st.button("⏪ Zurückspulen nicht möglich", disabled=True, use_container_width=True)
 
     st.write("")
     st.divider()
