@@ -902,15 +902,23 @@ def open_edit_session_dialog(session_id):
                 try: score1, score2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
                 except: score1, score2 = 0, 0
                 
+                # FIX: Mathematische Sicherheits-Schere, damit Streamlit bei krummen Kommazahlen nicht abstürzt
+                score1 = min(5, max(0, score1))
+                score2 = min(5, max(0, score2))
+                val_180_1 = min(20, max(0, int(m_info.get("180_s1", 0))))
+                val_180_2 = min(20, max(0, int(m_info.get("180_s2", 0))))
+                val_avg_1 = min(180.0, max(0.0, float(m_info.get("avg_s1", 0.0))))
+                val_avg_2 = min(180.0, max(0.0, float(m_info.get("avg_s2", 0.0))))
+                
                 c_in1, c_in2 = st.columns(2)
                 with c_in1:
                     new_s1 = st.number_input("Legs Heim", 0, 5, score1, key=f"ed_l1_{sess['id']}_{r}_{b_name}")
-                    new_180_1 = st.number_input("180er Heim", 0, 20, int(m_info.get("180_s1", 0)), key=f"ed_180_1_{sess['id']}_{r}_{b_name}")
-                    new_avg_1 = st.number_input("Avg Heim", 0.0, 180.0, float(m_info.get("avg_s1", 0.0)), step=0.1, key=f"ed_avg_1_{sess['id']}_{r}_{b_name}")
+                    new_180_1 = st.number_input("180er Heim", 0, 20, val_180_1, key=f"ed_180_1_{sess['id']}_{r}_{b_name}")
+                    new_avg_1 = st.number_input("Avg Heim", 0.0, 180.0, val_avg_1, step=0.1, key=f"ed_avg_1_{sess['id']}_{r}_{b_name}")
                 with c_in2:
                     new_s2 = st.number_input("Legs Gast", 0, 5, score2, key=f"ed_l2_{sess['id']}_{r}_{b_name}")
-                    new_180_2 = st.number_input("180er Gast", 0, 20, int(m_info.get("180_s2", 0)), key=f"ed_180_2_{sess['id']}_{r}_{b_name}")
-                    new_avg_2 = st.number_input("Avg Gast", 0.0, 180.0, float(m_info.get("avg_s2", 0.0)), step=0.1, key=f"ed_avg_2_{sess['id']}_{r}_{b_name}")
+                    new_180_2 = st.number_input("180er Gast", 0, 20, val_180_2, key=f"ed_180_2_{sess['id']}_{r}_{b_name}")
+                    new_avg_2 = st.number_input("Avg Gast", 0.0, 180.0, val_avg_2, step=0.1, key=f"ed_avg_2_{sess['id']}_{r}_{b_name}")
                 
                 if st.button("💾 Ergebnis überschreiben", type="primary", key=f"save_inline_{sess['id']}_{r}_{b_name}", use_container_width=True):
                     req_win = 3 if sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
@@ -1021,6 +1029,14 @@ def open_board_dialog(board_name, session_id, edit_round=None):
         except: score1, score2 = 0, 0
         t1_180, t2_180 = int(existing_match.get("180_s1", 0)), int(existing_match.get("180_s2", 0))
         avg1, avg2 = float(existing_match.get("avg_s1", 0.0)), float(existing_match.get("avg_s2", 0.0))
+        
+        # FIX: Mathematische Sicherheits-Schere für abgeschnittene Kommazahlen
+        score1 = min(5, max(0, score1))
+        score2 = min(5, max(0, score2))
+        t1_180 = min(20, max(0, t1_180))
+        t2_180 = min(20, max(0, t2_180))
+        avg1 = min(180.0, max(0.0, avg1))
+        avg2 = min(180.0, max(0.0, avg2))
     else:
         auto_players = get_board_players(sess, current_round, board_name)
         current_p1, current_p2 = auto_players[0], auto_players[1]
