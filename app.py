@@ -876,7 +876,7 @@ def open_edit_session_dialog(session_id):
     edit_start_time = c1.text_input("Startzeit (HH:MM)", value=sess.get("start_time") or "")
     edit_end_time = c2.text_input("Endzeit (HH:MM)", value=sess.get("end_time") or "")
 
-    # WENN SCHON GESPIELT WURDE -> KORREKTUR-MENÜ ANZEIGEN
+    # WENN SCHON GESPIELT WURDE -> INLINE-KORREKTUR-MENÜ ANZEIGEN
     if gespielte_matches:
         st.info("💡 Diese Session enthält bereits Spielergebnisse. Die Rahmenbedingungen (Spieler, Runden, Boards) können daher nicht mehr geändert werden.")
         if st.button("💾 Datum & Zeiten speichern", type="primary", use_container_width=True):
@@ -887,13 +887,43 @@ def open_edit_session_dialog(session_id):
             
         st.divider()
         st.markdown("### 🛠️ Match-Ergebnisse korrigieren")
-        st.caption("Klicke bei einem Match auf 'Ändern', um das Ergebnis, den Average oder die 180er nachträglich zu korrigieren.")
+        st.caption("Klappe ein Match auf, um das Ergebnis, den Average oder die 180er direkt hier zu überschreiben.")
         for (r, b_name), m_info in sorted(gespielte_matches.items(), key=lambda x: (x[0][0], x[0][1])):
-            c_txt, c_btn = st.columns([3, 1])
-            c_txt.markdown(f"**Runde {r} | {b_name}**<br>{m_info.get('s1')} vs {m_info.get('s2')} **({m_info.get('ergebnis')})**", unsafe_allow_html=True)
-            if c_btn.button("✏️ Ändern", key=f"edit_arch_{sess['id']}_{r}_{b_name}", use_container_width=True):
-                open_board_dialog(b_name, sess['id'], edit_round=r)
-            st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+            with st.expander(f"Runde {r} | {b_name} — {m_info.get('s1')} vs {m_info.get('s2')} ({m_info.get('ergebnis')})"):
+                try: score1, score2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
+                except: score1, score2 = 0, 0
+                
+                c_in1, c_in2 = st.columns(2)
+                with c_in1:
+                    new_s1 = st.number_input("Legs Heim", 0, 5, score1, key=f"ed_l1_{sess['id']}_{r}_{b_name}")
+                    new_180_1 = st.number_input("180er Heim", 0, 20, int(m_info.get("180_s1", 0)), key=f"ed_180_1_{sess['id']}_{r}_{b_name}")
+                    new_avg_1 = st.number_input("Avg Heim", 0.0, 180.0, float(m_info.get("avg_s1", 0.0)), step=0.1, key=f"ed_avg_1_{sess['id']}_{r}_{b_name}")
+                with c_in2:
+                    new_s2 = st.number_input("Legs Gast", 0, 5, score2, key=f"ed_l2_{sess['id']}_{r}_{b_name}")
+                    new_180_2 = st.number_input("180er Gast", 0, 20, int(m_info.get("180_s2", 0)), key=f"ed_180_2_{sess['id']}_{r}_{b_name}")
+                    new_avg_2 = st.number_input("Avg Gast", 0.0, 180.0, float(m_info.get("avg_s2", 0.0)), step=0.1, key=f"ed_avg_2_{sess['id']}_{r}_{b_name}")
+                
+                if st.button("💾 Ergebnis überschreiben", type="primary", key=f"save_inline_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                    req_win = 3 if sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
+                    if new_s1 == new_s2: st.error("Unentschieden nicht möglich.")
+                    elif new_s1 > req_win or new_s2 > req_win: st.error(f"Max {req_win} Legs.")
+                    elif new_s1 != req_win and new_s2 != req_win: st.error(f"Sieger braucht genau {req_win} Legs.")
+                    else:
+                        winner = m_info.get("s1") if new_s1 > new_s2 else m_info.get("s2")
+                        loser = m_info.get("s2") if new_s1 > new_s2 else m_info.get("s1")
+                        
+                        sess["results"][(r, b_name)].update({
+                            "ergebnis": f"{new_s1}:{new_s2}",
+                            "winner": winner,
+                            "loser": loser,
+                            "180_s1": new_180_1,
+                            "180_s2": new_180_2,
+                            "avg_s1": new_avg_1,
+                            "avg_s2": new_avg_2
+                        })
+                        st.session_state.sessions_list[real_idx] = sess
+                        smart_sync_and_save(st.session_state.sessions_list)
+                        st.rerun()
             
         if st.button("Schließen", use_container_width=True):
             st.rerun()
@@ -1170,10 +1200,7 @@ def open_session_summary_dialog(session_id):
         rank = 1
         for team_name, stats in sorted_teams:
             if stats["matches"] > 0 or len(sorted_teams) <= 5:
-                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
-                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'><p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p><p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p></div>", unsafe_allow_html=True)
-                rank += 1
-    if st.button("Schließen", use_container_width=True): st.rerun()
+                medal = "🥇" if rank == 1 else ("🥈" if rank ==
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
