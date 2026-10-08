@@ -1639,12 +1639,27 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     if not sess: return
     
     res = sess.setdefault("results", {})
-    m_info = res.setdefault((round_num, board_name), {})
     
+    # --- FIX: ROBUSTE SCHLÜSSEL-SUCHE FÜR CLOUD-DATENBANKEN ---
+    target_key = (round_num, board_name)
+    m_info = None
+    actual_key = target_key
+    
+    for k, v in res.items():
+        # Vergleicht saubere Tupel, Strings oder Listen (falls die DB sie beim Speichern umgewandelt hat)
+        if k == target_key or str(k) == str(target_key) or str(k) == f"['{round_num}', '{board_name}']" or str(k) == f"[{round_num}, '{board_name}']":
+            m_info = v
+            actual_key = k
+            break
+            
+    if m_info is None:
+        m_info = {}
+        res[actual_key] = m_info
+        
     # Prüfen, ob schon jemand anderes spielt
     if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
         st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-        st.info("Wenn das andere Tablet abgestürzt ist, kannst du die Sperre hier aufheben.")
+        st.info("💡 Lade die Seite neu, falls dieses Spiel schon beendet ist.")
         if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
             m_info["is_live_locked"] = False
             smart_sync_and_save(st.session_state.sessions_list)
@@ -1685,8 +1700,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             elif data.get("action") == "cancel":
                 m_info["is_live_locked"] = False
                 if not m_info.get("played", False):
-                    if (round_num, board_name) in res:
-                        del res[(round_num, board_name)]
+                    if actual_key in res:
+                        del res[actual_key]
                 
                 if f"my_lock_{ls_key}" in st.session_state:
                     del st.session_state[f"my_lock_{ls_key}"]
@@ -1703,7 +1718,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     # --- RENDER HTML TEMPLATE ---
     html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
     components.html(html_content, height=810, scrolling=False)
-
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
