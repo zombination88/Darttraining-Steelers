@@ -1207,7 +1207,7 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (PWA + LocalStorage + Undo-Fix)
+# [BLOCK_4b] Dialoge: Live Scoring Modul (Ergonomisches Layout)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1266,7 +1266,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 st.rerun()
             elif data.get("action") == "cancel":
                 m_info["is_live_locked"] = False
-                # Den leeren Ordner wieder restlos löschen, wenn nicht gespielt wurde
                 if not m_info.get("played", False):
                     if (round_num, board_name) in res:
                         del res[(round_num, board_name)]
@@ -1278,12 +1277,12 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         except Exception as e:
             st.error(f"Fehler bei der Datenübertragung: {e}")
 
-    # Sicherheitshalber Namen escapen, falls Sonderzeichen drin sind
+    # Sicherheitshalber Namen escapen
     safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
     safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
     safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
 
-    # --- DAS OFFLINE JAVASCRIPT BOARD MIT LOCALSTORAGE & MEMORY FIX ---
+    # --- DAS OFFLINE JAVASCRIPT BOARD (NEUES ERGONOMISCHES LAYOUT) ---
     html_code = """
     <!DOCTYPE html>
     <html>
@@ -1291,25 +1290,24 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
       <meta charset="utf-8">
       <style>
         body { background: #0e1117; color: white; font-family: sans-serif; margin: 0; padding: 5px; user-select: none; }
-        .row { display: flex; gap: 10px; margin-bottom: 15px; }
+        .row { display: flex; gap: 10px; margin-bottom: 12px; }
         .col { flex: 1; }
         .box { border: 3px solid #444; background: #1e1e1e; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .box.active { border-color: #4CAF50; background: #2e7d32; }
         .score { font-size: 5.5em; font-weight: bold; margin: 5px 0; line-height: 1.1; }
-        .display { background: #111; font-size: 3em; border-radius: 8px; text-align: center; min-height: 70px; line-height: 70px; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 75px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; }
+        .display { background: #111; font-size: 2.8em; border-radius: 8px; text-align: center; min-height: 65px; line-height: 65px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
+        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 70px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; width: 100%; margin-bottom: 8px; }
         button:active { opacity: 0.6; transform: scale(0.98); }
         .btn-red { background: #d32f2f !important; border-color: #d32f2f !important; }
-        .btn-green { background: #388e3c !important; border-color: #388e3c !important; }
+        .btn-green { background: #388e3c !important; border-color: #388e3c !important; color: white !important; }
         .btn-blue { background: #1976d2 !important; border-color: #1976d2 !important; }
         .btn-undo { background: #ff9800 !important; border-color: #ff9800 !important; }
         .error { background: #ff4b4b; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: none; font-weight: bold; text-align: center; font-size: 1.2rem;}
-        .q-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .head-title { margin: 0; font-size: 1.5rem; }
         .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
         .stats { color: #ccc; font-size: 1.2em; }
-        .memory-box { background: #1e1e1e; color: white; padding: 12px; border-radius: 8px; margin-top: 15px; text-align: left; font-size: 1.2rem; border: 2px solid #ff9800; display: none; }
+        .memory-box { background: #1e1e1e; color: white; padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 1.1rem; border: 2px solid #ff9800; display: none; }
       </style>
     </head>
     <body>
@@ -1333,20 +1331,26 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         </div>
         <div id="error" class="error"></div>
         
-        <!-- MAIN PLAY AREA -->
-        <div id="area-play" class="row">
-           <div class="col" style="flex: 1;">
-              <div style="color:gray;text-align:center;margin-bottom:5px;font-weight:bold;">Standard</div>
-              <div class="q-grid">
-                 <button onclick="throwPts(26)">26</button><button onclick="throwPts(41)">41</button>
-                 <button onclick="throwPts(45)">45</button><button onclick="throwPts(60)">60</button>
-                 <button onclick="throwPts(81)">81</button><button onclick="throwPts(85)">85</button>
-              </div>
+        <!-- NEUES ERGONOMISCHES 3-SÄULEN LAYOUT -->
+        <div class="row">
+           <!-- LINKE SÄULE: No Score, Check & Standard -->
+           <div class="col" style="flex: 1.1;">
+              <button onclick="throwPts(0)" class="btn-red">🔴 No Score</button>
+              <button onclick="check()" class="btn-blue">🎯 Check</button>
+              <div style="color:gray; text-align:center; margin: 4px 0; font-size:0.9em; font-weight:bold;">Standard</div>
+              <button onclick="throwPts(26)">26</button>
+              <button onclick="throwPts(41)">41</button>
+              <button onclick="throwPts(45)">45</button>
+              <button onclick="throwPts(60)">60</button>
+              <button onclick="throwPts(81)">81</button>
+              <button onclick="throwPts(85)">85</button>
            </div>
+           
+           <!-- MITTLERE SÄULE: Display, Numpad & Riesen-Geworfen Button -->
            <div class="col" style="flex: 2.2;">
-              <div style="display:flex; gap:10px; margin-bottom:10px;">
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
                  <div id="display" class="display" style="flex:3;"></div>
-                 <button onclick="undo()" class="btn-undo" style="flex:1;">↩️</button>
+                 <button onclick="undo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
               </div>
               <div class="grid">
                  <button onclick="pad(1)">1</button><button onclick="pad(2)">2</button><button onclick="pad(3)">3</button>
@@ -1354,25 +1358,25 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                  <button onclick="pad(7)">7</button><button onclick="pad(8)">8</button><button onclick="pad(9)">9</button>
                  <button onclick="del()">⌫</button><button onclick="pad(0)">0</button><button onclick="rest()">REST</button>
               </div>
-              <div style="display:flex; gap:8px;">
-                 <button onclick="throwPts(0)" class="btn-red" style="flex:1;">🔴 No Score</button>
-                 <button onclick="enter()" class="btn-green" style="flex:1;">🟢 Geworfen</button>
-                 <button onclick="check()" class="btn-blue" style="flex:1;">🎯 Check</button>
-              </div>
+              <!-- RIESIGER GEWORFEN BUTTON -->
+              <button onclick="enter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
               
               <!-- GEDÄCHTNISSTÜTZE -->
               <div id="memory-box" class="memory-box">
                  💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
-                 <button onclick="clearUndone()" style="float:right; min-height:30px; font-size:1.2rem; padding:0 10px; background:transparent; border:none; margin-top:-5px;">❌</button>
+                 <button onclick="clearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
               </div>
            </div>
-           <div class="col" style="flex: 1;">
-              <div style="color:gray;text-align:center;margin-bottom:5px;font-weight:bold;">Highs</div>
-              <div class="q-grid">
-                 <button onclick="throwPts(100)">100</button><button onclick="throwPts(121)">121</button>
-                 <button onclick="throwPts(125)">125</button><button onclick="throwPts(135)">135</button>
-                 <button onclick="throwPts(140)">140</button><button onclick="throwPts(180)">180</button>
-              </div>
+           
+           <!-- RECHTE SÄULE: Highs -->
+           <div class="col" style="flex: 1.1;">
+              <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
+              <button onclick="throwPts(100)">100</button>
+              <button onclick="throwPts(121)">121</button>
+              <button onclick="throwPts(125)">125</button>
+              <button onclick="throwPts(135)">135</button>
+              <button onclick="throwPts(140)">140</button>
+              <button onclick="throwPts(180)">180</button>
            </div>
         </div>
         
@@ -1480,7 +1484,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 document.getElementById('area-over').style.display = 'none';
             }
             
-            // Gedächtnisstütze UI Update
             let memBox = document.getElementById('memory-box');
             if(state.undone_history && state.undone_history.length > 0 && state.mode === 'play') {
                 memBox.style.display = 'block';
@@ -1493,7 +1496,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         }
 
         function saveState(actionLabel) {
-            // FIX: Array temporär abkoppeln, damit es nicht endlos verschachtelt im JSON landet!
             let tempHist = state.history || [];
             let tempUndone = state.undone_history || [];
             state.history = [];
@@ -1513,16 +1515,17 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 let last = state.history.pop();
                 let parsed = JSON.parse(last.stateStr);
                 
-                // Den rückgängig gemachten Wurf in die Gedächtnisstütze packen
                 let currentUndone = state.undone_history || [];
                 currentUndone.unshift(last.action);
                 
-                // History erhalten
                 let currentHist = state.history;
                 
                 state = parsed;
                 state.history = currentHist;
                 state.undone_history = currentUndone;
+                
+                // FIX: Wenn wir zurückgehen, zeigen wir den korrigierten Wert sofort im Display an!
+                state.input = last.action === "No Score" ? "0" : last.action;
                 state.error = "";
                 render();
             }
@@ -1539,7 +1542,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         function throwPts(pts) {
             let label = pts === 0 ? "No Score" : String(pts);
             saveState(label);
-            state.undone_history = []; // Neue Aktion löscht den Speicher
+            state.undone_history = [];
             
             state.input = "";
             let active = state.turn === 0 ? 1 : 2;
@@ -1669,8 +1672,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     </html>
     """.replace("__P1__", safe_p1).replace("__P2__", safe_p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", safe_bname).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
 
-    components.html(html_code, height=750, scrolling=False)
-
+    components.html(html_code, height=780, scrolling=False)
+    
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
 # ==========================================
