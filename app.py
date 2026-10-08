@@ -1250,45 +1250,49 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         .stats { color: #ccc; font-size: 1.1em; }
         .undo-banner { background: #ff9800; color: #000; padding: 6px; border-radius: 8px; margin-bottom: 8px; text-align: center; font-size: 1.2rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .memory-box { background: #1e1e1e; color: white; padding: 8px; border-radius: 8px; margin-top: 4px; text-align: left; font-size: 1rem; border: 2px solid #ff9800; display: none; }
-        .stat-table { width:100%; text-align:center; font-size: 1.3rem; border-collapse: collapse; }
-        .stat-table th { padding-bottom:8px; border-bottom: 1px solid #444; }
-        .stat-table td { padding: 8px 0; }
+        .stat-table { width:100%; text-align:center; border-collapse: collapse; }
         .switch-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 5px 10px; background: #262730; border-radius: 8px; border: 1px solid #444; margin: 0 2px; transition: 0.1s; }
         .switch-btn:active { transform: scale(0.9); }
       </style>
     </head>
     <body>
-        <div id="undo-banner" class="undo-banner">
-           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.4rem; text-decoration: underline;"></span>
-        </div>
+        
+        <!-- TOP SCOREBOARD WIRD BEIM MATCH-ENDE KOMPLETT AUSGEBLENDET -->
+        <div id="top-scoreboard">
+            <div id="undo-banner" class="undo-banner">
+               ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.4rem; text-decoration: underline;"></span>
+            </div>
 
-        <div class="row" style="align-items: center;">
-          <div class="col" style="flex: 1;">
-             <div id="p1-box" class="box active">
-                <h3 id="p1-name" class="head-title">P1</h3>
-                <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
-                <div id="p1-score" class="score">501</div>
-                <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
-             </div>
-          </div>
-          
-          <div class="switch-btn" onclick="actionSwitchStart()" title="Anwurf wechseln">
-             <span style="font-size: 1.6rem;">🔄</span>
-             <span style="font-size: 0.7rem; color: #ccc; margin-top: 2px;">Anwurf</span>
-          </div>
+            <div class="row" style="align-items: center;">
+              <div class="col" style="flex: 1;">
+                 <div id="p1-box" class="box active">
+                    <h3 id="p1-name" class="head-title">P1</h3>
+                    <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
+                    <div id="p1-score" class="score">501</div>
+                    <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+                 </div>
+              </div>
+              
+              <!-- ANWURF WECHSELN BUTTON -->
+              <div class="switch-btn" onclick="actionSwitchStart()" title="Anwurf wechseln">
+                 <span style="font-size: 1.6rem;">🔄</span>
+                 <span style="font-size: 0.7rem; color: #ccc; margin-top: 2px;">Anwurf</span>
+              </div>
 
-          <div class="col" style="flex: 1;">
-             <div id="p2-box" class="box">
-                <h3 id="p2-name" class="head-title">P2</h3>
-                <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
-                <div id="p2-score" class="score">501</div>
-                <div id="p2-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
-             </div>
-          </div>
+              <div class="col" style="flex: 1;">
+                 <div id="p2-box" class="box">
+                    <h3 id="p2-name" class="head-title">P2</h3>
+                    <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
+                    <div id="p2-score" class="score">501</div>
+                    <div id="p2-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+                 </div>
+              </div>
+            </div>
+            
+            <div id="error" class="error"></div>
         </div>
         
-        <div id="error" class="error"></div>
-        
+        <!-- NORMALES BEDIENFELD -->
         <div id="area-play" class="row">
            <div class="col" style="flex: 1.1;">
               <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
@@ -1332,6 +1336,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
            </div>
         </div>
         
+        <!-- CHECKOUT ABFRAGE -->
         <div id="area-check" style="display:none; text-align:center; padding: 15px;">
            <h1 style="color:#ffb74d; margin-bottom:20px; font-size:2.5em;">🎯 Wieviele Darts?</h1>
            <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 10px;">
@@ -1342,48 +1347,49 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
            </div>
         </div>
         
-        <div id="area-over" style="display:none; text-align:center; padding: 5px;">
-           <h2 id="winner-text" style="color:#4CAF50; margin-top:0; margin-bottom:10px;">🏆 Match beendet!</h2>
+        <!-- NEUES, KOMPRIMIERTES ABSCHLUSSFENSTER -->
+        <div id="area-over" style="display:none; text-align:center; padding: 10px;">
+           <h1 id="winner-text" style="color:#4CAF50; margin-top:0; margin-bottom:15px; font-size: 2.8rem;">🏆 Match beendet!</h1>
            
-           <div style="background: #1e1e1e; border-radius: 12px; padding: 10px; margin-bottom: 12px; border: 2px solid #444;">
-               <table class="stat-table">
+           <div style="background: #1e1e1e; border-radius: 12px; padding: 10px 15px; margin-bottom: 20px; border: 2px solid #444; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+               <table class="stat-table" style="width:100%; border-collapse: collapse;">
                    <tr>
-                       <th style="width:35%;" id="stat-p1-name">P1</th>
-                       <th style="width:30%; color:#aaa; font-size:0.8em;">Statistik</th>
-                       <th style="width:35%;" id="stat-p2-name">P2</th>
+                       <th style="width:40%; font-size: 1.5rem; padding-bottom: 10px; border-bottom: 1px solid #444;" id="stat-p1-name">P1</th>
+                       <th style="width:20%; color:#888; font-size:1rem; font-weight:normal; padding-bottom: 10px; border-bottom: 1px solid #444;">STATISTIK</th>
+                       <th style="width:40%; font-size: 1.5rem; padding-bottom: 10px; border-bottom: 1px solid #444;" id="stat-p2-name">P2</th>
                    </tr>
                    <tr>
-                       <td style="font-size:1.8em; font-weight:bold; color:#4CAF50;" id="stat-l1">0</td>
-                       <td style="color:#aaa; font-size:0.8em;">Legs</td>
-                       <td style="font-size:1.8em; font-weight:bold; color:#ff4b4b;" id="stat-l2">0</td>
+                       <td style="font-size:3.5rem; font-weight:bold; padding: 10px 0;" id="stat-l1">0</td>
+                       <td style="color:#ccc; font-size:1rem; font-weight:bold; padding: 10px 0; vertical-align: middle;">LEGS</td>
+                       <td style="font-size:3.5rem; font-weight:bold; padding: 10px 0;" id="stat-l2">0</td>
                    </tr>
                    <tr>
-                       <td id="stat-avg1" style="font-weight:bold;">0.0</td>
-                       <td style="color:#aaa; font-size:0.8em;">Average</td>
-                       <td id="stat-avg2" style="font-weight:bold;">0.0</td>
+                       <td id="stat-avg1" style="font-size: 1.8rem; font-weight:bold; padding: 5px 0;">0.0</td>
+                       <td style="color:#aaa; font-size:0.9rem; padding: 5px 0;">Average</td>
+                       <td id="stat-avg2" style="font-size: 1.8rem; font-weight:bold; padding: 5px 0;">0.0</td>
                    </tr>
                    <tr>
-                       <td id="stat-180-1">0</td>
-                       <td style="color:#aaa; font-size:0.8em;">180er</td>
-                       <td id="stat-180-2">0</td>
+                       <td id="stat-180-1" style="font-size: 1.6rem; padding: 5px 0;">0</td>
+                       <td style="color:#aaa; font-size:0.9rem; padding: 5px 0;">180er</td>
+                       <td id="stat-180-2" style="font-size: 1.6rem; padding: 5px 0;">0</td>
                    </tr>
                    <tr>
-                       <td id="stat-sl1">0</td>
-                       <td style="color:#aaa; font-size:0.8em;">Short Legs (≤21)</td>
-                       <td id="stat-sl2">0</td>
+                       <td id="stat-sl1" style="font-size: 1.6rem; padding: 5px 0;">0</td>
+                       <td style="color:#aaa; font-size:0.9rem; padding: 5px 0;">Short Legs (≤21)</td>
+                       <td id="stat-sl2" style="font-size: 1.6rem; padding: 5px 0;">0</td>
                    </tr>
                    <tr>
-                       <td id="stat-hf1">0</td>
-                       <td style="color:#aaa; font-size:0.8em;">High Finishes</td>
-                       <td id="stat-hf2">0</td>
+                       <td id="stat-hf1" style="font-size: 1.6rem; padding: 5px 0;">0</td>
+                       <td style="color:#aaa; font-size:0.9rem; padding: 5px 0;">High Finishes</td>
+                       <td id="stat-hf2" style="font-size: 1.6rem; padding: 5px 0;">0</td>
                    </tr>
                </table>
            </div>
 
-           <div style="display:flex; gap:8px; justify-content:center;">
-              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="flex:2; min-height:60px; font-size:1.2rem; margin:0;">💾 Speichern & Beenden</button>
-              <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:60px; font-size:1.2rem; margin:0;">↩️ Zurück</button>
-              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="flex:1; min-height:60px; font-size:1.2rem; margin:0;">Abbruch</button>
+           <div style="display:flex; gap:10px; justify-content:center;">
+              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="flex:2; min-height:80px; font-size:1.6rem; margin:0;">💾 Speichern & Beenden</button>
+              <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:80px; font-size:1.3rem; margin:0;">↩️ Zurück</button>
+              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="flex:1; min-height:80px; font-size:1.3rem; margin:0;">Abbruch</button>
            </div>
         </div>
 
@@ -1435,6 +1441,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         }
 
         function render() {
+            // --- TOP SCOREBOARD DATEN ---
             document.getElementById('p1-name').innerText = P1_NAME;
             document.getElementById('p2-name').innerText = P2_NAME;
             document.getElementById('p1-score').innerText = matchState.s1;
@@ -1456,23 +1463,33 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             errDiv.innerText = matchState.error || "";
             errDiv.style.display = matchState.error ? "block" : "none";
 
+            // --- DISPLAY STEUERUNG (UMSCHALTEN DER FENSTER) ---
             if(matchState.mode === 'check') {
+                document.getElementById('top-scoreboard').style.display = 'block';
                 document.getElementById('area-play').style.display = 'none';
                 document.getElementById('area-check').style.display = 'block';
                 document.getElementById('area-over').style.display = 'none';
             } else if (matchState.mode === 'over') {
+                // HIER WIRD DAS TOP SCOREBOARD AUSGEBLENDET!
+                document.getElementById('top-scoreboard').style.display = 'none';
                 document.getElementById('area-play').style.display = 'none';
                 document.getElementById('area-check').style.display = 'none';
                 document.getElementById('area-over').style.display = 'block';
                 
-                let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
-                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
+                let p1Won = matchState.l1 > matchState.l2;
+                let winner = p1Won ? P1_NAME : P2_NAME;
+                document.getElementById('winner-text').innerHTML = "🏆 " + winner + " gewinnt!";
                 
                 // Abschluss-Statistiken abfüllen
                 document.getElementById('stat-p1-name').innerText = P1_NAME;
                 document.getElementById('stat-p2-name').innerText = P2_NAME;
+                
                 document.getElementById('stat-l1').innerText = matchState.l1;
+                document.getElementById('stat-l1').style.color = p1Won ? '#4CAF50' : '#ff4b4b';
+                
                 document.getElementById('stat-l2').innerText = matchState.l2;
+                document.getElementById('stat-l2').style.color = !p1Won ? '#4CAF50' : '#ff4b4b';
+                
                 document.getElementById('stat-avg1').innerText = avg1;
                 document.getElementById('stat-avg2').innerText = avg2;
                 document.getElementById('stat-180-1').innerText = matchState.e180_1;
@@ -1483,6 +1500,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 document.getElementById('stat-hf2').innerText = matchState.hf2 || 0;
                 
             } else {
+                document.getElementById('top-scoreboard').style.display = 'block';
                 document.getElementById('area-play').style.display = 'flex';
                 document.getElementById('area-check').style.display = 'none';
                 document.getElementById('area-over').style.display = 'none';
@@ -1700,7 +1718,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 
                 setTimeout(() => {
                     if(saveBtn && payload.action === 'save') {
-                        saveBtn.innerText = "💾 Online Speichern & Beenden";
+                        saveBtn.innerText = "💾 Speichern & Beenden";
                         saveBtn.style.opacity = "1";
                     }
                 }, 3000);
@@ -1864,8 +1882,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
 
     html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
-    # Höhe leicht reduziert für perfektes "Einseitig"-Gefühl ohne Scrollen
-    components.html(html_content, height=750, scrolling=False)
+    components.html(html_content, height=810, scrolling=False)
                 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
