@@ -85,7 +85,8 @@ with st.sidebar:
         if st.button("Ausloggen", use_container_width=True):
             st.session_state.logged_out_flag = True
             st.session_state.role = "Gast"
-            cookie_manager.delete("steelers_role")
+            # FIX: Den Cookie aktiv überschreiben statt ihn nur zu löschen (verhindert den Reload-Bug)
+            cookie_manager.set("steelers_role", "Gast", expires_at=datetime.now() + timedelta(days=1))
             st.success("Erfolgreich abgemeldet!")
             time.sleep(0.5)
             st.rerun()
