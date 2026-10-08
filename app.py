@@ -1200,7 +1200,10 @@ def open_session_summary_dialog(session_id):
         rank = 1
         for team_name, stats in sorted_teams:
             if stats["matches"] > 0 or len(sorted_teams) <= 5:
-                medal = "🥇" if rank == 1 else ("🥈" if rank ==
+                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
+                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'><p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p><p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p></div>", unsafe_allow_html=True)
+                rank += 1
+    if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
