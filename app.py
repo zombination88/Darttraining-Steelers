@@ -1247,10 +1247,14 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 "start": 0,
                 "state": "play", # Modi: play, checkout, over
                 "cur_input": "",
-                "checkout_score": 0
+                "checkout_score": 0,
+                "undo_stack": [],
+                "undone_history": []
             }
     
     st_ls = st.session_state[ls_key]
+    if "undo_stack" not in st_ls: st_ls["undo_stack"] = []
+    if "undone_history" not in st_ls: st_ls["undone_history"] = []
     
     # Auto-Save Schreibfunktion
     def backup_state():
@@ -1266,6 +1270,41 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             except: pass
         if ls_key in st.session_state:
             del st.session_state[ls_key]
+            
+    # --- UNDO / ZURÜCKSPUL-FUNKTION ---
+    def save_state(action_label):
+        # Macht einen "Schnappschuss" von allen Werten
+        snapshot = {
+            "s1": st_ls["s1"], "s2": st_ls["s2"],
+            "pts1": st_ls["pts1"], "pts2": st_ls["pts2"],
+            "d1_leg": st_ls["d1_leg"], "d2_leg": st_ls["d2_leg"],
+            "d1_tot": st_ls["d1_tot"], "d2_tot": st_ls["d2_tot"],
+            "180_1": st_ls["180_1"], "180_2": st_ls["180_2"],
+            "hist1": list(st_ls.get("hist1", [])), 
+            "hist2": list(st_ls.get("hist2", [])),
+            "turn": st_ls["turn"],
+            "start": st_ls.get("start", 0),
+            "state": st_ls["state"],
+            "checkout_score": st_ls.get("checkout_score", 0),
+            "l1": st_ls["l1"], "l2": st_ls["l2"]
+        }
+        # Merkt sich die letzten 30 Würfe
+        st_ls["undo_stack"] = st_ls.get("undo_stack", [])[-29:] + [{"state": snapshot, "action": action_label}]
+        
+    def undo_last():
+        if st_ls.get("undo_stack"):
+            last = st_ls["undo_stack"].pop()
+            # Der gelöschte Wert kommt in die Gedächtnisstütze
+            st_ls["undone_history"].insert(0, last["action"])
+            # Alle Werte wiederherstellen
+            for k, v in last["state"].items():
+                st_ls[k] = v
+            st_ls["cur_input"] = ""
+            backup_state()
+            
+    def clear_undone():
+        st_ls["undone_history"] = []
+        backup_state()
     
     # --- SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
     def get_safe_avg(pts, darts):
@@ -1283,6 +1322,9 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         st_ls["cur_input"] = ""
         try: score = int(score)
         except: return
+        
+        # VOR dem Wurf speichern, damit wir ihn rückgängig machen können!
+        save_state(str(score))
         
         active_p = 1 if st_ls["turn"] == 0 else 2
         curr_score = int(st_ls[f"s{active_p}"])
@@ -1320,6 +1362,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         except: return
         score = int(st_ls["checkout_score"])
         active_p = 1 if st_ls["turn"] == 0 else 2
+        
+        save_state(f"Check ({score})")
         
         st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
         st_ls[f"hist{active_p}"].insert(0, f"{score} (Check in {darts})")
@@ -1367,11 +1411,11 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     # 5. Steuerung (Eingabe)
     if st_ls["state"] == "checkout":
         st.warning("🎯 **Check!** Mit wie vielen Pfeilen in dieser Aufnahme hast du gecheckt?")
-        col_d1, col_d2, col_d3 = st.columns(3)
-        # NEU: Callbacks statt hartem st.rerun(), damit das Fenster flüssig offen bleibt
+        col_d1, col_d2, col_d3, col_u = st.columns(4)
         col_d1.button("1 Dart", key=f"chk1_{ls_key}", on_click=process_checkout, args=(1,), use_container_width=True)
         col_d2.button("2 Darts", key=f"chk2_{ls_key}", on_click=process_checkout, args=(2,), use_container_width=True)
         col_d3.button("3 Darts", key=f"chk3_{ls_key}", on_click=process_checkout, args=(3,), use_container_width=True)
+        col_u.button("↩️ Zurück", key=f"undo_chk_{ls_key}", on_click=undo_last, use_container_width=True)
         
     elif st_ls["state"] == "over":
         winner_name = st_ls['p1'] if st_ls['l1'] > st_ls['l2'] else st_ls['p2']
@@ -1395,9 +1439,14 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 smart_sync_and_save(st.session_state.sessions_list)
                 clear_backup() # Aufräumen, Match ist erfolgreich gespeichert
                 st.rerun()
-        if st.button("Abbrechen & Verwerfen", use_container_width=True):
-            clear_backup()
-            st.rerun()
+                
+        c_ab, c_un = st.columns(2)
+        with c_ab:
+            if st.button("Abbrechen & Verwerfen", use_container_width=True):
+                clear_backup()
+                st.rerun()
+        with c_un:
+            st.button("↩️ Letzten Wurf korrigieren", key=f"undo_over_{ls_key}", on_click=undo_last, use_container_width=True)
             
     elif st_ls["state"] == "play":
         c_l, c_m, c_r = st.columns([1, 2, 1])
@@ -1434,9 +1483,11 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             st.caption("Standard")
             for qv in [26, 41, 45, 60, 81, 85]: st.button(str(qv), key=f"ql_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
         with c_m:
-            # Display
+            # Display + Undo
+            c_disp, c_undo = st.columns([3, 1])
             disp_val = st_ls.get('cur_input', '')
-            st.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff; line-height: 50px;'>{disp_val if disp_val else '...'}</div>", unsafe_allow_html=True)
+            c_disp.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff; line-height: 50px;'>{disp_val if disp_val else '...'}</div>", unsafe_allow_html=True)
+            c_undo.button("↩️ Zurück", key=f"undo_main_{ls_key}", on_click=undo_last, use_container_width=True)
             
             # Ziffernblock
             grid = [[1,2,3], [4,5,6], [7,8,9], ["REST", 0, "⬅"]]
@@ -1471,6 +1522,13 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 st.button("🔴 No Score", key=f"btn_noscore_{round_num}_{board_name}", on_click=n_throw, args=(0,), use_container_width=True)
             with c_bot2:
                 st.button("🟢 Geworfen", key=f"btn_geworfen_{round_num}_{board_name}", on_click=n_enter, use_container_width=True)
+
+            # GEDÄCHTNISSTÜTZE (Zeigt die gelöschten Würfe an)
+            if st_ls.get("undone_history"):
+                st.write("")
+                c_mem1, c_mem2 = st.columns([5, 1])
+                c_mem1.info(f"💡 **Gedächtnisstütze (Gelöscht):** {', '.join(st_ls['undone_history'])}")
+                c_mem2.button("❌", key=f"clr_mem_{ls_key}", on_click=clear_undone, use_container_width=True)
 
         with c_r:
             st.caption("Highs")
