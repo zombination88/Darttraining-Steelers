@@ -62,16 +62,12 @@ with st.sidebar:
                 st.session_state.logged_out_flag = False
                 st.session_state.role = "Admin"
                 cookie_manager.set("steelers_role", "Admin", expires_at=datetime.now() + timedelta(days=365))
-                st.success("👑 Admin-Login erfolgreich!")
-                time.sleep(0.5)
-                st.rerun()
+                st.success("👑 Admin-Login erfolgreich! (Bitte einmal irgendwo klicken, um das Menü zu aktualisieren)")
             elif pwd == "20Steelers25":
                 st.session_state.logged_out_flag = False
                 st.session_state.role = "Spieler"
                 cookie_manager.set("steelers_role", "Spieler", expires_at=datetime.now() + timedelta(days=365))
-                st.success("✅ Spieler-Login erfolgreich!")
-                time.sleep(0.5)
-                st.rerun()
+                st.success("✅ Spieler-Login erfolgreich! (Bitte einmal irgendwo klicken, um das Menü zu aktualisieren)")
             else:
                 st.error("Falsches Passwort!")
         st.markdown("---")
@@ -85,15 +81,11 @@ with st.sidebar:
         if st.button("Ausloggen", use_container_width=True):
             st.session_state.logged_out_flag = True
             st.session_state.role = "Gast"
-            # FIX: Den Cookie aktiv überschreiben statt ihn nur zu löschen (verhindert den Reload-Bug)
-            cookie_manager.set("steelers_role", "Gast", expires_at=datetime.now() + timedelta(days=1))
-            st.success("Erfolgreich abgemeldet!")
-            time.sleep(0.5)
-            st.rerun()
+            cookie_manager.delete("steelers_role")
+            st.success("✅ Erfolgreich abgemeldet! (Bitte einmal Tab wechseln oder klicken, um das Menü zu aktualisieren)")
 
 is_admin = st.session_state.role in ["Spieler", "Admin"]
 is_superadmin = st.session_state.role == "Admin"
-
 # ==========================================
 # [BLOCK_2] Datenbank & Google Sheets
 # ==========================================
