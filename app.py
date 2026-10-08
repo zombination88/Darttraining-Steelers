@@ -1207,7 +1207,7 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (PWA + LocalStorage)
+# [BLOCK_4b] Dialoge: Live Scoring Modul (PWA + LocalStorage + Undo-Fix)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1283,7 +1283,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
     safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
 
-    # --- DAS OFFLINE JAVASCRIPT BOARD MIT LOCALSTORAGE ---
+    # --- DAS OFFLINE JAVASCRIPT BOARD MIT LOCALSTORAGE & MEMORY FIX ---
     html_code = """
     <!DOCTYPE html>
     <html>
@@ -1309,6 +1309,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         .head-title { margin: 0; font-size: 1.5rem; }
         .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
         .stats { color: #ccc; font-size: 1.2em; }
+        .memory-box { background: #1e1e1e; color: white; padding: 12px; border-radius: 8px; margin-top: 15px; text-align: left; font-size: 1.2rem; border: 2px solid #ff9800; display: none; }
       </style>
     </head>
     <body>
@@ -1357,6 +1358,12 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                  <button onclick="throwPts(0)" class="btn-red" style="flex:1;">🔴 No Score</button>
                  <button onclick="enter()" class="btn-green" style="flex:1;">🟢 Geworfen</button>
                  <button onclick="check()" class="btn-blue" style="flex:1;">🎯 Check</button>
+              </div>
+              
+              <!-- GEDÄCHTNISSTÜTZE -->
+              <div id="memory-box" class="memory-box">
+                 💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
+                 <button onclick="clearUndone()" style="float:right; min-height:30px; font-size:1.2rem; padding:0 10px; background:transparent; border:none; margin-top:-5px;">❌</button>
               </div>
            </div>
            <div class="col" style="flex: 1;">
@@ -1407,7 +1414,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             turn: 0, start: 0,
             mode: 'play',
             input: '', check_score: 0, error: '',
-            history: [] 
+            history: [], 
+            undone_history: []
         };
 
         let state;
@@ -1472,29 +1480,67 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 document.getElementById('area-over').style.display = 'none';
             }
             
+            // Gedächtnisstütze UI Update
+            let memBox = document.getElementById('memory-box');
+            if(state.undone_history && state.undone_history.length > 0 && state.mode === 'play') {
+                memBox.style.display = 'block';
+                document.getElementById('memory-text').innerText = state.undone_history.join(", ");
+            } else {
+                memBox.style.display = 'none';
+            }
+            
             saveToLocal();
         }
 
-        function saveState() {
+        function saveState(actionLabel) {
+            // FIX: Array temporär abkoppeln, damit es nicht endlos verschachtelt im JSON landet!
+            let tempHist = state.history || [];
+            let tempUndone = state.undone_history || [];
+            state.history = [];
+            state.undone_history = [];
+            
             let snap = JSON.stringify(state);
-            state.history.push(snap);
+            
+            state.history = tempHist;
+            state.undone_history = tempUndone;
+            
+            state.history.push({ stateStr: snap, action: actionLabel });
             if(state.history.length > 40) state.history.shift();
         }
 
         function undo() {
-            if(state.history.length > 0) {
+            if(state.history && state.history.length > 0) {
                 let last = state.history.pop();
-                state = JSON.parse(last);
+                let parsed = JSON.parse(last.stateStr);
+                
+                // Den rückgängig gemachten Wurf in die Gedächtnisstütze packen
+                let currentUndone = state.undone_history || [];
+                currentUndone.unshift(last.action);
+                
+                // History erhalten
+                let currentHist = state.history;
+                
+                state = parsed;
+                state.history = currentHist;
+                state.undone_history = currentUndone;
                 state.error = "";
                 render();
             }
+        }
+        
+        function clearUndone() {
+            state.undone_history = [];
+            render();
         }
 
         function pad(n) { state.input += n; render(); }
         function del() { state.input = state.input.slice(0, -1); render(); }
         
         function throwPts(pts) {
-            saveState();
+            let label = pts === 0 ? "No Score" : String(pts);
+            saveState(label);
+            state.undone_history = []; // Neue Aktion löscht den Speicher
+            
             state.input = "";
             let active = state.turn === 0 ? 1 : 2;
             let curr = active === 1 ? state.s1 : state.s2;
@@ -1551,7 +1597,9 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         }
 
         function doCheck(darts) {
-            saveState();
+            saveState("Check in " + darts);
+            state.undone_history = [];
+            
             let pts = state.check_score;
             let active = state.turn === 0 ? 1 : 2;
             if(active === 1) {
