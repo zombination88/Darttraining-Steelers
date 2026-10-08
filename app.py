@@ -1282,7 +1282,344 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                  <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
               </div>
               <div class="grid">
-                 <button onclick="actionPad(1)">1</button><button onclick="actionPad(2
+                 <button onclick="actionPad(1)">1</button><button onclick="actionPad(2)">2</button><button onclick="actionPad(3)">3</button>
+                 <button onclick="actionPad(4)">4</button><button onclick="actionPad(5)">5</button><button onclick="actionPad(6)">6</button>
+                 <button onclick="actionPad(7)">7</button><button onclick="actionPad(8)">8</button><button onclick="actionPad(9)">9</button>
+                 <button onclick="actionDel()">⌫</button><button onclick="actionPad(0)">0</button><button onclick="actionRest()">REST</button>
+              </div>
+              <button onclick="actionEnter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
+              
+              <div id="memory-box" class="memory-box">
+                 💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
+                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
+              </div>
+           </div>
+           
+           <div class="col" style="flex: 1.1;">
+              <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
+              <button onclick="actionThrowPts(100)">100</button>
+              <button onclick="actionThrowPts(121)">121</button>
+              <button onclick="actionThrowPts(125)">125</button>
+              <button onclick="actionThrowPts(135)">135</button>
+              <button onclick="actionThrowPts(140)">140</button>
+              <button onclick="actionThrowPts(180)">180</button>
+           </div>
+        </div>
+        
+        <div id="area-check" style="display:none; text-align:center; padding: 30px;">
+           <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
+           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
+              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
+              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
+              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
+              <button onclick="actionUndo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
+           </div>
+        </div>
+        
+        <div id="area-over" style="display:none; text-align:center; padding: 40px;">
+           <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
+           <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
+           <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
+              <button onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
+              <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
+              <button onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+           </div>
+        </div>
+
+        <script>
+        const P1_NAME = "__P1__";
+        const P2_NAME = "__P2__";
+        const REQ_WIN = parseInt("__REQ_WIN__");
+        const STORAGE_KEY = "steelers_board___SESSION_ID_____BOARD_NAME_____ROUND_NUM__";
+
+        let defaultState = {
+            l1: 0, l2: 0,
+            s1: 501, s2: 501,
+            pts1: 0, pts2: 0,
+            d1_leg: 0, d2_leg: 0,
+            d1_tot: 0, d2_tot: 0,
+            e180_1: 0, e180_2: 0,
+            turn: 0, start: 0,
+            mode: 'play',
+            input: '', check_score: 0, error: '',
+            history: [], 
+            undone_history: [],
+            last_undone_val: ""
+        };
+
+        let matchState;
+        
+        try {
+            let saved = localStorage.getItem(STORAGE_KEY);
+            if(saved) { matchState = JSON.parse(saved); } 
+            else { matchState = defaultState; }
+        } catch(e) { matchState = defaultState; }
+
+        function saveToLocal() {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(matchState)); } 
+            catch(e) {}
+        }
+        
+        function clearLocal() {
+            try { localStorage.removeItem(STORAGE_KEY); } 
+            catch(e) {}
+        }
+
+        function showError(msg) {
+            matchState.error = msg;
+            render();
+            setTimeout(() => { matchState.error = ""; render(); }, 3000);
+        }
+
+        function render() {
+            document.getElementById('p1-name').innerText = P1_NAME;
+            document.getElementById('p2-name').innerText = P2_NAME;
+            document.getElementById('p1-score').innerText = matchState.s1;
+            document.getElementById('p2-score').innerText = matchState.s2;
+            document.getElementById('p1-legs').innerText = "Legs: " + matchState.l1;
+            document.getElementById('p2-legs').innerText = "Legs: " + matchState.l2;
+            
+            let avg1 = matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3).toFixed(1) : "0.0";
+            let avg2 = matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3).toFixed(1) : "0.0";
+            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${matchState.d1_leg}</b>`;
+            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${matchState.d2_leg}</b>`;
+            
+            document.getElementById('p1-box').className = matchState.turn === 0 ? "box active" : "box";
+            document.getElementById('p2-box').className = matchState.turn === 1 ? "box active" : "box";
+
+            document.getElementById('display').innerText = matchState.input || "...";
+            
+            let errDiv = document.getElementById('error');
+            errDiv.innerText = matchState.error || "";
+            errDiv.style.display = matchState.error ? "block" : "none";
+
+            if(matchState.mode === 'check') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'block';
+                document.getElementById('area-over').style.display = 'none';
+            } else if (matchState.mode === 'over') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'block';
+                let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
+                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
+            } else {
+                document.getElementById('area-play').style.display = 'flex';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'none';
+            }
+            
+            let banner = document.getElementById('undo-banner');
+            if(matchState.last_undone_val) {
+                banner.style.display = 'block';
+                document.getElementById('undo-val').innerText = matchState.last_undone_val;
+            } else {
+                banner.style.display = 'none';
+            }
+
+            let memBox = document.getElementById('memory-box');
+            if(matchState.undone_history && matchState.undone_history.length > 0 && matchState.mode === 'play') {
+                memBox.style.display = 'block';
+                document.getElementById('memory-text').innerText = matchState.undone_history.join(", ");
+            } else {
+                memBox.style.display = 'none';
+            }
+            
+            saveToLocal();
+        }
+
+        function saveMatchState(actionLabel) {
+            let tempHist = matchState.history || [];
+            let tempUndone = matchState.undone_history || [];
+            matchState.history = [];
+            matchState.undone_history = [];
+            
+            let snap = JSON.stringify(matchState);
+            
+            matchState.history = tempHist;
+            matchState.undone_history = tempUndone;
+            
+            matchState.history.push({ stateStr: snap, action: actionLabel });
+            if(matchState.history.length > 40) matchState.history.shift();
+        }
+
+        function actionUndo() {
+            if(matchState.history && matchState.history.length > 0) {
+                let last = matchState.history.pop();
+                let parsed = JSON.parse(last.stateStr);
+                
+                let currentUndone = matchState.undone_history || [];
+                currentUndone.unshift(last.action);
+                
+                let currentHist = matchState.history;
+                
+                matchState = parsed;
+                matchState.history = currentHist;
+                matchState.undone_history = currentUndone;
+                
+                let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
+                matchState.input = valToDisplay;
+                matchState.last_undone_val = valToDisplay;
+                matchState.error = "";
+                render();
+            }
+        }
+        
+        function actionClearUndone() {
+            matchState.undone_history = [];
+            render();
+        }
+
+        function actionPad(n) { 
+            matchState.last_undone_val = ""; 
+            matchState.input += n; 
+            render(); 
+        }
+        function actionDel() { 
+            matchState.input = matchState.input.slice(0, -1); 
+            render(); 
+        }
+        
+        function actionThrowPts(pts) {
+            pts = parseInt(pts);
+            let label = pts === 0 ? "No Score" : String(pts);
+            saveMatchState(label);
+            matchState.undone_history = [];
+            matchState.last_undone_val = ""; 
+            
+            matchState.input = "";
+            let active = matchState.turn === 0 ? 1 : 2;
+            let curr = parseInt(active === 1 ? matchState.s1 : matchState.s2);
+            let rem = curr - pts;
+            
+            if (rem < 0 || rem === 1) {
+                if(active === 1) { matchState.d1_leg += 3; matchState.d1_tot += 3; }
+                else { matchState.d2_leg += 3; matchState.d2_tot += 3; }
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
+            } else if (rem === 0) {
+                matchState.mode = 'check';
+                matchState.check_score = pts;
+            } else {
+                if(active === 1) { 
+                    matchState.s1 = rem; matchState.pts1 += pts; matchState.d1_leg += 3; matchState.d1_tot += 3; 
+                    if(pts === 180) matchState.e180_1++;
+                } else { 
+                    matchState.s2 = rem; matchState.pts2 += pts; matchState.d2_leg += 3; matchState.d2_tot += 3; 
+                    if(pts === 180) matchState.e180_2++;
+                }
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
+            }
+            render();
+        }
+        
+        function actionEnter() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            if(val <= 180) actionThrowPts(val);
+            else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
+        }
+        
+        function actionRest() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            let curr = parseInt(matchState.turn === 0 ? matchState.s1 : matchState.s2);
+            if(val <= curr) {
+                let thrown = curr - val;
+                if(thrown <= 180) actionThrowPts(thrown);
+                else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
+            } else {
+                showError("🚨 Rest kann nicht höher sein als deine Punkte!");
+            }
+        }
+        
+        function actionCheck() {
+            let activeP = matchState.turn === 0 ? 1 : 2;
+            let currScore = parseInt(activeP === 1 ? matchState.s1 : matchState.s2);
+            let bogies = [169, 168, 166, 165, 163, 162, 159];
+            
+            if (currScore <= 170 && bogies.indexOf(currScore) === -1) {
+                actionThrowPts(currScore);
+            } else {
+                showError("🚨 Fehler: " + currScore + " kann nicht gecheckt werden (Bogey oder >170)!");
+            }
+        }
+
+        function actionDoCheck(darts) {
+            saveMatchState("Check in " + darts);
+            matchState.undone_history = [];
+            matchState.last_undone_val = "";
+            
+            let pts = parseInt(matchState.check_score);
+            let active = matchState.turn === 0 ? 1 : 2;
+            if(active === 1) {
+                matchState.pts1 += pts; matchState.d1_leg += darts; matchState.d1_tot += darts; matchState.l1++; matchState.s1 = 0;
+                if(pts === 180) matchState.e180_1++;
+            } else {
+                matchState.pts2 += pts; matchState.d2_leg += darts; matchState.d2_tot += darts; matchState.l2++; matchState.s2 = 0;
+                if(pts === 180) matchState.e180_2++;
+            }
+            
+            if(matchState.l1 === REQ_WIN || matchState.l2 === REQ_WIN) {
+                matchState.mode = 'over';
+            } else {
+                matchState.s1 = 501; matchState.s2 = 501;
+                matchState.d1_leg = 0; matchState.d2_leg = 0;
+                matchState.start = matchState.start === 0 ? 1 : 0;
+                matchState.turn = matchState.start;
+                matchState.mode = 'play';
+            }
+            render();
+        }
+
+        function sendToStreamlit(payload) {
+            if(!navigator.onLine && payload.action === 'save') {
+                alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
+                return;
+            }
+            const doc = window.parent.document;
+            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
+            if(inputs.length > 0) {
+                let target = inputs[inputs.length - 1];
+                
+                // React-sichere Wertzuweisung
+                let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                nativeInputValueSetter.call(target, JSON.stringify(payload));
+                
+                // Streamlit aufwecken (Input + Enter-Taste simulieren)
+                target.dispatchEvent(new Event("input", { bubbles: true }));
+                target.dispatchEvent(new Event("change", { bubbles: true }));
+                target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
+                target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
+            } else {
+                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
+            }
+        }
+
+        function actionSaveMatch() {
+            sendToStreamlit({
+                action: 'save',
+                l1: matchState.l1, l2: matchState.l2,
+                e180_1: matchState.e180_1, e180_2: matchState.e180_2,
+                avg1: matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3) : 0,
+                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0
+            });
+            clearLocal();
+        }
+
+        function actionCancelMatch() {
+            if(!navigator.onLine) {
+                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
+            }
+            sendToStreamlit({action: 'cancel'});
+            clearLocal();
+        }
+
+        render();
+        </script>
+    </body>
+    </html>
+    """
+    return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
         
 # ==========================================
 # [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
