@@ -1640,14 +1640,17 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     
     res = sess.setdefault("results", {})
     
-    # --- FIX: ROBUSTE SCHLÜSSEL-SUCHE FÜR CLOUD-DATENBANKEN ---
-    target_key = (round_num, board_name)
+    # --- 100% ROBUSTE SCHLÜSSEL-SUCHE (JSON-Tupel-Fix) ---
+    # Wir filtern alle Sonderzeichen, Leerzeichen und Klammern heraus, damit 
+    # Streamlit den Lock in der Cloud immer findet, egal wie er formatiert wurde!
+    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
+    
     m_info = None
-    actual_key = target_key
+    actual_key = (round_num, board_name) # Standard-Fallback
     
     for k, v in res.items():
-        # Vergleicht saubere Tupel, Strings oder Listen (falls die DB sie beim Speichern umgewandelt hat)
-        if k == target_key or str(k) == str(target_key) or str(k) == f"['{round_num}', '{board_name}']" or str(k) == f"[{round_num}, '{board_name}']":
+        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        if k_clean == target_clean:
             m_info = v
             actual_key = k
             break
@@ -1659,7 +1662,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     # Prüfen, ob schon jemand anderes spielt
     if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
         st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-        st.info("💡 Lade die Seite neu, falls dieses Spiel schon beendet ist.")
+        st.warning("⚠️ **Wichtig für den Liga-Betrieb:** Wenn das zweite Tablet die App schon offen hatte, bevor das Spiel am ersten Tablet gestartet wurde, musst du die Seite kurz neu laden (F5 / nach unten ziehen), um die aktuelle Sperre aus der Cloud zu sehen!")
         if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
             m_info["is_live_locked"] = False
             smart_sync_and_save(st.session_state.sessions_list)
