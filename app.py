@@ -1436,6 +1436,551 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
+# [BLOCK_4b_1] Helper: PWA HTML & JS Template
+# ==========================================
+def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
+    html_code = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { background: #0e1117; color: white; font-family: sans-serif; margin: 0; padding: 5px; user-select: none; }
+        .row { display: flex; gap: 10px; margin-bottom: 12px; }
+        .col { flex: 1; }
+        .box { border: 3px solid #444; background: #1e1e1e; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .box.active { border-color: #4CAF50; background: #2e7d32; }
+        .score { font-size: 5.5em; font-weight: bold; margin: 5px 0; line-height: 1.1; }
+        .display { background: #111; font-size: 2.8em; border-radius: 8px; text-align: center; min-height: 65px; line-height: 65px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
+        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 70px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; width: 100%; margin-bottom: 8px; }
+        button:active { opacity: 0.6; transform: scale(0.98); }
+        .btn-red { background: #d32f2f !important; border-color: #d32f2f !important; }
+        .btn-green { background: #388e3c !important; border-color: #388e3c !important; color: white !important; }
+        .btn-blue { background: #1976d2 !important; border-color: #1976d2 !important; }
+        .btn-undo { background: #ff9800 !important; border-color: #ff9800 !important; }
+        .error { background: #ff4b4b; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: none; font-weight: bold; text-align: center; font-size: 1.2rem;}
+        .head-title { margin: 0; font-size: 1.5rem; }
+        .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
+        .stats { color: #ccc; font-size: 1.2em; }
+        .undo-banner { background: #ff9800; color: #000; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center; font-size: 1.4rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .memory-box { background: #1e1e1e; color: white; padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 1.1rem; border: 2px solid #ff9800; display: none; }
+      </style>
+    </head>
+    <body>
+        <div id="undo-banner" class="undo-banner">
+           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
+        </div>
+
+        <div class="row">
+          <div class="col" style="flex: 1.2;">
+             <div id="p1-box" class="box active">
+                 <h3 id="p1-name" class="head-title">P1</h3>
+                <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
+                <div id="p1-score" class="score">501</div>
+                <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+             </div>
+          </div>
+          <div class="col" style="flex: 1.2;">
+             <div id="p2-box" class="box">
+                <h3 id="p2-name" class="head-title">P2</h3>
+                <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
+                <div id="p2-score" class="score">501</div>
+                <div id="p2-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+             </div>
+          </div>
+        </div>
+        <div id="error" class="error"></div>
+        
+        <div id="area-play" class="row">
+           <div class="col" style="flex: 1.1;">
+              <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
+              <button onclick="actionCheck()" class="btn-blue">🎯 Check</button>
+              <div style="color:gray; text-align:center; margin: 4px 0; font-size:0.9em; font-weight:bold;">Standard</div>
+              <button onclick="actionThrowPts(26)">26</button>
+              <button onclick="actionThrowPts(41)">41</button>
+              <button onclick="actionThrowPts(45)">45</button>
+              <button onclick="actionThrowPts(60)">60</button>
+              <button onclick="actionThrowPts(81)">81</button>
+              <button onclick="actionThrowPts(85)">85</button>
+           </div>
+           
+           <div class="col" style="flex: 2.2;">
+              <div style="display:flex; gap:8px; margin-bottom:8px;">
+                 <div id="display" class="display" style="flex:3;"></div>
+                 <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
+              </div>
+              <div class="grid">
+                 <button onclick="actionPad(1)">1</button><button onclick="actionPad(2)">2</button><button onclick="actionPad(3)">3</button>
+                 <button onclick="actionPad(4)">4</button><button onclick="actionPad(5)">5</button><button onclick="actionPad(6)">6</button>
+                 <button onclick="actionPad(7)">7</button><button onclick="actionPad(8)">8</button><button onclick="actionPad(9)">9</button>
+                 <button onclick="actionDel()">⌫</button><button onclick="actionPad(0)">0</button><button onclick="actionRest()">REST</button>
+              </div>
+              <button onclick="actionEnter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
+              
+              <div id="memory-box" class="memory-box">
+                 💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
+                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
+              </div>
+           </div>
+           
+           <div class="col" style="flex: 1.1;">
+              <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
+              <button onclick="actionThrowPts(100)">100</button>
+              <button onclick="actionThrowPts(121)">121</button>
+              <button onclick="actionThrowPts(125)">125</button>
+              <button onclick="actionThrowPts(135)">135</button>
+              <button onclick="actionThrowPts(140)">140</button>
+              <button onclick="actionThrowPts(180)">180</button>
+           </div>
+        </div>
+        
+        <div id="area-check" style="display:none; text-align:center; padding: 30px;">
+           <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
+           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
+              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
+              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
+              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
+              <button onclick="actionUndo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
+           </div>
+        </div>
+        
+        <div id="area-over" style="display:none; text-align:center; padding: 40px;">
+           <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
+           <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
+           <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
+              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
+              <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
+              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+           </div>
+        </div>
+
+        <script>
+        const P1_NAME = "__P1__";
+        const P2_NAME = "__P2__";
+        const REQ_WIN = parseInt("__REQ_WIN__");
+        const STORAGE_KEY = "steelers_board___SESSION_ID_____BOARD_NAME_____ROUND_NUM__";
+
+        let defaultState = {
+            l1: 0, l2: 0,
+            s1: 501, s2: 501,
+            pts1: 0, pts2: 0,
+            d1_leg: 0, d2_leg: 0,
+            d1_tot: 0, d2_tot: 0,
+            e180_1: 0, e180_2: 0,
+            turn: 0, start: 0,
+            mode: 'play',
+            input: '', check_score: 0, error: '',
+            history: [], 
+            undone_history: [],
+            last_undone_val: ""
+        };
+
+        let matchState;
+        
+        try {
+            let saved = localStorage.getItem(STORAGE_KEY);
+            if(saved) { matchState = JSON.parse(saved); } 
+            else { matchState = defaultState; }
+        } catch(e) { matchState = defaultState; }
+
+        function saveToLocal() {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(matchState)); } 
+            catch(e) {}
+        }
+        
+        function clearLocal() {
+            try { localStorage.removeItem(STORAGE_KEY); } 
+            catch(e) {}
+        }
+
+        function showError(msg) {
+            matchState.error = msg;
+            render();
+            setTimeout(() => { matchState.error = ""; render(); }, 3000);
+        }
+
+        function render() {
+            document.getElementById('p1-name').innerText = P1_NAME;
+            document.getElementById('p2-name').innerText = P2_NAME;
+            document.getElementById('p1-score').innerText = matchState.s1;
+            document.getElementById('p2-score').innerText = matchState.s2;
+            document.getElementById('p1-legs').innerText = "Legs: " + matchState.l1;
+            document.getElementById('p2-legs').innerText = "Legs: " + matchState.l2;
+            
+            let avg1 = matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3).toFixed(1) : "0.0";
+            let avg2 = matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3).toFixed(1) : "0.0";
+            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${matchState.d1_leg}</b>`;
+            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${matchState.d2_leg}</b>`;
+            
+            document.getElementById('p1-box').className = matchState.turn === 0 ? "box active" : "box";
+            document.getElementById('p2-box').className = matchState.turn === 1 ? "box active" : "box";
+
+            document.getElementById('display').innerText = matchState.input || "...";
+            
+            let errDiv = document.getElementById('error');
+            errDiv.innerText = matchState.error || "";
+            errDiv.style.display = matchState.error ? "block" : "none";
+
+            if(matchState.mode === 'check') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'block';
+                document.getElementById('area-over').style.display = 'none';
+            } else if (matchState.mode === 'over') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'block';
+                let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
+                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
+            } else {
+                document.getElementById('area-play').style.display = 'flex';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'none';
+            }
+            
+            let banner = document.getElementById('undo-banner');
+            if(matchState.last_undone_val) {
+                banner.style.display = 'block';
+                document.getElementById('undo-val').innerText = matchState.last_undone_val;
+            } else {
+                banner.style.display = 'none';
+            }
+
+            let memBox = document.getElementById('memory-box');
+            if(matchState.undone_history && matchState.undone_history.length > 0 && matchState.mode === 'play') {
+                memBox.style.display = 'block';
+                document.getElementById('memory-text').innerText = matchState.undone_history.join(", ");
+            } else {
+                memBox.style.display = 'none';
+            }
+            
+            saveToLocal();
+        }
+
+        function saveMatchState(actionLabel) {
+            let tempHist = matchState.history || [];
+            let tempUndone = matchState.undone_history || [];
+            matchState.history = [];
+            matchState.undone_history = [];
+            
+            let snap = JSON.stringify(matchState);
+            
+            matchState.history = tempHist;
+            matchState.undone_history = tempUndone;
+            
+            matchState.history.push({ stateStr: snap, action: actionLabel });
+            if(matchState.history.length > 40) matchState.history.shift();
+        }
+
+        function actionUndo() {
+            if(matchState.history && matchState.history.length > 0) {
+                let last = matchState.history.pop();
+                let parsed = JSON.parse(last.stateStr);
+                
+                let currentUndone = matchState.undone_history || [];
+                currentUndone.unshift(last.action);
+                
+                let currentHist = matchState.history;
+                
+                matchState = parsed;
+                matchState.history = currentHist;
+                matchState.undone_history = currentUndone;
+                
+                let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
+                matchState.input = valToDisplay;
+                matchState.last_undone_val = valToDisplay;
+                matchState.error = "";
+                render();
+            }
+        }
+        
+        function actionClearUndone() {
+            matchState.undone_history = [];
+            render();
+        }
+
+        function actionPad(n) { 
+            matchState.last_undone_val = ""; 
+            matchState.input += n; 
+            render(); 
+        }
+        function actionDel() { 
+            matchState.input = matchState.input.slice(0, -1); 
+            render(); 
+        }
+        
+        function actionThrowPts(pts) {
+            pts = parseInt(pts);
+            let label = pts === 0 ? "No Score" : String(pts);
+            saveMatchState(label);
+            matchState.undone_history = [];
+            matchState.last_undone_val = ""; 
+            
+            matchState.input = "";
+            let active = matchState.turn === 0 ? 1 : 2;
+            let curr = parseInt(active === 1 ? matchState.s1 : matchState.s2);
+            let rem = curr - pts;
+            
+            if (rem < 0 || rem === 1) {
+                if(active === 1) { matchState.d1_leg += 3; matchState.d1_tot += 3; }
+                else { matchState.d2_leg += 3; matchState.d2_tot += 3; }
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
+            } else if (rem === 0) {
+                matchState.mode = 'check';
+                matchState.check_score = pts;
+            } else {
+                if(active === 1) { 
+                    matchState.s1 = rem; matchState.pts1 += pts; matchState.d1_leg += 3; matchState.d1_tot += 3; 
+                    if(pts === 180) matchState.e180_1++;
+                } else { 
+                    matchState.s2 = rem; matchState.pts2 += pts; matchState.d2_leg += 3; matchState.d2_tot += 3; 
+                    if(pts === 180) matchState.e180_2++;
+                }
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
+            }
+            render();
+        }
+        
+        function actionEnter() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            if(val <= 180) actionThrowPts(val);
+            else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
+        }
+        
+        function actionRest() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            let curr = parseInt(matchState.turn === 0 ? matchState.s1 : matchState.s2);
+            if(val <= curr) {
+                let thrown = curr - val;
+                if(thrown <= 180) actionThrowPts(thrown);
+                else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
+            } else {
+                showError("🚨 Rest kann nicht höher sein als deine Punkte!");
+            }
+        }
+        
+        function actionCheck() {
+            let activeP = matchState.turn === 0 ? 1 : 2;
+            let currScore = parseInt(activeP === 1 ? matchState.s1 : matchState.s2);
+            let bogies = [169, 168, 166, 165, 163, 162, 159];
+            
+            if (currScore <= 170 && bogies.indexOf(currScore) === -1) {
+                actionThrowPts(currScore);
+            } else {
+                showError("🚨 Fehler: " + currScore + " kann nicht gecheckt werden (Bogey oder >170)!");
+            }
+        }
+
+        function actionDoCheck(darts) {
+            saveMatchState("Check in " + darts);
+            matchState.undone_history = [];
+            matchState.last_undone_val = "";
+            
+            let pts = parseInt(matchState.check_score);
+            let active = matchState.turn === 0 ? 1 : 2;
+            if(active === 1) {
+                matchState.pts1 += pts; matchState.d1_leg += darts; matchState.d1_tot += darts; matchState.l1++; matchState.s1 = 0;
+                if(pts === 180) matchState.e180_1++;
+            } else {
+                matchState.pts2 += pts; matchState.d2_leg += darts; matchState.d2_tot += darts; matchState.l2++; matchState.s2 = 0;
+                if(pts === 180) matchState.e180_2++;
+            }
+            
+            if(matchState.l1 === REQ_WIN || matchState.l2 === REQ_WIN) {
+                matchState.mode = 'over';
+            } else {
+                matchState.s1 = 501; matchState.s2 = 501;
+                matchState.d1_leg = 0; matchState.d2_leg = 0;
+                matchState.start = matchState.start === 0 ? 1 : 0;
+                matchState.turn = matchState.start;
+                matchState.mode = 'play';
+            }
+            render();
+        }
+
+        function sendToStreamlit(payload) {
+            if(!navigator.onLine && payload.action === 'save') {
+                alert("⚠️ DU BIST OFFLINE! ⚠️\\nBitte schalte dein WLAN ein und warte 5 Sekunden. Klicke dann nochmal auf Speichern!");
+                return;
+            }
+            
+            payload._timestamp = Date.now();
+            
+            const doc = window.parent.document;
+            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
+            
+            if(inputs.length > 0) {
+                let target = inputs[inputs.length - 1];
+                
+                let saveBtn = document.getElementById('save-btn');
+                let cancelBtn = document.getElementById('cancel-btn');
+                if(saveBtn && payload.action === 'save') {
+                    saveBtn.innerText = "⏳ Speichere...";
+                    saveBtn.style.opacity = "0.7";
+                } else if(cancelBtn && payload.action === 'cancel') {
+                    cancelBtn.innerText = "⏳ Breche ab...";
+                    cancelBtn.style.opacity = "0.7";
+                }
+                
+                let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                nativeInputValueSetter.call(target, JSON.stringify(payload));
+                
+                target.dispatchEvent(new Event("input", { bubbles: true }));
+                target.dispatchEvent(new Event("change", { bubbles: true }));
+                target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
+                target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
+                
+                setTimeout(() => {
+                    if(saveBtn && payload.action === 'save') {
+                        saveBtn.innerText = "💾 Online Speichern & Beenden";
+                        saveBtn.style.opacity = "1";
+                    }
+                }, 3000);
+                
+            } else {
+                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
+            }
+        }
+
+        function actionSaveMatch() {
+            sendToStreamlit({
+                action: 'save',
+                l1: matchState.l1, l2: matchState.l2,
+                e180_1: matchState.e180_1, e180_2: matchState.e180_2,
+                avg1: matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3) : 0,
+                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0
+            });
+            clearLocal();
+        }
+
+        function actionCancelMatch() {
+            if(!navigator.onLine) {
+                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
+            }
+            sendToStreamlit({action: 'cancel'});
+            clearLocal();
+        }
+
+        render();
+        </script>
+    </body>
+    </html>
+    """
+    return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
+
+# ==========================================
+# [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
+# ==========================================
+import json
+import streamlit.components.v1 as components
+
+@st.dialog("🎯 Live Scoring Board (Offline-Ready)", width="large")
+def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
+    ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
+    
+    # CSS Hack um das unschöne JSON-Feld komplett unsichtbar zu machen
+    st.markdown('<style>div[data-testid="stTextInput"] { display: none !important; }</style>', unsafe_allow_html=True)
+    
+    # --- ECHTZEIT CLOUD-CHECK (Verhindert gleichzeitiges Einloggen zu 100%) ---
+    if not st.session_state.get(f"my_lock_{ls_key}"):
+        with st.spinner("Prüfe Live-Sperre in der Cloud..."):
+            fresh_data = load_data()
+            if fresh_data:
+                fresh_sess = next((s for s in fresh_data if s["id"] == session_id), None)
+                if fresh_sess:
+                    fresh_res = fresh_sess.get("results", {})
+                    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
+                    for k, v in fresh_res.items():
+                        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+                        if k_clean == target_clean:
+                            if v.get("is_live_locked"):
+                                st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
+                                st.info("Ein anderes Tablet war schneller. Bitte schließe dieses Fenster und lade die Seite neu.")
+                                if st.button("Schließen", use_container_width=True):
+                                    st.rerun()
+                                return
+
+    # --- LOKALE GERÄTE-SPERRE ---
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    
+    res = sess.setdefault("results", {})
+    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
+    
+    m_info = None
+    actual_key = (round_num, board_name)
+    
+    for k, v in res.items():
+        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        if k_clean == target_clean:
+            m_info = v
+            actual_key = k
+            break
+            
+    if m_info is None:
+        m_info = {}
+        res[actual_key] = m_info
+        
+    if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
+        st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
+        if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
+            m_info["is_live_locked"] = False
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+        return
+
+    if not st.session_state.get(f"my_lock_{ls_key}"):
+        m_info["is_live_locked"] = True
+        m_info["s1"] = m_info.get("s1", p1)
+        m_info["s2"] = m_info.get("s2", p2)
+        st.session_state[f"my_lock_{ls_key}"] = True
+        smart_sync_and_save(st.session_state.sessions_list)
+        
+    payload_key = f"payload_{ls_key}"
+    payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
+    
+    if payload_json:
+        try:
+            data = json.loads(payload_json)
+            if data.get("action") == "save":
+                winner = p1 if data["l1"] > data["l2"] else p2
+                loser = p2 if data["l1"] > data["l2"] else p1
+                m_info.update({
+                    "s1": p1, "s2": p2,
+                    "ergebnis": f"{data['l1']}:{data['l2']}",
+                    "winner": winner, "loser": loser,
+                    "180_s1": data["e180_1"], "180_s2": data["e180_2"],
+                    "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
+                    "is_live_locked": False,
+                    "played": True
+                })
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+            elif data.get("action") == "cancel":
+                m_info["is_live_locked"] = False
+                if not m_info.get("played", False):
+                    if actual_key in res:
+                        del res[actual_key]
+                
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+        except Exception as e:
+            st.error(f"Fehler bei der Datenübertragung: {e}")
+
+    safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
+    safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
+    safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
+
+    html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
+    components.html(html_content, height=810, scrolling=False)
+
+# ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
 # ==========================================
 @st.dialog("📆 Steelers Saison-Kalender", width="large")
