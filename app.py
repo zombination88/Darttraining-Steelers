@@ -1207,7 +1207,7 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (HYBRID PWA)
+# [BLOCK_4b] Dialoge: Live Scoring Modul (PWA + LocalStorage)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1258,18 +1258,25 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                     "is_live_locked": False,
                     "played": True
                 })
-                del st.session_state[f"my_lock_{ls_key}"]
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
             elif data.get("action") == "cancel":
                 m_info["is_live_locked"] = False
-                del st.session_state[f"my_lock_{ls_key}"]
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
         except Exception as e:
             st.error(f"Fehler bei der Datenübertragung: {e}")
 
-    # --- DAS OFFLINE JAVASCRIPT BOARD ---
+    # Sicherheitshalber Namen escapen, falls Sonderzeichen drin sind
+    safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
+    safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
+    safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
+
+    # --- DAS OFFLINE JAVASCRIPT BOARD MIT LOCALSTORAGE ---
     html_code = """
     <!DOCTYPE html>
     <html>
@@ -1381,8 +1388,9 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         const P1_NAME = "__P1__";
         const P2_NAME = "__P2__";
         const REQ_WIN = parseInt("__REQ_WIN__");
+        const STORAGE_KEY = "steelers_board___SESSION_ID_____BOARD_NAME_____ROUND_NUM__";
 
-        let state = {
+        let defaultState = {
             l1: 0, l2: 0,
             s1: 501, s2: 501,
             pts1: 0, pts2: 0,
@@ -1394,6 +1402,25 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             input: '', check_score: 0, error: '',
             history: [] // Für echtes lokales Zurückspulen
         };
+
+        let state;
+        
+        // Versuche den Spielstand aus dem Tablet-Cache zu laden (Überlebensmodus)
+        try {
+            let saved = localStorage.getItem(STORAGE_KEY);
+            if(saved) { state = JSON.parse(saved); } 
+            else { state = defaultState; }
+        } catch(e) { state = defaultState; }
+
+        function saveToLocal() {
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } 
+            catch(e) {}
+        }
+        
+        function clearLocal() {
+            try { localStorage.removeItem(STORAGE_KEY); } 
+            catch(e) {}
+        }
 
         function showError(msg) {
             state.error = msg;
@@ -1412,182 +1439,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             let avg1 = state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3).toFixed(1) : "0.0";
             let avg2 = state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3).toFixed(1) : "0.0";
             document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${state.d1_leg}</b>`;
-            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${state.d2_leg}</b>`;
-            
-            document.getElementById('p1-box').className = state.turn === 0 ? "box active" : "box";
-            document.getElementById('p2-box').className = state.turn === 1 ? "box active" : "box";
-
-            document.getElementById('display').innerText = state.input || "...";
-            
-            let errDiv = document.getElementById('error');
-            errDiv.innerText = state.error || "";
-            errDiv.style.display = state.error ? "block" : "none";
-
-            if(state.mode === 'check') {
-                document.getElementById('area-play').style.display = 'none';
-                document.getElementById('area-check').style.display = 'block';
-                document.getElementById('area-over').style.display = 'none';
-            } else if (state.mode === 'over') {
-                document.getElementById('area-play').style.display = 'none';
-                document.getElementById('area-check').style.display = 'none';
-                document.getElementById('area-over').style.display = 'block';
-                let winner = state.l1 > state.l2 ? P1_NAME : P2_NAME;
-                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
-            } else {
-                document.getElementById('area-play').style.display = 'flex';
-                document.getElementById('area-check').style.display = 'none';
-                document.getElementById('area-over').style.display = 'none';
-            }
-        }
-
-        function saveState() {
-            let snap = JSON.stringify(state);
-            state.history.push(snap);
-            if(state.history.length > 40) state.history.shift();
-        }
-
-        function undo() {
-            if(state.history.length > 0) {
-                let last = state.history.pop();
-                state = JSON.parse(last);
-                state.error = "";
-                render();
-            }
-        }
-
-        function pad(n) { state.input += n; render(); }
-        function del() { state.input = state.input.slice(0, -1); render(); }
-        
-        function throwPts(pts) {
-            saveState();
-            state.input = "";
-            let active = state.turn === 0 ? 1 : 2;
-            let curr = active === 1 ? state.s1 : state.s2;
-            let rem = curr - pts;
-            
-            if (rem < 0 || rem === 1) {
-                // Bust
-                if(active === 1) { state.d1_leg += 3; state.d1_tot += 3; }
-                else { state.d2_leg += 3; state.d2_tot += 3; }
-                state.turn = state.turn === 0 ? 1 : 0;
-            } else if (rem === 0) {
-                state.mode = 'check';
-                state.check_score = pts;
-            } else {
-                // Normal
-                if(active === 1) { 
-                    state.s1 = rem; state.pts1 += pts; state.d1_leg += 3; state.d1_tot += 3; 
-                    if(pts === 180) state.e180_1++;
-                } else { 
-                    state.s2 = rem; state.pts2 += pts; state.d2_leg += 3; state.d2_tot += 3; 
-                    if(pts === 180) state.e180_2++;
-                }
-                state.turn = state.turn === 0 ? 1 : 0;
-            }
-            render();
-        }
-        
-        function enter() {
-            if(!state.input) return;
-            let val = parseInt(state.input);
-            if(val <= 180) throwPts(val);
-            else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
-        }
-        
-        function rest() {
-            if(!state.input) return;
-            let val = parseInt(state.input);
-            let curr = state.turn === 0 ? state.s1 : state.s2;
-            if(val <= curr) {
-                let thrown = curr - val;
-                if(thrown <= 180) throwPts(thrown);
-                else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
-            } else {
-                showError("🚨 Rest kann nicht höher sein als deine Punkte!");
-            }
-        }
-        
-        function check() {
-            let curr = state.turn === 0 ? state.s1 : state.s2;
-            let bogies = [169, 168, 166, 165, 163, 162, 159];
-            if(curr <= 170 && !bogies.includes(curr)) {
-                throwPts(curr);
-            } else {
-                showError("🚨 Bogey-Zahl oder >170! Kann nicht gecheckt werden.");
-            }
-        }
-
-        function doCheck(darts) {
-            saveState();
-            let pts = state.check_score;
-            let active = state.turn === 0 ? 1 : 2;
-            if(active === 1) {
-                state.pts1 += pts; state.d1_leg += darts; state.d1_tot += darts; state.l1++; state.s1 = 0;
-                if(pts === 180) state.e180_1++;
-            } else {
-                state.pts2 += pts; state.d2_leg += darts; state.d2_tot += darts; state.l2++; state.s2 = 0;
-                if(pts === 180) state.e180_2++;
-            }
-            
-            if(state.l1 === REQ_WIN || state.l2 === REQ_WIN) {
-                state.mode = 'over';
-            } else {
-                state.s1 = 501; state.s2 = 501;
-                state.d1_leg = 0; state.d2_leg = 0;
-                state.start = state.start === 0 ? 1 : 0;
-                state.turn = state.start;
-                state.mode = 'play';
-            }
-            render();
-        }
-
-        // --- DER MAGISCHE FUNK ZU PYTHON ---
-        function sendToStreamlit(payload) {
-            if(!navigator.onLine && payload.action === 'save') {
-                alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt jetzt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
-                return;
-            }
-            const doc = window.parent.document;
-            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
-            if(inputs.length > 0) {
-                let target = inputs[inputs.length - 1]; // Immer das neueste Input-Feld nehmen
-                let lastValue = target.value;
-                target.value = JSON.stringify(payload);
-                let event = new Event('input', { bubbles: true });
-                event.simulated = true;
-                let tracker = target._valueTracker;
-                if (tracker) { tracker.setValue(lastValue); }
-                target.dispatchEvent(event);
-            } else {
-                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
-            }
-        }
-
-        function saveMatch() {
-            sendToStreamlit({
-                action: 'save',
-                l1: state.l1, l2: state.l2,
-                e180_1: state.e180_1, e180_2: state.e180_2,
-                avg1: state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3) : 0,
-                avg2: state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3) : 0
-            });
-        }
-
-        function cancelMatch() {
-            if(!navigator.onLine) {
-                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
-            }
-            sendToStreamlit({action: 'cancel'});
-        }
-
-        // Start
-        render();
-        </script>
-    </body>
-    </html>
-    """.replace("__P1__", p1).replace("__P2__", p2).replace("__REQ_WIN__", str(req_win))
-
-    components.html(html_code, height=750, scrolling=False)
                 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
