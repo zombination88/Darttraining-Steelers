@@ -1209,29 +1209,63 @@ def open_session_summary_dialog(session_id):
 # ==========================================
 # [BLOCK_4b] Dialoge: Live Scoring Modul
 # ==========================================
+import os
+import json
+
 @st.dialog("🎯 Live Scoring Board", width="large")
 def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
     ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
+    safe_bname = board_name.replace(" ", "_")
+    backup_file = f"backup_live_{session_id}_{safe_bname}_{round_num}.json"
     
+    # Auto-Save Ladefunktion
+    def load_backup():
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except: pass
+        return None
+
     # 1. Status der laufenden Partie initialisieren
     if ls_key not in st.session_state or not isinstance(st.session_state[ls_key], dict):
-        st.session_state[ls_key] = {
-            "p1": p1, "p2": p2,
-            "l1": 0, "l2": 0,
-            "s1": 501, "s2": 501,
-            "pts1": 0, "pts2": 0,
-            "d1_leg": 0, "d2_leg": 0,
-            "d1_tot": 0, "d2_tot": 0,
-            "180_1": 0, "180_2": 0,
-            "hist1": [], "hist2": [],
-            "turn": 0, # 0 = Spieler 1, 1 = Spieler 2
-            "start": 0,
-            "state": "play", # Modi: play, checkout, over
-            "cur_input": "",
-            "checkout_score": 0
-        }
+        saved_state = load_backup()
+        if saved_state:
+            st.session_state[ls_key] = saved_state
+            st.info("🔄 Unterbrochenes Spiel wurde automatisch aus dem Auto-Save wiederhergestellt!")
+        else:
+            st.session_state[ls_key] = {
+                "p1": p1, "p2": p2,
+                "l1": 0, "l2": 0,
+                "s1": 501, "s2": 501,
+                "pts1": 0, "pts2": 0,
+                "d1_leg": 0, "d2_leg": 0,
+                "d1_tot": 0, "d2_tot": 0,
+                "180_1": 0, "180_2": 0,
+                "hist1": [], "hist2": [],
+                "turn": 0, # 0 = Spieler 1, 1 = Spieler 2
+                "start": 0,
+                "state": "play", # Modi: play, checkout, over
+                "cur_input": "",
+                "checkout_score": 0
+            }
     
     st_ls = st.session_state[ls_key]
+    
+    # Auto-Save Schreibfunktion
+    def backup_state():
+        try:
+            with open(backup_file, "w", encoding="utf-8") as f:
+                json.dump(st_ls, f, ensure_ascii=False)
+        except: pass
+
+    # Auto-Save Datei löschen (nach Abschluss)
+    def clear_backup():
+        if os.path.exists(backup_file):
+            try: os.remove(backup_file)
+            except: pass
+        if ls_key in st.session_state:
+            del st.session_state[ls_key]
     
     # --- SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
     def get_safe_avg(pts, darts):
@@ -1278,6 +1312,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
             if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
             st_ls["turn"] = 1 if st_ls["turn"] == 0 else 0
+        backup_state()
             
     # 3. Checkout-Logik
     def process_checkout(darts):
@@ -1308,6 +1343,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             st_ls["state"] = "play"
             st_ls["hist1"].insert(0, "--- Neues Leg ---")
             st_ls["hist2"].insert(0, "--- Neues Leg ---")
+        backup_state()
 
     # 4. Optische Live-Anzeige (Header)
     c1, c2 = st.columns(2)
@@ -1332,9 +1368,10 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     if st_ls["state"] == "checkout":
         st.warning("🎯 **Check!** Mit wie vielen Pfeilen in dieser Aufnahme hast du gecheckt?")
         col_d1, col_d2, col_d3 = st.columns(3)
-        if col_d1.button("1 Dart", use_container_width=True): process_checkout(1); st.rerun()
-        if col_d2.button("2 Darts", use_container_width=True): process_checkout(2); st.rerun()
-        if col_d3.button("3 Darts", use_container_width=True): process_checkout(3); st.rerun()
+        # NEU: Callbacks statt hartem st.rerun(), damit das Fenster flüssig offen bleibt
+        col_d1.button("1 Dart", key=f"chk1_{ls_key}", on_click=process_checkout, args=(1,), use_container_width=True)
+        col_d2.button("2 Darts", key=f"chk2_{ls_key}", on_click=process_checkout, args=(2,), use_container_width=True)
+        col_d3.button("3 Darts", key=f"chk3_{ls_key}", on_click=process_checkout, args=(3,), use_container_width=True)
         
     elif st_ls["state"] == "over":
         winner_name = st_ls['p1'] if st_ls['l1'] > st_ls['l2'] else st_ls['p2']
@@ -1356,18 +1393,22 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 }
                 st.session_state.sessions_list[st.session_state.sessions_list.index(sess)] = sess
                 smart_sync_and_save(st.session_state.sessions_list)
-                del st.session_state[ls_key] # Aufräumen
+                clear_backup() # Aufräumen, Match ist erfolgreich gespeichert
                 st.rerun()
         if st.button("Abbrechen & Verwerfen", use_container_width=True):
-            del st.session_state[ls_key]
+            clear_backup()
             st.rerun()
             
     elif st_ls["state"] == "play":
         c_l, c_m, c_r = st.columns([1, 2, 1])
         
         # Hilfsfunktionen fürs Numpad
-        def n_pad(val): st_ls["cur_input"] = str(st_ls.get("cur_input", "")) + str(val)
-        def n_del(): st_ls["cur_input"] = str(st_ls.get("cur_input", ""))[:-1]
+        def n_pad(val): 
+            st_ls["cur_input"] = str(st_ls.get("cur_input", "")) + str(val)
+            backup_state()
+        def n_del(): 
+            st_ls["cur_input"] = str(st_ls.get("cur_input", ""))[:-1]
+            backup_state()
         def n_throw(val): process_throw(val)
         def n_enter():
             if str(st_ls.get("cur_input", "")).isdigit():
@@ -1375,6 +1416,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 if val <= 180: process_throw(val)
                 else: st.error("Maximal 180!")
             st_ls["cur_input"] = ""
+            backup_state()
         def n_rest():
             if str(st_ls.get("cur_input", "")).isdigit():
                 rest_val = int(st_ls["cur_input"])
@@ -1386,6 +1428,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 else:
                     st.error("Rest kann nicht höher sein als aktuelle Punkte!")
             st_ls["cur_input"] = ""
+            backup_state()
         
         with c_l:
             st.caption("Standard")
