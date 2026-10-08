@@ -1233,9 +1233,11 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             st.rerun()
         return
 
-    # Eigene Sperre setzen
+    # Eigene Sperre setzen UND Namen sicher eintragen!
     if not st.session_state.get(f"my_lock_{ls_key}"):
         m_info["is_live_locked"] = True
+        m_info["s1"] = m_info.get("s1", p1)
+        m_info["s2"] = m_info.get("s2", p2)
         st.session_state[f"my_lock_{ls_key}"] = True
         smart_sync_and_save(st.session_state.sessions_list)
         
@@ -1264,6 +1266,11 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 st.rerun()
             elif data.get("action") == "cancel":
                 m_info["is_live_locked"] = False
+                # Den leeren Ordner wieder restlos löschen, wenn nicht gespielt wurde
+                if not m_info.get("played", False):
+                    if (round_num, board_name) in res:
+                        del res[(round_num, board_name)]
+                
                 if f"my_lock_{ls_key}" in st.session_state:
                     del st.session_state[f"my_lock_{ls_key}"]
                 smart_sync_and_save(st.session_state.sessions_list)
@@ -1615,7 +1622,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     """.replace("__P1__", safe_p1).replace("__P2__", safe_p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", safe_bname).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
 
     components.html(html_code, height=750, scrolling=False)
-
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
