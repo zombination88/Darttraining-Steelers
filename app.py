@@ -1211,7 +1211,6 @@ def open_session_summary_dialog(session_id):
 # ==========================================
 @st.dialog("🎯 Live Scoring Board", width="large")
 def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
-    # NEU: Der Name überschneidet sich nicht mehr mit dem Button-Namen!
     ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
     
     # 1. Status der laufenden Partie initialisieren
@@ -1269,7 +1268,12 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             # Normaler Treffer
             st_ls[f"s{active_p}"] = rem
             st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
-            st_ls[f"hist{active_p}"].insert(0, str(score))
+            
+            if score == 0:
+                st_ls[f"hist{active_p}"].insert(0, "0 (No Score)")
+            else:
+                st_ls[f"hist{active_p}"].insert(0, str(score))
+                
             st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + 3
             st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
             if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
@@ -1390,15 +1394,41 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             # Display
             disp_val = st_ls.get('cur_input', '')
             st.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff; line-height: 50px;'>{disp_val if disp_val else '...'}</div>", unsafe_allow_html=True)
+            
             # Ziffernblock
-            grid = [[1,2,3], [4,5,6], [7,8,9], ["⬅", 0, "OK"]]
+            grid = [[1,2,3], [4,5,6], [7,8,9], ["REST", 0, "⬅"]]
             for row in grid:
                 cols = st.columns(3)
                 for i, val in enumerate(row):
                     if val == "⬅": cols[i].button("⬅", key=f"ndel_{row[0]}", on_click=n_del, use_container_width=True)
-                    elif val == "OK": cols[i].button("Geworfen", key=f"nok_{row[0]}", on_click=n_enter, type="primary", use_container_width=True)
+                    elif val == "REST": cols[i].button("REST", key=f"nrest_{row[0]}", on_click=n_rest, use_container_width=True)
                     else: cols[i].button(str(val), key=f"n{val}_{row[0]}", on_click=n_pad, args=(val,), use_container_width=True)
-            st.button("Als REST eintragen", on_click=n_rest, use_container_width=True, help="Tippe deinen Rest-Score ein und drücke diesen Button. Die App errechnet deinen Wurf selbst!")
+            
+            # --- CSS-Hack für rote und grüne Buttons ---
+            st.markdown('<div id="action-buttons"></div>', unsafe_allow_html=True)
+            st.markdown("""
+            <style>
+            #action-buttons + div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1) button {
+                background-color: #d32f2f !important; 
+                color: white !important; 
+                border-color: #d32f2f !important;
+                font-weight: bold;
+            }
+            #action-buttons + div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button {
+                background-color: #388e3c !important; 
+                color: white !important; 
+                border-color: #388e3c !important;
+                font-weight: bold;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            c_bot1, c_bot2 = st.columns(2)
+            with c_bot1:
+                st.button("🔴 No Score", key=f"btn_noscore_{round_num}_{board_name}", on_click=n_throw, args=(0,), use_container_width=True)
+            with c_bot2:
+                st.button("🟢 Geworfen", key=f"btn_geworfen_{round_num}_{board_name}", on_click=n_enter, use_container_width=True)
+
         with c_r:
             st.caption("Highs")
             for qv in [100, 121, 125, 140, 180]: st.button(str(qv), key=f"qr_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
