@@ -1233,18 +1233,32 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     
     st_ls = st.session_state[ls_key]
     
+    # --- NEU: SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
+    def get_safe_avg(pts, darts):
+        try:
+            pts_val = float(pts)
+            darts_val = int(darts)
+            if darts_val > 0:
+                return round((pts_val / darts_val) * 3.0, 1)
+        except:
+            pass
+        return 0.0
+
     # 2. Wurf-Logik
     def process_throw(score):
         st_ls["cur_input"] = ""
+        try: score = int(score)
+        except: return
+        
         active_p = 1 if st_ls["turn"] == 0 else 2
-        curr_score = st_ls[f"s{active_p}"]
+        curr_score = int(st_ls[f"s{active_p}"])
         rem = curr_score - score
         
         if rem < 0 or rem == 1:
             # Überworfen (Bust)
             st_ls[f"hist{active_p}"].insert(0, f"0 (Bust {score})")
-            st_ls[f"d{active_p}_leg"] += 3
-            st_ls[f"d{active_p}_tot"] += 3
+            st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + 3
+            st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
             st_ls["turn"] = 1 if st_ls["turn"] == 0 else 0
         elif rem == 0:
             # Check-Bereich
@@ -1253,26 +1267,30 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         else:
             # Normaler Treffer
             st_ls[f"s{active_p}"] = rem
-            st_ls[f"pts{active_p}"] += score
+            st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
             st_ls[f"hist{active_p}"].insert(0, str(score))
-            st_ls[f"d{active_p}_leg"] += 3
-            st_ls[f"d{active_p}_tot"] += 3
-            if score == 180: st_ls[f"180_{active_p}"] += 1
+            st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + 3
+            st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
+            if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
             st_ls["turn"] = 1 if st_ls["turn"] == 0 else 0
             
     # 3. Checkout-Logik
     def process_checkout(darts):
-        score = st_ls["checkout_score"]
+        try: darts = int(darts)
+        except: return
+        score = int(st_ls["checkout_score"])
         active_p = 1 if st_ls["turn"] == 0 else 2
-        st_ls[f"pts{active_p}"] += score
-        st_ls[f"hist{active_p}"].insert(0, f"{score} (Check in {darts})")
-        st_ls[f"d{active_p}_leg"] += darts
-        st_ls[f"d{active_p}_tot"] += darts
-        st_ls[f"l{active_p}"] += 1
-        st_ls[f"s{active_p}"] = 0
-        if score == 180: st_ls[f"180_{active_p}"] += 1
         
-        if st_ls["l1"] == req_win or st_ls["l2"] == req_win:
+        st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
+        st_ls[f"hist{active_p}"].insert(0, f"{score} (Check in {darts})")
+        st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + darts
+        st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + darts
+        st_ls[f"l{active_p}"] = int(st_ls[f"l{active_p}"]) + 1
+        st_ls[f"s{active_p}"] = 0
+        if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
+        
+        req_w = int(req_win)
+        if int(st_ls["l1"]) == req_w or int(st_ls["l2"]) == req_w:
             st_ls["state"] = "over"
         else:
             # Nächstes Leg vorbereiten
@@ -1288,8 +1306,9 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
 
     # 4. Optische Live-Anzeige (Header)
     c1, c2 = st.columns(2)
-    avg1 = round((st_ls["pts1"] / st_ls["d1_tot"]) * 3, 1) if st_ls["d1_tot"] > 0 else 0.0
-    avg2 = round((st_ls["pts2"] / st_ls["d2_tot"]) * 3, 1) if st_ls["d2_tot"] > 0 else 0.0
+    
+    avg1 = get_safe_avg(st_ls.get("pts1", 0), st_ls.get("d1_tot", 0))
+    avg2 = get_safe_avg(st_ls.get("pts2", 0), st_ls.get("d2_tot", 0))
     
     def render_player_header(name, legs, score, avg, darts_leg, turn_active):
         bg = "#2e7d32" if turn_active else "#1e1e1e" # Grün wenn an der Reihe
@@ -1301,8 +1320,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                     f"<p style='margin:0; color: #aaa; font-size: 0.9em;'>Avg: <b>{avg}</b> | Darts: {darts_leg}</p>"
                     f"</div>", unsafe_allow_html=True)
                     
-    with c1: render_player_header(st_ls["p1"], st_ls["l1"], st_ls["s1"], avg1, st_ls["d1_leg"], st_ls["turn"]==0)
-    with c2: render_player_header(st_ls["p2"], st_ls["l2"], st_ls["s2"], avg2, st_ls["d2_leg"], st_ls["turn"]==1)
+    with c1: render_player_header(st_ls.get("p1", "Spieler 1"), st_ls.get("l1", 0), st_ls.get("s1", 501), avg1, st_ls.get("d1_leg", 0), st_ls.get("turn", 0)==0)
+    with c2: render_player_header(st_ls.get("p2", "Spieler 2"), st_ls.get("l2", 0), st_ls.get("s2", 501), avg2, st_ls.get("d2_leg", 0), st_ls.get("turn", 0)==1)
     
     # 5. Steuerung (Eingabe)
     if st_ls["state"] == "checkout":
@@ -1342,49 +1361,26 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         c_l, c_m, c_r = st.columns([1, 2, 1])
         
         # Hilfsfunktionen fürs Numpad
-        def n_pad(val): st_ls["cur_input"] += str(val)
-        def n_del(): st_ls["cur_input"] = st_ls["cur_input"][:-1]
+        def n_pad(val): st_ls["cur_input"] = str(st_ls.get("cur_input", "")) + str(val)
+        def n_del(): st_ls["cur_input"] = str(st_ls.get("cur_input", ""))[:-1]
         def n_throw(val): process_throw(val)
         def n_enter():
-            if st_ls["cur_input"].isdigit():
+            if str(st_ls.get("cur_input", "")).isdigit():
                 val = int(st_ls["cur_input"])
                 if val <= 180: process_throw(val)
                 else: st.error("Maximal 180!")
             st_ls["cur_input"] = ""
         def n_rest():
-            if st_ls["cur_input"].isdigit():
+            if str(st_ls.get("cur_input", "")).isdigit():
                 rest_val = int(st_ls["cur_input"])
-                curr_score = st_ls["s1"] if st_ls["turn"] == 0 else st_ls["s2"]
+                curr_score = int(st_ls["s1"]) if st_ls["turn"] == 0 else int(st_ls["s2"])
                 if rest_val <= curr_score:
                     thrown = curr_score - rest_val
                     if thrown <= 180: process_throw(thrown)
                     else: st.error("Fehler: Das würde bedeuten du hast über 180 geworfen!")
+                else:
+                    st.error("Rest kann nicht höher sein als aktuelle Punkte!")
             st_ls["cur_input"] = ""
-        
-        with c_l:
-            st.caption("Standard")
-            for qv in [26, 41, 45, 60, 81, 85]: st.button(str(qv), key=f"ql_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
-        with c_m:
-            # Display
-            st.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff;'>{st_ls['cur_input'] if st_ls['cur_input'] else '...'}</div>", unsafe_allow_html=True)
-            # Ziffernblock
-            grid = [[1,2,3], [4,5,6], [7,8,9], ["⬅", 0, "OK"]]
-            for row in grid:
-                cols = st.columns(3)
-                for i, val in enumerate(row):
-                    if val == "⬅": cols[i].button("⬅", key="ndel", on_click=n_del, use_container_width=True)
-                    elif val == "OK": cols[i].button("Geworfen", key="nok", on_click=n_enter, type="primary", use_container_width=True)
-                    else: cols[i].button(str(val), key=f"n{val}", on_click=n_pad, args=(val,), use_container_width=True)
-            st.button("Als REST eintragen", on_click=n_rest, use_container_width=True, help="Tippe deinen Rest-Score ein und drücke diesen Button. Die App errechnet deinen Wurf selbst!")
-        with c_r:
-            st.caption("Highs")
-            for qv in [100, 121, 125, 140, 180]: st.button(str(qv), key=f"qr_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
-
-    st.divider()
-    with st.expander("📋 Wurf-Historie ansehen"):
-        c_h1, c_h2 = st.columns(2)
-        c_h1.write("<br>".join(st_ls["hist1"][:12]), unsafe_allow_html=True)
-        c_h2.write("<br>".join(st_ls["hist2"][:12]), unsafe_allow_html=True)
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
