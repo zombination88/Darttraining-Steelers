@@ -1250,7 +1250,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
     return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
 
 # ==========================================
-# [BLOCK_4_2] Dialoge: Live Scoring (Streamlit Integration)
+# [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1262,13 +1262,46 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     # CSS Hack um das unschöne JSON-Feld komplett unsichtbar zu machen
     st.markdown('<style>div[data-testid="stTextInput"] { display: none !important; }</style>', unsafe_allow_html=True)
     
-    # --- GERÄTE-SPERRE (DEVICE LOCK) ---
+    # --- ECHTZEIT CLOUD-CHECK (Verhindert gleichzeitiges Einloggen zu 100%) ---
+    if not st.session_state.get(f"my_lock_{ls_key}"):
+        with st.spinner("Prüfe Live-Sperre in der Cloud..."):
+            fresh_data = load_data()
+            if fresh_data:
+                fresh_sess = next((s for s in fresh_data if s["id"] == session_id), None)
+                if fresh_sess:
+                    fresh_res = fresh_sess.get("results", {})
+                    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
+                    for k, v in fresh_res.items():
+                        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+                        if k_clean == target_clean:
+                            if v.get("is_live_locked"):
+                                st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
+                                st.info("Ein anderes Tablet war schneller. Bitte schließe dieses Fenster und lade die Seite neu.")
+                                
+                                # FIX: Admin-Button zum Erzwingen wieder da! Hebelt die Cloud-Sperre sofort aus.
+                                if st.button("Sperre erzwingen / aufheben (Admin)", type="primary", key=f"force_{ls_key}"):
+                                    local_sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+                                    if local_sess:
+                                        local_res = local_sess.setdefault("results", {})
+                                        actual_key = (round_num, board_name)
+                                        for lk in local_res.keys():
+                                            if str(lk).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "") == target_clean:
+                                                actual_key = lk
+                                                break
+                                        if actual_key not in local_res: local_res[actual_key] = {}
+                                        local_res[actual_key]["is_live_locked"] = False
+                                        smart_sync_and_save(st.session_state.sessions_list)
+                                        st.rerun()
+                                        
+                                if st.button("Schließen", use_container_width=True):
+                                    st.rerun()
+                                return
+
+    # --- LOKALE GERÄTE-SPERRE ---
     sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
     if not sess: return
     
     res = sess.setdefault("results", {})
-    
-    # --- 100% ROBUSTE SCHLÜSSEL-SUCHE (JSON-Tupel-Fix) ---
     target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
     
     m_info = None
@@ -1285,17 +1318,14 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         m_info = {}
         res[actual_key] = m_info
         
-    # Prüfen, ob schon jemand anderes spielt
     if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
         st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-        st.warning("⚠️ **Wichtig für den Liga-Betrieb:** Wenn das zweite Tablet die App schon offen hatte, bevor das Spiel am ersten Tablet gestartet wurde, musst du die Seite kurz neu laden (F5 / nach unten ziehen), um die aktuelle Sperre aus der Cloud zu sehen!")
         if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
             m_info["is_live_locked"] = False
             smart_sync_and_save(st.session_state.sessions_list)
             st.rerun()
         return
 
-    # Eigene Sperre setzen UND Namen sicher eintragen!
     if not st.session_state.get(f"my_lock_{ls_key}"):
         m_info["is_live_locked"] = True
         m_info["s1"] = m_info.get("s1", p1)
@@ -1303,7 +1333,6 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         st.session_state[f"my_lock_{ls_key}"] = True
         smart_sync_and_save(st.session_state.sessions_list)
         
-    # --- KOMMUNIKATION: JS-BOARD -> STREAMLIT ---
     payload_key = f"payload_{ls_key}"
     payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
     
@@ -1339,12 +1368,10 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         except Exception as e:
             st.error(f"Fehler bei der Datenübertragung: {e}")
 
-    # Sicherheitshalber Namen escapen
     safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
     safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
     safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
 
-    # --- RENDER HTML TEMPLATE ---
     html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
     components.html(html_content, height=810, scrolling=False)
 
