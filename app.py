@@ -40,40 +40,48 @@ cookie_manager = stx.CookieManager()
 if "role" not in st.session_state:
     st.session_state.role = "Gast"
 
-# NEU: Ein Schutz-Flag gegen das "Geister-Cookie" (verhindert sofortiges Auto-Login)
 if "logged_out_flag" not in st.session_state:
     st.session_state.logged_out_flag = False
 
 current_cookie = cookie_manager.get(cookie="steelers_role")
 
-# Wir loggen nur per Cookie ein, wenn der User sich NICHT gerade aktiv abgemeldet hat
-if current_cookie == "Spieler" and not st.session_state.logged_out_flag:
-    st.session_state.role = "Spieler"
+if current_cookie in ["Spieler", "Admin"] and not st.session_state.logged_out_flag:
+    st.session_state.role = current_cookie
 
 with st.sidebar:
     st.markdown("### 🔐 Login-Bereich")
     if st.session_state.role == "Gast":
         st.info("👀 **Gast-Modus**: Du kannst alle Statistiken, Tabellen und Spielberichte ansehen.")
-        pwd = st.text_input("Passwort (für Steelers-Spieler):", type="password")
+        pwd = st.text_input("Passwort eingeben:", type="password")
         if st.button("Einloggen", use_container_width=True):
-            if pwd == "20Steelers25" or pwd == "1521":
-                st.session_state.logged_out_flag = False  # Schutz-Flag zurücksetzen
+            if pwd == "1521":
+                st.session_state.logged_out_flag = False
+                cookie_manager.set("steelers_role", "Admin", expires_at=datetime.now() + timedelta(days=365))
+                st.session_state.role = "Admin"
+                st.success("👑 Admin-Login erfolgreich! Seite lädt in 1 Sekunde neu...")
+            elif pwd == "20Steelers25":
+                st.session_state.logged_out_flag = False
                 cookie_manager.set("steelers_role", "Spieler", expires_at=datetime.now() + timedelta(days=365))
                 st.session_state.role = "Spieler"
-                st.success("✅ Login erfolgreich! Seite lädt in 1 Sekunde neu...")
+                st.success("✅ Spieler-Login erfolgreich! Seite lädt in 1 Sekunde neu...")
             else:
                 st.error("Falsches Passwort!")
         st.markdown("---")
         st.caption("💡 **Info:** Einmal einloggen und dein Browser merkt sich deine Rechte per Cookie für 1 Jahr. Kein ständiges Neuanmelden nötig!")
     else:
-        st.success("✅ **Spieler-Modus**: Du hast Schreibrechte für Ergebnisse & Sessions.")
+        if st.session_state.role == "Admin":
+            st.success("👑 **Admin-Modus**: Du hast volle Rechte, inklusive Archiv-Verwaltung.")
+        else:
+            st.success("✅ **Spieler-Modus**: Du darfst Live-Sessions verwalten und Ergebnisse eintragen.")
+            
         if st.button("Ausloggen", use_container_width=True):
-            st.session_state.logged_out_flag = True  # Auto-Login sofort sperren
+            st.session_state.logged_out_flag = True
             cookie_manager.delete("steelers_role")
             st.session_state.role = "Gast"
             st.success("Erfolgreich abgemeldet! Seite lädt in 1 Sekunde neu...")
 
-is_admin = st.session_state.role == "Spieler"
+is_admin = st.session_state.role in ["Spieler", "Admin"]
+is_superadmin = st.session_state.role == "Admin"
 
 # ==========================================
 # [BLOCK_2] Datenbank & Google Sheets
@@ -2766,6 +2774,9 @@ with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
     st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
+    if st.session_state.role == "Spieler":
+        st.info("🔒 Das nachträgliche Bearbeiten und Löschen von vergangenen Sessions im Archiv ist nur für die Team-Admins freigeschaltet.")
+    
     if st.session_state.sessions_list:
         safe_data_for_export = make_serializable(st.session_state.sessions_list)
         backup_json_str = json.dumps(safe_data_for_export, ensure_ascii=False, indent=2)
@@ -2803,11 +2814,15 @@ with tab_archiv:
                     with c1:
                         if st.button("📝 Spielbericht", key=f"arch_liga_v_{sess['id']}", use_container_width=True): open_liga_bericht_dialog(sess['id'])
                     with c2:
-                        if is_admin:
-                            if st.button("⚙️️ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True): open_edit_liga_session_dialog(sess['id'])
+                        if is_superadmin:
+                            if st.button("⚙ Bearbeiten", key=f"arch_liga_e_{sess['id']}", use_container_width=True): open_edit_liga_session_dialog(sess['id'])
+                        elif is_admin:
+                            st.button("🔒 Bearbeiten", key=f"arch_liga_e_lock_{sess['id']}", disabled=True, use_container_width=True)
                     with c3:
-                        if is_admin:
+                        if is_superadmin:
                             if st.button("🗑️ Löschen", key=f"arch_liga_d_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        elif is_admin:
+                            st.button("🔒 Löschen", key=f"arch_liga_d_lock_{sess['id']}", disabled=True, use_container_width=True)
                 else:
                     status_text = "✅ [Abgeschlossen]" if is_session_completed(sess) else "🔴 [Aktiv]"
                     start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
@@ -2817,14 +2832,18 @@ with tab_archiv:
                     with c1:
                         if st.button("📊 Ansehen", key=f"arch_view_{sess['id']}", use_container_width=True): open_session_summary_dialog(sess['id'])
                     with c2:
-                        if is_admin:
+                        if is_superadmin:
                             if st.button("⚙ Bearbeiten", key=f"arch_edit_{sess['id']}", use_container_width=True): open_edit_session_dialog(sess['id'])
+                        elif is_admin:
+                            st.button("🔒 Bearbeiten", key=f"arch_edit_lock_{sess['id']}", disabled=True, use_container_width=True)
                     with c3:
-                        if is_admin:
+                        if is_superadmin:
                             if st.button("🗑 Löschen", key=f"arch_del_{sess['id']}", use_container_width=True): open_delete_session_dialog(sess['id'])
+                        elif is_admin:
+                            st.button("🔒 Löschen", key=f"arch_del_lock_{sess['id']}", disabled=True, use_container_width=True)
                         
                     st.divider()
-                    if is_admin:
+                    if is_superadmin:
                         is_checked = st.checkbox(f"⚡ Runden-Schnellerfassung & Korrektur", key=f"blitz_check_{sess['id']}")
                         if is_checked:
                             st.markdown(f"#### ⚡ Schnellerfassung für {sess['id']}")
@@ -2876,6 +2895,8 @@ with tab_archiv:
                                                     del sess["results"][(r, b_name)]
                                                     smart_sync_and_save(st.session_state.sessions_list)
                                                     st.rerun()
+                    elif is_admin:
+                        st.checkbox(f"🔒 Runden-Schnellerfassung (Nur Admin)", key=f"blitz_check_lock_{sess['id']}", disabled=True)
 
 # ==========================================
 # [BLOCK_13] UI: Tab Modus & Regeln
