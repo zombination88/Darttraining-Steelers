@@ -1206,7 +1206,7 @@ def open_session_summary_dialog(session_id):
                 rank += 1
     if st.button("Schließen", use_container_width=True): st.rerun()
 
-# ==========================================
+## ==========================================
 # [BLOCK_4b] Dialoge: Live Scoring Modul (Display-Fix für Undo)
 # ==========================================
 import json
@@ -1604,7 +1604,70 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 state.pts1 += pts; state.d1_leg += darts; state.d1_tot += darts; state.l1++; state.s1 = 0;
                 if(pts === 180) state.e180_1++;
             } else {
-                state.pts2 += pts; state.d2_leg += darts; state.d2_tot
+                state.pts2 += pts; state.d2_leg += darts; state.d2_tot += darts; state.l2++; state.s2 = 0;
+                if(pts === 180) state.e180_2++;
+            }
+            
+            if(state.l1 === REQ_WIN || state.l2 === REQ_WIN) {
+                state.mode = 'over';
+            } else {
+                state.s1 = 501; state.s2 = 501;
+                state.d1_leg = 0; state.d2_leg = 0;
+                state.start = state.start === 0 ? 1 : 0;
+                state.turn = state.start;
+                state.mode = 'play';
+            }
+            render();
+        }
+
+        // --- DER MAGISCHE FUNK ZU PYTHON ---
+        function sendToStreamlit(payload) {
+            if(!navigator.onLine && payload.action === 'save') {
+                alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
+                return;
+            }
+            const doc = window.parent.document;
+            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
+            if(inputs.length > 0) {
+                let target = inputs[inputs.length - 1];
+                let lastValue = target.value;
+                target.value = JSON.stringify(payload);
+                let event = new Event('input', { bubbles: true });
+                event.simulated = true;
+                let tracker = target._valueTracker;
+                if (tracker) { tracker.setValue(lastValue); }
+                target.dispatchEvent(event);
+            } else {
+                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
+            }
+        }
+
+        function saveMatch() {
+            sendToStreamlit({
+                action: 'save',
+                l1: state.l1, l2: state.l2,
+                e180_1: state.e180_1, e180_2: state.e180_2,
+                avg1: state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3) : 0,
+                avg2: state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3) : 0
+            });
+            clearLocal();
+        }
+
+        function cancelMatch() {
+            if(!navigator.onLine) {
+                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
+            }
+            sendToStreamlit({action: 'cancel'});
+            clearLocal();
+        }
+
+        render();
+        </script>
+    </body>
+    </html>
+    """.replace("__P1__", safe_p1).replace("__P2__", safe_p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", safe_bname).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
+
+    components.html(html_code, height=780, scrolling=False)
     
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
