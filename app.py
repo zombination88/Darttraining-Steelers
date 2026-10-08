@@ -30,6 +30,7 @@ import random
 import math
 import base64
 import re
+import time
 from PIL import Image
 import extra_streamlit_components as stx
 
@@ -45,8 +46,10 @@ if "logged_out_flag" not in st.session_state:
 
 current_cookie = cookie_manager.get(cookie="steelers_role")
 
+# Nur mit Cookie synchronisieren, wenn wir als Gast starten (frischer Seitenaufruf)
 if current_cookie in ["Spieler", "Admin"] and not st.session_state.logged_out_flag:
-    st.session_state.role = current_cookie
+    if st.session_state.role == "Gast":
+        st.session_state.role = current_cookie
 
 with st.sidebar:
     st.markdown("### 🔐 Login-Bereich")
@@ -56,14 +59,18 @@ with st.sidebar:
         if st.button("Einloggen", use_container_width=True):
             if pwd == "1521":
                 st.session_state.logged_out_flag = False
-                cookie_manager.set("steelers_role", "Admin", expires_at=datetime.now() + timedelta(days=365))
                 st.session_state.role = "Admin"
-                st.success("👑 Admin-Login erfolgreich! Seite lädt in 1 Sekunde neu...")
+                cookie_manager.set("steelers_role", "Admin", expires_at=datetime.now() + timedelta(days=365))
+                st.success("👑 Admin-Login erfolgreich!")
+                time.sleep(0.5)
+                st.rerun()
             elif pwd == "20Steelers25":
                 st.session_state.logged_out_flag = False
-                cookie_manager.set("steelers_role", "Spieler", expires_at=datetime.now() + timedelta(days=365))
                 st.session_state.role = "Spieler"
-                st.success("✅ Spieler-Login erfolgreich! Seite lädt in 1 Sekunde neu...")
+                cookie_manager.set("steelers_role", "Spieler", expires_at=datetime.now() + timedelta(days=365))
+                st.success("✅ Spieler-Login erfolgreich!")
+                time.sleep(0.5)
+                st.rerun()
             else:
                 st.error("Falsches Passwort!")
         st.markdown("---")
@@ -76,9 +83,11 @@ with st.sidebar:
             
         if st.button("Ausloggen", use_container_width=True):
             st.session_state.logged_out_flag = True
-            cookie_manager.delete("steelers_role")
             st.session_state.role = "Gast"
-            st.success("Erfolgreich abgemeldet! Seite lädt in 1 Sekunde neu...")
+            cookie_manager.delete("steelers_role")
+            st.success("Erfolgreich abgemeldet!")
+            time.sleep(0.5)
+            st.rerun()
 
 is_admin = st.session_state.role in ["Spieler", "Admin"]
 is_superadmin = st.session_state.role == "Admin"
