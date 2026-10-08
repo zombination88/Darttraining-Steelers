@@ -1239,6 +1239,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
       </style>
     </head>
     <body>
+        <!-- BANNER ÜBER DEN SPIELERN FÜR DEN ZURÜCKGESPULTEN WURF -->
         <div id="undo-banner" class="undo-banner">
            ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
         </div>
@@ -1263,7 +1264,8 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         </div>
         <div id="error" class="error"></div>
         
-        <div class="row">
+        <!-- 3-SÄULEN LAYOUT (Jetzt MIT dem reparierten Namensschild "area-play") -->
+        <div id="area-play" class="row">
            <div class="col" style="flex: 1.1;">
               <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
               <button onclick="actionCheck()" class="btn-blue">🎯 Check</button>
@@ -1617,7 +1619,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
     </html>
     """
     return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
-    
+        
 # ==========================================
 # [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
 # ==========================================
