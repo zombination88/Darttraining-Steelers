@@ -1207,355 +1207,388 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul
+# [BLOCK_4b] Dialoge: Live Scoring Modul (HYBRID PWA)
 # ==========================================
-import os
 import json
+import streamlit.components.v1 as components
 
-@st.dialog("🎯 Live Scoring Board", width="large")
+@st.dialog("🎯 Live Scoring Board (Offline-Ready)", width="large")
 def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
     ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
-    safe_bname = board_name.replace(" ", "_")
-    backup_file = f"backup_live_{session_id}_{safe_bname}_{round_num}.json"
     
-    # Auto-Save Ladefunktion
-    def load_backup():
-        if os.path.exists(backup_file):
-            try:
-                with open(backup_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except: pass
-        return None
+    # --- GERÄTE-SPERRE (DEVICE LOCK) ---
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    
+    res = sess.setdefault("results", {})
+    m_info = res.setdefault((round_num, board_name), {})
+    
+    # Prüfen, ob schon jemand anderes spielt
+    if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
+        st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
+        st.info("Wenn das andere Tablet abgestürzt ist, kannst du die Sperre hier aufheben.")
+        if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
+            m_info["is_live_locked"] = False
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+        return
 
-    # 1. Status der laufenden Partie initialisieren
-    if ls_key not in st.session_state or not isinstance(st.session_state[ls_key], dict):
-        saved_state = load_backup()
-        if saved_state:
-            st.session_state[ls_key] = saved_state
-            st.info("🔄 Unterbrochenes Spiel wurde automatisch aus dem Auto-Save wiederhergestellt!")
-        else:
-            st.session_state[ls_key] = {
-                "p1": p1, "p2": p2,
-                "l1": 0, "l2": 0,
-                "s1": 501, "s2": 501,
-                "pts1": 0, "pts2": 0,
-                "d1_leg": 0, "d2_leg": 0,
-                "d1_tot": 0, "d2_tot": 0,
-                "180_1": 0, "180_2": 0,
-                "hist1": [], "hist2": [],
-                "turn": 0, # 0 = Spieler 1, 1 = Spieler 2
-                "start": 0,
-                "state": "play", # Modi: play, checkout, over
-                "cur_input": "",
-                "checkout_score": 0,
-                "undo_stack": [],
-                "undone_history": [],
-                "error_msg": ""
-            }
+    # Eigene Sperre setzen
+    if not st.session_state.get(f"my_lock_{ls_key}"):
+        m_info["is_live_locked"] = True
+        st.session_state[f"my_lock_{ls_key}"] = True
+        smart_sync_and_save(st.session_state.sessions_list)
+        
+    # --- KOMMUNIKATION: JS-BOARD -> STREAMLIT ---
+    payload_key = f"payload_{ls_key}"
+    payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
     
-    st_ls = st.session_state[ls_key]
-    if "undo_stack" not in st_ls: st_ls["undo_stack"] = []
-    if "undone_history" not in st_ls: st_ls["undone_history"] = []
-    
-    # Auto-Save Schreibfunktion
-    def backup_state():
+    if payload_json:
         try:
-            with open(backup_file, "w", encoding="utf-8") as f:
-                json.dump(st_ls, f, ensure_ascii=False)
-        except: pass
-
-    # Auto-Save Datei löschen (nach Abschluss)
-    def clear_backup():
-        if os.path.exists(backup_file):
-            try: os.remove(backup_file)
-            except: pass
-        if ls_key in st.session_state:
-            del st.session_state[ls_key]
-            
-    # --- UNDO / ZURÜCKSPUL-FUNKTION ---
-    def save_state(action_label):
-        snapshot = {
-            "s1": st_ls["s1"], "s2": st_ls["s2"],
-            "pts1": st_ls["pts1"], "pts2": st_ls["pts2"],
-            "d1_leg": st_ls["d1_leg"], "d2_leg": st_ls["d2_leg"],
-            "d1_tot": st_ls["d1_tot"], "d2_tot": st_ls["d2_tot"],
-            "180_1": st_ls["180_1"], "180_2": st_ls["180_2"],
-            "hist1": list(st_ls.get("hist1", [])), 
-            "hist2": list(st_ls.get("hist2", [])),
-            "turn": st_ls["turn"],
-            "start": st_ls.get("start", 0),
-            "state": st_ls["state"],
-            "checkout_score": st_ls.get("checkout_score", 0),
-            "l1": st_ls["l1"], "l2": st_ls["l2"]
-        }
-        st_ls["undo_stack"] = st_ls.get("undo_stack", [])[-29:] + [{"state": snapshot, "action": action_label}]
-        
-    def undo_last():
-        if st_ls.get("undo_stack"):
-            last = st_ls["undo_stack"].pop()
-            st_ls["undone_history"].insert(0, last["action"])
-            for k, v in last["state"].items():
-                st_ls[k] = v
-            st_ls["cur_input"] = ""
-            st_ls["error_msg"] = ""
-            backup_state()
-            
-    def clear_undone():
-        st_ls["undone_history"] = []
-        backup_state()
-    
-    # --- SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
-    def get_safe_avg(pts, darts):
-        try:
-            pts_val = float(pts)
-            darts_val = int(darts)
-            if darts_val > 0:
-                return round((pts_val / darts_val) * 3.0, 1)
-        except:
-            pass
-        return 0.0
-
-    # 2. Wurf-Logik
-    def process_throw(score):
-        st_ls["cur_input"] = ""
-        try: score = int(score)
-        except: return
-        
-        save_state(str(score))
-        
-        active_p = 1 if st_ls["turn"] == 0 else 2
-        curr_score = int(st_ls[f"s{active_p}"])
-        rem = curr_score - score
-        
-        if rem < 0 or rem == 1:
-            st_ls[f"hist{active_p}"].insert(0, f"0 (Bust {score})")
-            st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + 3
-            st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
-            st_ls["turn"] = 1 if st_ls["turn"] == 0 else 0
-        elif rem == 0:
-            st_ls["state"] = "checkout"
-            st_ls["checkout_score"] = score
-        else:
-            st_ls[f"s{active_p}"] = rem
-            st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
-            
-            if score == 0:
-                st_ls[f"hist{active_p}"].insert(0, "0 (No Score)")
-            else:
-                st_ls[f"hist{active_p}"].insert(0, str(score))
-                
-            st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + 3
-            st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + 3
-            if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
-            st_ls["turn"] = 1 if st_ls["turn"] == 0 else 0
-        backup_state()
-            
-    # 3. Checkout-Logik
-    def process_checkout(darts):
-        try: darts = int(darts)
-        except: return
-        score = int(st_ls["checkout_score"])
-        active_p = 1 if st_ls["turn"] == 0 else 2
-        
-        save_state(f"Check ({score})")
-        
-        st_ls[f"pts{active_p}"] = int(st_ls[f"pts{active_p}"]) + score
-        st_ls[f"hist{active_p}"].insert(0, f"{score} (Check in {darts})")
-        st_ls[f"d{active_p}_leg"] = int(st_ls[f"d{active_p}_leg"]) + darts
-        st_ls[f"d{active_p}_tot"] = int(st_ls[f"d{active_p}_tot"]) + darts
-        st_ls[f"l{active_p}"] = int(st_ls[f"l{active_p}"]) + 1
-        st_ls[f"s{active_p}"] = 0
-        if score == 180: st_ls[f"180_{active_p}"] = int(st_ls[f"180_{active_p}"]) + 1
-        
-        req_w = int(req_win)
-        if int(st_ls["l1"]) == req_w or int(st_ls["l2"]) == req_w:
-            st_ls["state"] = "over"
-        else:
-            st_ls["s1"] = 501
-            st_ls["s2"] = 501
-            st_ls["d1_leg"] = 0
-            st_ls["d2_leg"] = 0
-            st_ls["start"] = 1 if st_ls["start"] == 0 else 0
-            st_ls["turn"] = st_ls["start"]
-            st_ls["state"] = "play"
-            st_ls["hist1"].insert(0, "--- Neues Leg ---")
-            st_ls["hist2"].insert(0, "--- Neues Leg ---")
-        backup_state()
-
-    # 4. Optische Live-Anzeige (Header)
-    if st_ls.get("error_msg"):
-        st.error(st_ls["error_msg"])
-        st_ls["error_msg"] = "" # Zurücksetzen nach Anzeige
-        
-    c1, c2 = st.columns(2)
-    avg1 = get_safe_avg(st_ls.get("pts1", 0), st_ls.get("d1_tot", 0))
-    avg2 = get_safe_avg(st_ls.get("pts2", 0), st_ls.get("d2_tot", 0))
-    
-    def render_player_header(name, legs, score, avg, darts_leg, turn_active):
-        bg = "#2e7d32" if turn_active else "#1e1e1e"
-        border = "2px solid #4CAF50" if turn_active else "1px solid #444"
-        st.markdown(f"<div style='background-color: {bg}; padding: 10px; border-radius: 10px; text-align: center; border: {border}; margin-bottom: 15px;'>"
-                    f"<h4 style='margin:0; color: white;'>{name}</h4>"
-                    f"<h5 style='margin:0; color: #ccc;'>Legs: {legs}</h5>"
-                    f"<h1 style='margin:10px 0; font-size: 4em; color: white;'>{score}</h1>"
-                    f"<p style='margin:0; color: #aaa; font-size: 0.9em;'>Avg: <b>{avg}</b> | Darts: {darts_leg}</p>"
-                    f"</div>", unsafe_allow_html=True)
-                    
-    with c1: render_player_header(st_ls.get("p1", "Spieler 1"), st_ls.get("l1", 0), st_ls.get("s1", 501), avg1, st_ls.get("d1_leg", 0), st_ls.get("turn", 0)==0)
-    with c2: render_player_header(st_ls.get("p2", "Spieler 2"), st_ls.get("l2", 0), st_ls.get("s2", 501), avg2, st_ls.get("d2_leg", 0), st_ls.get("turn", 0)==1)
-    
-    # --- CSS-Hacks für MASSIVE ERGONOMIE & FARBEN ---
-    st.markdown('<div id="action-buttons"></div>', unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-    /* Alle Buttons im Dialog rieeesig machen für perfekte Touch-Bedienung */
-    div[data-testid="stDialog"] button {
-        min-height: 65px !important;
-        font-size: 1.15rem !important;
-        font-weight: bold !important;
-        border-radius: 10px !important;
-    }
-    /* Action Buttons einfärben (Rot, Grün, Blau) */
-    #action-buttons + div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1) button {
-        background-color: #d32f2f !important; color: white !important; border-color: #d32f2f !important;
-    }
-    #action-buttons + div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) button {
-        background-color: #388e3c !important; color: white !important; border-color: #388e3c !important;
-    }
-    #action-buttons + div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) button {
-        background-color: #1976d2 !important; color: white !important; border-color: #1976d2 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # 5. Steuerung (Eingabe)
-    if st_ls["state"] == "checkout":
-        st.warning("🎯 **Check!** Mit wie vielen Pfeilen in dieser Aufnahme hast du gecheckt?")
-        col_d1, col_d2, col_d3, col_u = st.columns(4)
-        col_d1.button("1 Dart", key=f"chk1_{ls_key}", on_click=process_checkout, args=(1,), use_container_width=True)
-        col_d2.button("2 Darts", key=f"chk2_{ls_key}", on_click=process_checkout, args=(2,), use_container_width=True)
-        col_d3.button("3 Darts", key=f"chk3_{ls_key}", on_click=process_checkout, args=(3,), use_container_width=True)
-        col_u.button("↩️ Zurück", key=f"undo_chk_{ls_key}", on_click=undo_last, use_container_width=True)
-        
-    elif st_ls["state"] == "over":
-        winner_name = st_ls['p1'] if st_ls['l1'] > st_ls['l2'] else st_ls['p2']
-        st.success(f"🏆 **Match beendet!** {winner_name} gewinnt {st_ls['l1']}:{st_ls['l2']}")
-        st.markdown(f"**Match-Statistik:**<br>{st_ls['p1']} — Avg: {avg1} | 180er: {st_ls['180_1']}<br>{st_ls['p2']} — Avg: {avg2} | 180er: {st_ls['180_2']}", unsafe_allow_html=True)
-        st.write("")
-        if st.button("💾 In die Datenbank speichern", type="primary", use_container_width=True):
-            sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-            if sess:
-                res = sess.setdefault("results", {})
-                winner = p1 if st_ls["l1"] > st_ls["l2"] else p2
-                loser = p2 if st_ls["l1"] > st_ls["l2"] else p1
-                res[(round_num, board_name)] = {
+            data = json.loads(payload_json)
+            if data.get("action") == "save":
+                winner = p1 if data["l1"] > data["l2"] else p2
+                loser = p2 if data["l1"] > data["l2"] else p1
+                m_info.update({
                     "s1": p1, "s2": p2,
-                    "ergebnis": f"{st_ls['l1']}:{st_ls['l2']}",
+                    "ergebnis": f"{data['l1']}:{data['l2']}",
                     "winner": winner, "loser": loser,
-                    "180_s1": st_ls["180_1"], "180_s2": st_ls["180_2"],
-                    "avg_s1": avg1, "avg_s2": avg2
-                }
-                st.session_state.sessions_list[st.session_state.sessions_list.index(sess)] = sess
+                    "180_s1": data["e180_1"], "180_s2": data["e180_2"],
+                    "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
+                    "is_live_locked": False,
+                    "played": True
+                })
+                del st.session_state[f"my_lock_{ls_key}"]
                 smart_sync_and_save(st.session_state.sessions_list)
-                clear_backup()
                 st.rerun()
+            elif data.get("action") == "cancel":
+                m_info["is_live_locked"] = False
+                del st.session_state[f"my_lock_{ls_key}"]
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+        except Exception as e:
+            st.error(f"Fehler bei der Datenübertragung: {e}")
+
+    # --- DAS OFFLINE JAVASCRIPT BOARD ---
+    html_code = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { background: #0e1117; color: white; font-family: sans-serif; margin: 0; padding: 5px; user-select: none; }
+        .row { display: flex; gap: 10px; margin-bottom: 15px; }
+        .col { flex: 1; }
+        .box { border: 3px solid #444; background: #1e1e1e; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .box.active { border-color: #4CAF50; background: #2e7d32; }
+        .score { font-size: 5.5em; font-weight: bold; margin: 5px 0; line-height: 1.1; }
+        .display { background: #111; font-size: 3em; border-radius: 8px; text-align: center; min-height: 70px; line-height: 70px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 75px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; }
+        button:active { opacity: 0.6; transform: scale(0.98); }
+        .btn-red { background: #d32f2f !important; border-color: #d32f2f !important; }
+        .btn-green { background: #388e3c !important; border-color: #388e3c !important; }
+        .btn-blue { background: #1976d2 !important; border-color: #1976d2 !important; }
+        .btn-undo { background: #ff9800 !important; border-color: #ff9800 !important; }
+        .error { background: #ff4b4b; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: none; font-weight: bold; text-align: center; font-size: 1.2rem;}
+        .q-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .head-title { margin: 0; font-size: 1.5rem; }
+        .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
+        .stats { color: #ccc; font-size: 1.2em; }
+      </style>
+    </head>
+    <body>
+        <div class="row">
+          <div class="col" style="flex: 1.2;">
+             <div id="p1-box" class="box active">
+                <h3 id="p1-name" class="head-title">P1</h3>
+                <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
+                <div id="p1-score" class="score">501</div>
+                <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+             </div>
+          </div>
+          <div class="col" style="flex: 1.2;">
+             <div id="p2-box" class="box">
+                <h3 id="p2-name" class="head-title">P2</h3>
+                <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
+                <div id="p2-score" class="score">501</div>
+                <div id="p2-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
+             </div>
+          </div>
+        </div>
+        <div id="error" class="error"></div>
+        
+        <!-- MAIN PLAY AREA -->
+        <div id="area-play" class="row">
+           <div class="col" style="flex: 1;">
+              <div style="color:gray;text-align:center;margin-bottom:5px;font-weight:bold;">Standard</div>
+              <div class="q-grid">
+                 <button onclick="throwPts(26)">26</button><button onclick="throwPts(41)">41</button>
+                 <button onclick="throwPts(45)">45</button><button onclick="throwPts(60)">60</button>
+                 <button onclick="throwPts(81)">81</button><button onclick="throwPts(85)">85</button>
+              </div>
+           </div>
+           <div class="col" style="flex: 2.2;">
+              <div style="display:flex; gap:10px; margin-bottom:10px;">
+                 <div id="display" class="display" style="flex:3;"></div>
+                 <button onclick="undo()" class="btn-undo" style="flex:1;">↩️</button>
+              </div>
+              <div class="grid">
+                 <button onclick="pad(1)">1</button><button onclick="pad(2)">2</button><button onclick="pad(3)">3</button>
+                 <button onclick="pad(4)">4</button><button onclick="pad(5)">5</button><button onclick="pad(6)">6</button>
+                 <button onclick="pad(7)">7</button><button onclick="pad(8)">8</button><button onclick="pad(9)">9</button>
+                 <button onclick="del()">⌫</button><button onclick="pad(0)">0</button><button onclick="rest()">REST</button>
+              </div>
+              <div style="display:flex; gap:8px;">
+                 <button onclick="throwPts(0)" class="btn-red" style="flex:1;">🔴 No Score</button>
+                 <button onclick="enter()" class="btn-green" style="flex:1;">🟢 Geworfen</button>
+                 <button onclick="check()" class="btn-blue" style="flex:1;">🎯 Check</button>
+              </div>
+           </div>
+           <div class="col" style="flex: 1;">
+              <div style="color:gray;text-align:center;margin-bottom:5px;font-weight:bold;">Highs</div>
+              <div class="q-grid">
+                 <button onclick="throwPts(100)">100</button><button onclick="throwPts(121)">121</button>
+                 <button onclick="throwPts(125)">125</button><button onclick="throwPts(135)">135</button>
+                 <button onclick="throwPts(140)">140</button><button onclick="throwPts(180)">180</button>
+              </div>
+           </div>
+        </div>
+        
+        <!-- CHECKOUT AREA -->
+        <div id="area-check" style="display:none; text-align:center; padding: 30px;">
+           <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
+           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
+              <button onclick="doCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
+              <button onclick="doCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
+              <button onclick="doCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
+              <button onclick="undo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
+           </div>
+        </div>
+        
+        <!-- OVER AREA -->
+        <div id="area-over" style="display:none; text-align:center; padding: 40px;">
+           <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
+           <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
+           <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
+              <button onclick="saveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
+              <button onclick="undo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
+              <button onclick="cancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+           </div>
+        </div>
+
+        <script>
+        const P1_NAME = "__P1__";
+        const P2_NAME = "__P2__";
+        const REQ_WIN = parseInt("__REQ_WIN__");
+
+        let state = {
+            l1: 0, l2: 0,
+            s1: 501, s2: 501,
+            pts1: 0, pts2: 0,
+            d1_leg: 0, d2_leg: 0,
+            d1_tot: 0, d2_tot: 0,
+            e180_1: 0, e180_2: 0,
+            turn: 0, start: 0,
+            mode: 'play', // play, check, over
+            input: '', check_score: 0, error: '',
+            history: [] // Für echtes lokales Zurückspulen
+        };
+
+        function showError(msg) {
+            state.error = msg;
+            render();
+            setTimeout(() => { state.error = ""; render(); }, 3000);
+        }
+
+        function render() {
+            document.getElementById('p1-name').innerText = P1_NAME;
+            document.getElementById('p2-name').innerText = P2_NAME;
+            document.getElementById('p1-score').innerText = state.s1;
+            document.getElementById('p2-score').innerText = state.s2;
+            document.getElementById('p1-legs').innerText = "Legs: " + state.l1;
+            document.getElementById('p2-legs').innerText = "Legs: " + state.l2;
+            
+            let avg1 = state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3).toFixed(1) : "0.0";
+            let avg2 = state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3).toFixed(1) : "0.0";
+            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${state.d1_leg}</b>`;
+            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${state.d2_leg}</b>`;
+            
+            document.getElementById('p1-box').className = state.turn === 0 ? "box active" : "box";
+            document.getElementById('p2-box').className = state.turn === 1 ? "box active" : "box";
+
+            document.getElementById('display').innerText = state.input || "...";
+            
+            let errDiv = document.getElementById('error');
+            errDiv.innerText = state.error || "";
+            errDiv.style.display = state.error ? "block" : "none";
+
+            if(state.mode === 'check') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'block';
+                document.getElementById('area-over').style.display = 'none';
+            } else if (state.mode === 'over') {
+                document.getElementById('area-play').style.display = 'none';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'block';
+                let winner = state.l1 > state.l2 ? P1_NAME : P2_NAME;
+                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
+            } else {
+                document.getElementById('area-play').style.display = 'flex';
+                document.getElementById('area-check').style.display = 'none';
+                document.getElementById('area-over').style.display = 'none';
+            }
+        }
+
+        function saveState() {
+            let snap = JSON.stringify(state);
+            state.history.push(snap);
+            if(state.history.length > 40) state.history.shift();
+        }
+
+        function undo() {
+            if(state.history.length > 0) {
+                let last = state.history.pop();
+                state = JSON.parse(last);
+                state.error = "";
+                render();
+            }
+        }
+
+        function pad(n) { state.input += n; render(); }
+        function del() { state.input = state.input.slice(0, -1); render(); }
+        
+        function throwPts(pts) {
+            saveState();
+            state.input = "";
+            let active = state.turn === 0 ? 1 : 2;
+            let curr = active === 1 ? state.s1 : state.s2;
+            let rem = curr - pts;
+            
+            if (rem < 0 || rem === 1) {
+                // Bust
+                if(active === 1) { state.d1_leg += 3; state.d1_tot += 3; }
+                else { state.d2_leg += 3; state.d2_tot += 3; }
+                state.turn = state.turn === 0 ? 1 : 0;
+            } else if (rem === 0) {
+                state.mode = 'check';
+                state.check_score = pts;
+            } else {
+                // Normal
+                if(active === 1) { 
+                    state.s1 = rem; state.pts1 += pts; state.d1_leg += 3; state.d1_tot += 3; 
+                    if(pts === 180) state.e180_1++;
+                } else { 
+                    state.s2 = rem; state.pts2 += pts; state.d2_leg += 3; state.d2_tot += 3; 
+                    if(pts === 180) state.e180_2++;
+                }
+                state.turn = state.turn === 0 ? 1 : 0;
+            }
+            render();
+        }
+        
+        function enter() {
+            if(!state.input) return;
+            let val = parseInt(state.input);
+            if(val <= 180) throwPts(val);
+            else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
+        }
+        
+        function rest() {
+            if(!state.input) return;
+            let val = parseInt(state.input);
+            let curr = state.turn === 0 ? state.s1 : state.s2;
+            if(val <= curr) {
+                let thrown = curr - val;
+                if(thrown <= 180) throwPts(thrown);
+                else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
+            } else {
+                showError("🚨 Rest kann nicht höher sein als deine Punkte!");
+            }
+        }
+        
+        function check() {
+            let curr = state.turn === 0 ? state.s1 : state.s2;
+            let bogies = [169, 168, 166, 165, 163, 162, 159];
+            if(curr <= 170 && !bogies.includes(curr)) {
+                throwPts(curr);
+            } else {
+                showError("🚨 Bogey-Zahl oder >170! Kann nicht gecheckt werden.");
+            }
+        }
+
+        function doCheck(darts) {
+            saveState();
+            let pts = state.check_score;
+            let active = state.turn === 0 ? 1 : 2;
+            if(active === 1) {
+                state.pts1 += pts; state.d1_leg += darts; state.d1_tot += darts; state.l1++; state.s1 = 0;
+                if(pts === 180) state.e180_1++;
+            } else {
+                state.pts2 += pts; state.d2_leg += darts; state.d2_tot += darts; state.l2++; state.s2 = 0;
+                if(pts === 180) state.e180_2++;
+            }
+            
+            if(state.l1 === REQ_WIN || state.l2 === REQ_WIN) {
+                state.mode = 'over';
+            } else {
+                state.s1 = 501; state.s2 = 501;
+                state.d1_leg = 0; state.d2_leg = 0;
+                state.start = state.start === 0 ? 1 : 0;
+                state.turn = state.start;
+                state.mode = 'play';
+            }
+            render();
+        }
+
+        // --- DER MAGISCHE FUNK ZU PYTHON ---
+        function sendToStreamlit(payload) {
+            if(!navigator.onLine && payload.action === 'save') {
+                alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt jetzt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
+                return;
+            }
+            const doc = window.parent.document;
+            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
+            if(inputs.length > 0) {
+                let target = inputs[inputs.length - 1]; // Immer das neueste Input-Feld nehmen
+                let lastValue = target.value;
+                target.value = JSON.stringify(payload);
+                let event = new Event('input', { bubbles: true });
+                event.simulated = true;
+                let tracker = target._valueTracker;
+                if (tracker) { tracker.setValue(lastValue); }
+                target.dispatchEvent(event);
+            } else {
+                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
+            }
+        }
+
+        function saveMatch() {
+            sendToStreamlit({
+                action: 'save',
+                l1: state.l1, l2: state.l2,
+                e180_1: state.e180_1, e180_2: state.e180_2,
+                avg1: state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3) : 0,
+                avg2: state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3) : 0
+            });
+        }
+
+        function cancelMatch() {
+            if(!navigator.onLine) {
+                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
+            }
+            sendToStreamlit({action: 'cancel'});
+        }
+
+        // Start
+        render();
+        </script>
+    </body>
+    </html>
+    """.replace("__P1__", p1).replace("__P2__", p2).replace("__REQ_WIN__", str(req_win))
+
+    components.html(html_code, height=750, scrolling=False)
                 
-        c_ab, c_un = st.columns(2)
-        with c_ab:
-            if st.button("Abbrechen & Verwerfen", use_container_width=True):
-                clear_backup()
-                st.rerun()
-        with c_un:
-            st.button("↩️ Letzten Wurf korrigieren", key=f"undo_over_{ls_key}", on_click=undo_last, use_container_width=True)
-            
-    elif st_ls["state"] == "play":
-        c_l, c_m, c_r = st.columns([1, 2, 1])
-        
-        # Hilfsfunktionen fürs Numpad inkl. sicherer Fehlerabfangung
-        def n_pad(val): 
-            st_ls["cur_input"] = str(st_ls.get("cur_input", "")) + str(val)
-            backup_state()
-        def n_del(): 
-            st_ls["cur_input"] = str(st_ls.get("cur_input", ""))[:-1]
-            backup_state()
-        def n_throw(val): process_throw(val)
-        
-        def n_enter():
-            if str(st_ls.get("cur_input", "")).isdigit():
-                val = int(st_ls["cur_input"])
-                if val <= 180: process_throw(val)
-                else: st_ls["error_msg"] = "🚨 Maximal 180 Punkte pro Aufnahme möglich!"
-            st_ls["cur_input"] = ""
-            backup_state()
-            
-        def n_rest():
-            if str(st_ls.get("cur_input", "")).isdigit():
-                rest_val = int(st_ls["cur_input"])
-                curr_score = int(st_ls["s1"]) if st_ls["turn"] == 0 else int(st_ls["s2"])
-                if rest_val <= curr_score:
-                    thrown = curr_score - rest_val
-                    if thrown <= 180: process_throw(thrown)
-                    else: st_ls["error_msg"] = "🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!"
-                else:
-                    st_ls["error_msg"] = "🚨 Rest kann nicht höher sein als deine aktuellen Punkte!"
-            st_ls["cur_input"] = ""
-            backup_state()
-            
-        def n_check():
-            curr_score = int(st_ls["s1"]) if st_ls["turn"] == 0 else int(st_ls["s2"])
-            if curr_score <= 170 and curr_score not in [169, 168, 166, 165, 163, 162, 159]:
-                process_throw(curr_score)
-            else:
-                st_ls["error_msg"] = "🚨 Fehler: Diese Punktzahl kann man nicht checken (Bogey-Zahl oder über 170)!"
-            backup_state()
-        
-        with c_l:
-            st.caption("Standard")
-            for qv in [26, 41, 45, 60, 81, 85]: st.button(str(qv), key=f"ql_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
-            
-        with c_m:
-            # Display + Undo
-            c_disp, c_undo = st.columns([3, 1])
-            disp_val = st_ls.get('cur_input', '')
-            c_disp.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff; line-height: 50px;'>{disp_val if disp_val else '...'}</div>", unsafe_allow_html=True)
-            c_undo.button("↩️ Zurück", key=f"undo_main_{ls_key}", on_click=undo_last, use_container_width=True)
-            
-            # Ziffernblock
-            grid = [[1,2,3], [4,5,6], [7,8,9], ["⌫", 0, "REST"]]
-            for row in grid:
-                cols = st.columns(3)
-                for i, val in enumerate(row):
-                    if val == "⌫": cols[i].button("⌫", key=f"ndel_{row[0]}", on_click=n_del, use_container_width=True)
-                    elif val == "REST": cols[i].button("REST", key=f"nrest_{row[0]}", on_click=n_rest, use_container_width=True)
-                    else: cols[i].button(str(val), key=f"n{val}_{row[0]}", on_click=n_pad, args=(val,), use_container_width=True)
-            
-            # Action Row: No Score (Rot), Geworfen (Grün), Checkout (Blau)
-            c_bot1, c_bot2, c_bot3 = st.columns(3)
-            with c_bot1:
-                st.button("🔴 No Score", key=f"btn_noscore_{round_num}_{board_name}", on_click=n_throw, args=(0,), use_container_width=True)
-            with c_bot2:
-                st.button("🟢 Geworfen", key=f"btn_geworfen_{round_num}_{board_name}", on_click=n_enter, use_container_width=True)
-            with c_bot3:
-                st.button("🎯 Check", key=f"btn_check_{round_num}_{board_name}", on_click=n_check, use_container_width=True)
-
-            # GEDÄCHTNISSTÜTZE (Zeigt die gelöschten Würfe an)
-            if st_ls.get("undone_history"):
-                st.write("")
-                c_mem1, c_mem2 = st.columns([5, 1])
-                c_mem1.info(f"💡 **Zurückgespult:** {', '.join(st_ls['undone_history'])}")
-                c_mem2.button("❌", key=f"clr_mem_{ls_key}", on_click=clear_undone, use_container_width=True)
-
-        with c_r:
-            st.caption("Highs")
-            # 6 Buttons rechts, passend zu den 6 links
-            for qv in [100, 121, 125, 135, 140, 180]: st.button(str(qv), key=f"qr_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
-
-    st.divider()
-    with st.expander("📋 Wurf-Historie ansehen"):
-        c_h1, c_h2 = st.columns(2)
-        c_h1.write("<br>".join(st_ls.get("hist1", [])[:12]), unsafe_allow_html=True)
-        c_h2.write("<br>".join(st_ls.get("hist2", [])[:12]), unsafe_allow_html=True)
-
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
 # ==========================================
