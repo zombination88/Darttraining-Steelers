@@ -1207,7 +1207,7 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (Undo-Anzeige über den Namen)
+# [BLOCK_4b] Dialoge: Live Scoring Modul (JavaScript-Fix & Undo-Banner)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1486,7 +1486,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 document.getElementById('area-over').style.display = 'none';
             }
             
-            # Undo Banner über den Namen steuern
+            // Undo Banner über den Namen steuern
             let banner = document.getElementById('undo-banner');
             if(state.last_undone_val) {
                 banner.style.display = 'block';
@@ -1535,7 +1535,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 state.history = currentHist;
                 state.undone_history = currentUndone;
                 
-                # Wert im Display anzeigen und als Banner über den Spielern einblenden!
+                // Wert im Display anzeigen und als Banner über den Spielern einblenden!
                 let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
                 state.input = valToDisplay;
                 state.last_undone_val = valToDisplay;
@@ -1550,7 +1550,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         }
 
         function pad(n) { 
-            state.last_undone_val = ""; // Banner ausblenden, sobald getippt wird
+            state.last_undone_val = ""; 
             state.input += n; 
             render(); 
         }
@@ -1563,7 +1563,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             let label = pts === 0 ? "No Score" : String(pts);
             saveState(label);
             state.undone_history = [];
-            state.last_undone_val = ""; // Banner ausblenden beim nächsten Wurf
+            state.last_undone_val = ""; 
             
             state.input = "";
             let active = state.turn === 0 ? 1 : 2;
