@@ -3629,11 +3629,22 @@ def open_full_rollback_dialog():
                             try:
                                 backup_data = json.loads(json_str)
                                 
-                                # Vorhandene Fotos retten, da sie nicht im Schnellspeicher liegen
+                                # Vorhandene Fotos retten
                                 current_images = {s["id"]: s["image_b64"] for s in st.session_state.sessions_list if s.get("image_b64")}
                                 for s in backup_data:
                                     if s["id"] in current_images:
                                         s["image_b64"] = current_images[s["id"]]
+                                        
+                                    # ---> FIX: JSON-Strings wieder in Python-Tupel verwandeln <---
+                                    fixed_results = {}
+                                    for k, v in s.get("results", {}).items():
+                                        if isinstance(k, str) and "_" in k and not s.get("is_liga") and not s.get("is_wettkampf"):
+                                            parts = k.split("_", 1)
+                                            if len(parts) == 2 and parts[0].isdigit():
+                                                fixed_results[(int(parts[0]), parts[1])] = v
+                                                continue
+                                        fixed_results[k] = v
+                                    s["results"] = fixed_results
                                         
                                 st.session_state.sessions_list = backup_data
                                 save_data(backup_data)
@@ -3649,7 +3660,6 @@ with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
     st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
-    # --- NEUER BUTTON FÜR ALLE EINGELOGGTEN SPIELER (Admin & Spieler) ---
     if is_admin:
         if st.button("🆘 Notfall: Gelöschte Spieldaten aus Backup wiederherstellen", type="primary", use_container_width=True):
             open_full_rollback_dialog()
