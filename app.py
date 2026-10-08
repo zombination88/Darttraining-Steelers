@@ -1207,82 +1207,9 @@ def open_session_summary_dialog(session_id):
     if st.button("Schließen", use_container_width=True): st.rerun()
 
 # ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (JavaScript-Fix & Undo-Banner)
+# [BLOCK_4b_1] Helper: PWA HTML & JS Template
 # ==========================================
-import json
-import streamlit.components.v1 as components
-
-@st.dialog("🎯 Live Scoring Board (Offline-Ready)", width="large")
-def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
-    ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
-    
-    # --- GERÄTE-SPERRE (DEVICE LOCK) ---
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    
-    res = sess.setdefault("results", {})
-    m_info = res.setdefault((round_num, board_name), {})
-    
-    # Prüfen, ob schon jemand anderes spielt
-    if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
-        st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-        st.info("Wenn das andere Tablet abgestürzt ist, kannst du die Sperre hier aufheben.")
-        if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
-            m_info["is_live_locked"] = False
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-        return
-
-    # Eigene Sperre setzen UND Namen sicher eintragen!
-    if not st.session_state.get(f"my_lock_{ls_key}"):
-        m_info["is_live_locked"] = True
-        m_info["s1"] = m_info.get("s1", p1)
-        m_info["s2"] = m_info.get("s2", p2)
-        st.session_state[f"my_lock_{ls_key}"] = True
-        smart_sync_and_save(st.session_state.sessions_list)
-        
-    # --- KOMMUNIKATION: JS-BOARD -> STREAMLIT ---
-    payload_key = f"payload_{ls_key}"
-    payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
-    
-    if payload_json:
-        try:
-            data = json.loads(payload_json)
-            if data.get("action") == "save":
-                winner = p1 if data["l1"] > data["l2"] else p2
-                loser = p2 if data["l1"] > data["l2"] else p1
-                m_info.update({
-                    "s1": p1, "s2": p2,
-                    "ergebnis": f"{data['l1']}:{data['l2']}",
-                    "winner": winner, "loser": loser,
-                    "180_s1": data["e180_1"], "180_s2": data["e180_2"],
-                    "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
-                    "is_live_locked": False,
-                    "played": True
-                })
-                if f"my_lock_{ls_key}" in st.session_state:
-                    del st.session_state[f"my_lock_{ls_key}"]
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
-            elif data.get("action") == "cancel":
-                m_info["is_live_locked"] = False
-                if not m_info.get("played", False):
-                    if (round_num, board_name) in res:
-                        del res[(round_num, board_name)]
-                
-                if f"my_lock_{ls_key}" in st.session_state:
-                    del st.session_state[f"my_lock_{ls_key}"]
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
-        except Exception as e:
-            st.error(f"Fehler bei der Datenübertragung: {e}")
-
-    # Sicherheitshalber Namen escapen
-    safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
-    safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
-    safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
-
-    # --- DAS OFFLINE JAVASCRIPT BOARD ---
+def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
     html_code = """
     <!DOCTYPE html>
     <html>
@@ -1507,6 +1434,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         }
 
         function saveState(actionLabel) {
+            // Array temporär abkoppeln, damit es nicht endlos verschachtelt im JSON landet
             let tempHist = state.history || [];
             let tempUndone = state.undone_history || [];
             state.history = [];
@@ -1535,7 +1463,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 state.history = currentHist;
                 state.undone_history = currentUndone;
                 
-                // Wert im Display anzeigen und als Banner über den Spielern einblenden!
+                // Wert im Display anzeigen und als Banner einblenden
                 let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
                 state.input = valToDisplay;
                 state.last_undone_val = valToDisplay;
@@ -1692,10 +1620,91 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         </script>
     </body>
     </html>
-    """.replace("__P1__", safe_p1).replace("__P2__", safe_p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", safe_bname).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
+    """
+    return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
 
-    components.html(html_code, height=810, scrolling=False)
+# ==========================================
+# [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
+# ==========================================
+import json
+import streamlit.components.v1 as components
+
+@st.dialog("🎯 Live Scoring Board (Offline-Ready)", width="large")
+def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
+    ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
     
+    # --- GERÄTE-SPERRE (DEVICE LOCK) ---
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    
+    res = sess.setdefault("results", {})
+    m_info = res.setdefault((round_num, board_name), {})
+    
+    # Prüfen, ob schon jemand anderes spielt
+    if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
+        st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
+        st.info("Wenn das andere Tablet abgestürzt ist, kannst du die Sperre hier aufheben.")
+        if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
+            m_info["is_live_locked"] = False
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+        return
+
+    # Eigene Sperre setzen UND Namen sicher eintragen!
+    if not st.session_state.get(f"my_lock_{ls_key}"):
+        m_info["is_live_locked"] = True
+        m_info["s1"] = m_info.get("s1", p1)
+        m_info["s2"] = m_info.get("s2", p2)
+        st.session_state[f"my_lock_{ls_key}"] = True
+        smart_sync_and_save(st.session_state.sessions_list)
+        
+    # --- KOMMUNIKATION: JS-BOARD -> STREAMLIT ---
+    payload_key = f"payload_{ls_key}"
+    payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
+    
+    if payload_json:
+        try:
+            data = json.loads(payload_json)
+            if data.get("action") == "save":
+                winner = p1 if data["l1"] > data["l2"] else p2
+                loser = p2 if data["l1"] > data["l2"] else p1
+                m_info.update({
+                    "s1": p1, "s2": p2,
+                    "ergebnis": f"{data['l1']}:{data['l2']}",
+                    "winner": winner, "loser": loser,
+                    "180_s1": data["e180_1"], "180_s2": data["e180_2"],
+                    "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
+                    "is_live_locked": False,
+                    "played": True
+                })
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+            elif data.get("action") == "cancel":
+                m_info["is_live_locked"] = False
+                if not m_info.get("played", False):
+                    if (round_num, board_name) in res:
+                        del res[(round_num, board_name)]
+                
+                if f"my_lock_{ls_key}" in st.session_state:
+                    del st.session_state[f"my_lock_{ls_key}"]
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+        except Exception as e:
+            st.error(f"Fehler bei der Datenübertragung: {e}")
+
+    # Sicherheitshalber Namen escapen
+    safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
+    safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
+    safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
+
+    # --- RENDER HTML TEMPLATE ---
+    html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
+    components.html(html_content, height=810, scrolling=False)
+
+
+
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
 # ==========================================
