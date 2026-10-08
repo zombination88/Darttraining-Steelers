@@ -1239,7 +1239,6 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
       </style>
     </head>
     <body>
-        <!-- BANNER ÜBER DEN SPIELERN FÜR DEN ZURÜCKGESPULTEN WURF -->
         <div id="undo-banner" class="undo-banner">
            ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
         </div>
@@ -1264,69 +1263,66 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         </div>
         <div id="error" class="error"></div>
         
-        <!-- 3-SÄULEN LAYOUT -->
         <div class="row">
            <div class="col" style="flex: 1.1;">
-              <button onclick="throwPts(0)" class="btn-red">🔴 No Score</button>
-              <button onclick="check()" class="btn-blue">🎯 Check</button>
+              <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
+              <button onclick="actionCheck()" class="btn-blue">🎯 Check</button>
               <div style="color:gray; text-align:center; margin: 4px 0; font-size:0.9em; font-weight:bold;">Standard</div>
-              <button onclick="throwPts(26)">26</button>
-              <button onclick="throwPts(41)">41</button>
-              <button onclick="throwPts(45)">45</button>
-              <button onclick="throwPts(60)">60</button>
-              <button onclick="throwPts(81)">81</button>
-              <button onclick="throwPts(85)">85</button>
+              <button onclick="actionThrowPts(26)">26</button>
+              <button onclick="actionThrowPts(41)">41</button>
+              <button onclick="actionThrowPts(45)">45</button>
+              <button onclick="actionThrowPts(60)">60</button>
+              <button onclick="actionThrowPts(81)">81</button>
+              <button onclick="actionThrowPts(85)">85</button>
            </div>
            
            <div class="col" style="flex: 2.2;">
               <div style="display:flex; gap:8px; margin-bottom:8px;">
                  <div id="display" class="display" style="flex:3;"></div>
-                 <button onclick="undo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
+                 <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
               </div>
               <div class="grid">
-                 <button onclick="pad(1)">1</button><button onclick="pad(2)">2</button><button onclick="pad(3)">3</button>
-                 <button onclick="pad(4)">4</button><button onclick="pad(5)">5</button><button onclick="pad(6)">6</button>
-                 <button onclick="pad(7)">7</button><button onclick="pad(8)">8</button><button onclick="pad(9)">9</button>
-                 <button onclick="del()">⌫</button><button onclick="pad(0)">0</button><button onclick="rest()">REST</button>
+                 <button onclick="actionPad(1)">1</button><button onclick="actionPad(2)">2</button><button onclick="actionPad(3)">3</button>
+                 <button onclick="actionPad(4)">4</button><button onclick="actionPad(5)">5</button><button onclick="actionPad(6)">6</button>
+                 <button onclick="actionPad(7)">7</button><button onclick="actionPad(8)">8</button><button onclick="actionPad(9)">9</button>
+                 <button onclick="actionDel()">⌫</button><button onclick="actionPad(0)">0</button><button onclick="actionRest()">REST</button>
               </div>
-              <button onclick="enter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
+              <button onclick="actionEnter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
               
               <div id="memory-box" class="memory-box">
                  💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
-                 <button onclick="clearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
+                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
               </div>
            </div>
            
            <div class="col" style="flex: 1.1;">
               <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
-              <button onclick="throwPts(100)">100</button>
-              <button onclick="throwPts(121)">121</button>
-              <button onclick="throwPts(125)">125</button>
-              <button onclick="throwPts(135)">135</button>
-              <button onclick="throwPts(140)">140</button>
-              <button onclick="throwPts(180)">180</button>
+              <button onclick="actionThrowPts(100)">100</button>
+              <button onclick="actionThrowPts(121)">121</button>
+              <button onclick="actionThrowPts(125)">125</button>
+              <button onclick="actionThrowPts(135)">135</button>
+              <button onclick="actionThrowPts(140)">140</button>
+              <button onclick="actionThrowPts(180)">180</button>
            </div>
         </div>
         
-        <!-- CHECKOUT AREA -->
         <div id="area-check" style="display:none; text-align:center; padding: 30px;">
            <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
            <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
-              <button onclick="doCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
-              <button onclick="doCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
-              <button onclick="doCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
-              <button onclick="undo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
+              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
+              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
+              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
+              <button onclick="actionUndo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
            </div>
         </div>
         
-        <!-- OVER AREA -->
         <div id="area-over" style="display:none; text-align:center; padding: 40px;">
            <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
            <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
            <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
-              <button onclick="saveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
-              <button onclick="undo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
-              <button onclick="cancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+              <button onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
+              <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
+              <button onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
            </div>
         </div>
 
@@ -1351,16 +1347,16 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             last_undone_val: ""
         };
 
-        let state;
+        let matchState;
         
         try {
             let saved = localStorage.getItem(STORAGE_KEY);
-            if(saved) { state = JSON.parse(saved); } 
-            else { state = defaultState; }
-        } catch(e) { state = defaultState; }
+            if(saved) { matchState = JSON.parse(saved); } 
+            else { matchState = defaultState; }
+        } catch(e) { matchState = defaultState; }
 
         function saveToLocal() {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } 
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(matchState)); } 
             catch(e) {}
         }
         
@@ -1370,42 +1366,42 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         }
 
         function showError(msg) {
-            state.error = msg;
+            matchState.error = msg;
             render();
-            setTimeout(() => { state.error = ""; render(); }, 3000);
+            setTimeout(() => { matchState.error = ""; render(); }, 3000);
         }
 
         function render() {
             document.getElementById('p1-name').innerText = P1_NAME;
             document.getElementById('p2-name').innerText = P2_NAME;
-            document.getElementById('p1-score').innerText = state.s1;
-            document.getElementById('p2-score').innerText = state.s2;
-            document.getElementById('p1-legs').innerText = "Legs: " + state.l1;
-            document.getElementById('p2-legs').innerText = "Legs: " + state.l2;
+            document.getElementById('p1-score').innerText = matchState.s1;
+            document.getElementById('p2-score').innerText = matchState.s2;
+            document.getElementById('p1-legs').innerText = "Legs: " + matchState.l1;
+            document.getElementById('p2-legs').innerText = "Legs: " + matchState.l2;
             
-            let avg1 = state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3).toFixed(1) : "0.0";
-            let avg2 = state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3).toFixed(1) : "0.0";
-            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${state.d1_leg}</b>`;
-            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${state.d2_leg}</b>`;
+            let avg1 = matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3).toFixed(1) : "0.0";
+            let avg2 = matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3).toFixed(1) : "0.0";
+            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${matchState.d1_leg}</b>`;
+            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${matchState.d2_leg}</b>`;
             
-            document.getElementById('p1-box').className = state.turn === 0 ? "box active" : "box";
-            document.getElementById('p2-box').className = state.turn === 1 ? "box active" : "box";
+            document.getElementById('p1-box').className = matchState.turn === 0 ? "box active" : "box";
+            document.getElementById('p2-box').className = matchState.turn === 1 ? "box active" : "box";
 
-            document.getElementById('display').innerText = state.input || "...";
+            document.getElementById('display').innerText = matchState.input || "...";
             
             let errDiv = document.getElementById('error');
-            errDiv.innerText = state.error || "";
-            errDiv.style.display = state.error ? "block" : "none";
+            errDiv.innerText = matchState.error || "";
+            errDiv.style.display = matchState.error ? "block" : "none";
 
-            if(state.mode === 'check') {
+            if(matchState.mode === 'check') {
                 document.getElementById('area-play').style.display = 'none';
                 document.getElementById('area-check').style.display = 'block';
                 document.getElementById('area-over').style.display = 'none';
-            } else if (state.mode === 'over') {
+            } else if (matchState.mode === 'over') {
                 document.getElementById('area-play').style.display = 'none';
                 document.getElementById('area-check').style.display = 'none';
                 document.getElementById('area-over').style.display = 'block';
-                let winner = state.l1 > state.l2 ? P1_NAME : P2_NAME;
+                let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
                 document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
             } else {
                 document.getElementById('area-play').style.display = 'flex';
@@ -1413,19 +1409,18 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 document.getElementById('area-over').style.display = 'none';
             }
             
-            // Undo Banner über den Namen steuern
             let banner = document.getElementById('undo-banner');
-            if(state.last_undone_val) {
+            if(matchState.last_undone_val) {
                 banner.style.display = 'block';
-                document.getElementById('undo-val').innerText = state.last_undone_val;
+                document.getElementById('undo-val').innerText = matchState.last_undone_val;
             } else {
                 banner.style.display = 'none';
             }
 
             let memBox = document.getElementById('memory-box');
-            if(state.undone_history && state.undone_history.length > 0 && state.mode === 'play') {
+            if(matchState.undone_history && matchState.undone_history.length > 0 && matchState.mode === 'play') {
                 memBox.style.display = 'block';
-                document.getElementById('memory-text').innerText = state.undone_history.join(", ");
+                document.getElementById('memory-text').innerText = matchState.undone_history.join(", ");
             } else {
                 memBox.style.display = 'none';
             }
@@ -1433,149 +1428,149 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             saveToLocal();
         }
 
-        function saveState(actionLabel) {
-            // Array temporär abkoppeln, damit es nicht endlos verschachtelt im JSON landet
-            let tempHist = state.history || [];
-            let tempUndone = state.undone_history || [];
-            state.history = [];
-            state.undone_history = [];
+        function saveMatchState(actionLabel) {
+            let tempHist = matchState.history || [];
+            let tempUndone = matchState.undone_history || [];
+            matchState.history = [];
+            matchState.undone_history = [];
             
-            let snap = JSON.stringify(state);
+            let snap = JSON.stringify(matchState);
             
-            state.history = tempHist;
-            state.undone_history = tempUndone;
+            matchState.history = tempHist;
+            matchState.undone_history = tempUndone;
             
-            state.history.push({ stateStr: snap, action: actionLabel });
-            if(state.history.length > 40) state.history.shift();
+            matchState.history.push({ stateStr: snap, action: actionLabel });
+            if(matchState.history.length > 40) matchState.history.shift();
         }
 
-        function undo() {
-            if(state.history && state.history.length > 0) {
-                let last = state.history.pop();
+        function actionUndo() {
+            if(matchState.history && matchState.history.length > 0) {
+                let last = matchState.history.pop();
                 let parsed = JSON.parse(last.stateStr);
                 
-                let currentUndone = state.undone_history || [];
+                let currentUndone = matchState.undone_history || [];
                 currentUndone.unshift(last.action);
                 
-                let currentHist = state.history;
+                let currentHist = matchState.history;
                 
-                state = parsed;
-                state.history = currentHist;
-                state.undone_history = currentUndone;
+                matchState = parsed;
+                matchState.history = currentHist;
+                matchState.undone_history = currentUndone;
                 
-                // Wert im Display anzeigen und als Banner einblenden
                 let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
-                state.input = valToDisplay;
-                state.last_undone_val = valToDisplay;
-                state.error = "";
+                matchState.input = valToDisplay;
+                matchState.last_undone_val = valToDisplay;
+                matchState.error = "";
                 render();
             }
         }
         
-        function clearUndone() {
-            state.undone_history = [];
+        function actionClearUndone() {
+            matchState.undone_history = [];
             render();
         }
 
-        function pad(n) { 
-            state.last_undone_val = ""; 
-            state.input += n; 
+        function actionPad(n) { 
+            matchState.last_undone_val = ""; 
+            matchState.input += n; 
             render(); 
         }
-        function del() { 
-            state.input = state.input.slice(0, -1); 
+        function actionDel() { 
+            matchState.input = matchState.input.slice(0, -1); 
             render(); 
         }
         
-        function throwPts(pts) {
+        function actionThrowPts(pts) {
+            pts = parseInt(pts);
             let label = pts === 0 ? "No Score" : String(pts);
-            saveState(label);
-            state.undone_history = [];
-            state.last_undone_val = ""; 
+            saveMatchState(label);
+            matchState.undone_history = [];
+            matchState.last_undone_val = ""; 
             
-            state.input = "";
-            let active = state.turn === 0 ? 1 : 2;
-            let curr = active === 1 ? state.s1 : state.s2;
+            matchState.input = "";
+            let active = matchState.turn === 0 ? 1 : 2;
+            let curr = parseInt(active === 1 ? matchState.s1 : matchState.s2);
             let rem = curr - pts;
             
             if (rem < 0 || rem === 1) {
-                if(active === 1) { state.d1_leg += 3; state.d1_tot += 3; }
-                else { state.d2_leg += 3; state.d2_tot += 3; }
-                state.turn = state.turn === 0 ? 1 : 0;
+                if(active === 1) { matchState.d1_leg += 3; matchState.d1_tot += 3; }
+                else { matchState.d2_leg += 3; matchState.d2_tot += 3; }
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
             } else if (rem === 0) {
-                state.mode = 'check';
-                state.check_score = pts;
+                matchState.mode = 'check';
+                matchState.check_score = pts;
             } else {
                 if(active === 1) { 
-                    state.s1 = rem; state.pts1 += pts; state.d1_leg += 3; state.d1_tot += 3; 
-                    if(pts === 180) state.e180_1++;
+                    matchState.s1 = rem; matchState.pts1 += pts; matchState.d1_leg += 3; matchState.d1_tot += 3; 
+                    if(pts === 180) matchState.e180_1++;
                 } else { 
-                    state.s2 = rem; state.pts2 += pts; state.d2_leg += 3; state.d2_tot += 3; 
-                    if(pts === 180) state.e180_2++;
+                    matchState.s2 = rem; matchState.pts2 += pts; matchState.d2_leg += 3; matchState.d2_tot += 3; 
+                    if(pts === 180) matchState.e180_2++;
                 }
-                state.turn = state.turn === 0 ? 1 : 0;
+                matchState.turn = matchState.turn === 0 ? 1 : 0;
             }
             render();
         }
         
-        function enter() {
-            if(!state.input) return;
-            let val = parseInt(state.input);
-            if(val <= 180) throwPts(val);
+        function actionEnter() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            if(val <= 180) actionThrowPts(val);
             else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
         }
         
-        function rest() {
-            if(!state.input) return;
-            let val = parseInt(state.input);
-            let curr = state.turn === 0 ? state.s1 : state.s2;
+        function actionRest() {
+            if(!matchState.input) return;
+            let val = parseInt(matchState.input);
+            let curr = parseInt(matchState.turn === 0 ? matchState.s1 : matchState.s2);
             if(val <= curr) {
                 let thrown = curr - val;
-                if(thrown <= 180) throwPts(thrown);
+                if(thrown <= 180) actionThrowPts(thrown);
                 else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
             } else {
                 showError("🚨 Rest kann nicht höher sein als deine Punkte!");
             }
         }
         
-        function check() {
-            let curr = state.turn === 0 ? state.s1 : state.s2;
+        function actionCheck() {
+            let activeP = matchState.turn === 0 ? 1 : 2;
+            let currScore = parseInt(activeP === 1 ? matchState.s1 : matchState.s2);
             let bogies = [169, 168, 166, 165, 163, 162, 159];
-            if(curr <= 170 && !bogies.includes(curr)) {
-                throwPts(curr);
+            
+            if (currScore <= 170 && bogies.indexOf(currScore) === -1) {
+                actionThrowPts(currScore);
             } else {
-                showError("🚨 Bogey-Zahl oder >170! Kann nicht gecheckt werden.");
+                showError("🚨 Fehler: " + currScore + " kann nicht gecheckt werden (Bogey oder >170)!");
             }
         }
 
-        function doCheck(darts) {
-            saveState("Check in " + darts);
-            state.undone_history = [];
-            state.last_undone_val = "";
+        function actionDoCheck(darts) {
+            saveMatchState("Check in " + darts);
+            matchState.undone_history = [];
+            matchState.last_undone_val = "";
             
-            let pts = state.check_score;
-            let active = state.turn === 0 ? 1 : 2;
+            let pts = parseInt(matchState.check_score);
+            let active = matchState.turn === 0 ? 1 : 2;
             if(active === 1) {
-                state.pts1 += pts; state.d1_leg += darts; state.d1_tot += darts; state.l1++; state.s1 = 0;
-                if(pts === 180) state.e180_1++;
+                matchState.pts1 += pts; matchState.d1_leg += darts; matchState.d1_tot += darts; matchState.l1++; matchState.s1 = 0;
+                if(pts === 180) matchState.e180_1++;
             } else {
-                state.pts2 += pts; state.d2_leg += darts; state.d2_tot += darts; state.l2++; state.s2 = 0;
-                if(pts === 180) state.e180_2++;
+                matchState.pts2 += pts; matchState.d2_leg += darts; matchState.d2_tot += darts; matchState.l2++; matchState.s2 = 0;
+                if(pts === 180) matchState.e180_2++;
             }
             
-            if(state.l1 === REQ_WIN || state.l2 === REQ_WIN) {
-                state.mode = 'over';
+            if(matchState.l1 === REQ_WIN || matchState.l2 === REQ_WIN) {
+                matchState.mode = 'over';
             } else {
-                state.s1 = 501; state.s2 = 501;
-                state.d1_leg = 0; state.d2_leg = 0;
-                state.start = state.start === 0 ? 1 : 0;
-                state.turn = state.start;
-                state.mode = 'play';
+                matchState.s1 = 501; matchState.s2 = 501;
+                matchState.d1_leg = 0; matchState.d2_leg = 0;
+                matchState.start = matchState.start === 0 ? 1 : 0;
+                matchState.turn = matchState.start;
+                matchState.mode = 'play';
             }
             render();
         }
 
-        // --- DER MAGISCHE FUNK ZU PYTHON ---
         function sendToStreamlit(payload) {
             if(!navigator.onLine && payload.action === 'save') {
                 alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
@@ -1597,18 +1592,18 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             }
         }
 
-        function saveMatch() {
+        function actionSaveMatch() {
             sendToStreamlit({
                 action: 'save',
-                l1: state.l1, l2: state.l2,
-                e180_1: state.e180_1, e180_2: state.e180_2,
-                avg1: state.d1_tot > 0 ? (state.pts1 / state.d1_tot * 3) : 0,
-                avg2: state.d2_tot > 0 ? (state.pts2 / state.d2_tot * 3) : 0
+                l1: matchState.l1, l2: matchState.l2,
+                e180_1: matchState.e180_1, e180_2: matchState.e180_2,
+                avg1: matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3) : 0,
+                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0
             });
             clearLocal();
         }
 
-        function cancelMatch() {
+        function actionCancelMatch() {
             if(!navigator.onLine) {
                 if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
             }
@@ -1622,7 +1617,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
     </html>
     """
     return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
-
+    
 # ==========================================
 # [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
 # ==========================================
