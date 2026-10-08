@@ -1231,42 +1231,53 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
       <meta charset="utf-8">
       <style>
         body { background: #0e1117; color: white; font-family: sans-serif; margin: 0; padding: 5px; user-select: none; }
-        .row { display: flex; gap: 10px; margin-bottom: 12px; }
+        .row { display: flex; gap: 8px; margin-bottom: 8px; }
         .col { flex: 1; }
-        .box { border: 3px solid #444; background: #1e1e1e; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .box { border: 3px solid #444; background: #1e1e1e; border-radius: 10px; padding: 8px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .box.active { border-color: #4CAF50; background: #2e7d32; }
-        .score { font-size: 5.5em; font-weight: bold; margin: 5px 0; line-height: 1.1; }
-        .display { background: #111; font-size: 2.8em; border-radius: 8px; text-align: center; min-height: 65px; line-height: 65px; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
-        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 70px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; width: 100%; margin-bottom: 8px; }
+        .score { font-size: 4.8em; font-weight: bold; margin: 2px 0; line-height: 1.0; }
+        .display { background: #111; font-size: 2.4em; border-radius: 8px; text-align: center; min-height: 55px; line-height: 55px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px; }
+        button { background: #262730; color: white; border: 1px solid #444; border-radius: 8px; min-height: 60px; font-size: 1.4rem; font-weight: 900; cursor: pointer; transition: 0.1s; width: 100%; margin-bottom: 6px; }
         button:active { opacity: 0.6; transform: scale(0.98); }
         .btn-red { background: #d32f2f !important; border-color: #d32f2f !important; }
-        .btn-green { background: #388e3c !important; border-color: #388e3c !important; color: white !important; }
+        .btn-green { background: #388e3c !important; border-color: #388e3c !important; color: white !important; min-height: 70px !important; font-size: 1.6rem !important; }
         .btn-blue { background: #1976d2 !important; border-color: #1976d2 !important; }
         .btn-undo { background: #ff9800 !important; border-color: #ff9800 !important; }
-        .error { background: #ff4b4b; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: none; font-weight: bold; text-align: center; font-size: 1.2rem;}
-        .head-title { margin: 0; font-size: 1.5rem; }
-        .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
-        .stats { color: #ccc; font-size: 1.2em; }
-        .undo-banner { background: #ff9800; color: #000; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center; font-size: 1.4rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .memory-box { background: #1e1e1e; color: white; padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 1.1rem; border: 2px solid #ff9800; display: none; }
+        .error { background: #ff4b4b; color: white; padding: 8px; border-radius: 8px; margin-bottom: 8px; display: none; font-weight: bold; text-align: center; font-size: 1.1rem;}
+        .head-title { margin: 0; font-size: 1.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .head-sub { margin: 0; color: #ccc; font-size: 1rem; }
+        .stats { color: #ccc; font-size: 1.1em; }
+        .undo-banner { background: #ff9800; color: #000; padding: 6px; border-radius: 8px; margin-bottom: 8px; text-align: center; font-size: 1.2rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .memory-box { background: #1e1e1e; color: white; padding: 8px; border-radius: 8px; margin-top: 4px; text-align: left; font-size: 1rem; border: 2px solid #ff9800; display: none; }
+        .stat-table { width:100%; text-align:center; font-size: 1.3rem; border-collapse: collapse; }
+        .stat-table th { padding-bottom:8px; border-bottom: 1px solid #444; }
+        .stat-table td { padding: 8px 0; }
+        .switch-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 5px 10px; background: #262730; border-radius: 8px; border: 1px solid #444; margin: 0 2px; transition: 0.1s; }
+        .switch-btn:active { transform: scale(0.9); }
       </style>
     </head>
     <body>
         <div id="undo-banner" class="undo-banner">
-           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
+           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.4rem; text-decoration: underline;"></span>
         </div>
 
-        <div class="row">
-          <div class="col" style="flex: 1.2;">
+        <div class="row" style="align-items: center;">
+          <div class="col" style="flex: 1;">
              <div id="p1-box" class="box active">
-                 <h3 id="p1-name" class="head-title">P1</h3>
+                <h3 id="p1-name" class="head-title">P1</h3>
                 <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
                 <div id="p1-score" class="score">501</div>
                 <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
              </div>
           </div>
-          <div class="col" style="flex: 1.2;">
+          
+          <div class="switch-btn" onclick="actionSwitchStart()" title="Anwurf wechseln">
+             <span style="font-size: 1.6rem;">🔄</span>
+             <span style="font-size: 0.7rem; color: #ccc; margin-top: 2px;">Anwurf</span>
+          </div>
+
+          <div class="col" style="flex: 1;">
              <div id="p2-box" class="box">
                 <h3 id="p2-name" class="head-title">P2</h3>
                 <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
@@ -1275,13 +1286,14 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
              </div>
           </div>
         </div>
+        
         <div id="error" class="error"></div>
         
         <div id="area-play" class="row">
            <div class="col" style="flex: 1.1;">
               <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
               <button onclick="actionCheck()" class="btn-blue">🎯 Check</button>
-              <div style="color:gray; text-align:center; margin: 4px 0; font-size:0.9em; font-weight:bold;">Standard</div>
+              <div style="color:gray; text-align:center; margin: 2px 0; font-size:0.85em; font-weight:bold;">Standard</div>
               <button onclick="actionThrowPts(26)">26</button>
               <button onclick="actionThrowPts(41)">41</button>
               <button onclick="actionThrowPts(45)">45</button>
@@ -1291,9 +1303,9 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
            </div>
            
            <div class="col" style="flex: 2.2;">
-              <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <div style="display:flex; gap:6px; margin-bottom:6px;">
                  <div id="display" class="display" style="flex:3;"></div>
-                 <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
+                 <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:55px;">↩️</button>
               </div>
               <div class="grid">
                  <button onclick="actionPad(1)">1</button><button onclick="actionPad(2)">2</button><button onclick="actionPad(3)">3</button>
@@ -1301,16 +1313,16 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                  <button onclick="actionPad(7)">7</button><button onclick="actionPad(8)">8</button><button onclick="actionPad(9)">9</button>
                  <button onclick="actionDel()">⌫</button><button onclick="actionPad(0)">0</button><button onclick="actionRest()">REST</button>
               </div>
-              <button onclick="actionEnter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
+              <button onclick="actionEnter()" class="btn-green">🟢 Geworfen</button>
               
               <div id="memory-box" class="memory-box">
                  💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
-                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
+                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1rem; cursor:pointer; margin-top:-2px;">❌</button>
               </div>
            </div>
            
            <div class="col" style="flex: 1.1;">
-              <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
+              <div style="color:gray; text-align:center; margin-bottom:2px; font-size:0.85em; font-weight:bold;">Highs</div>
               <button onclick="actionThrowPts(100)">100</button>
               <button onclick="actionThrowPts(121)">121</button>
               <button onclick="actionThrowPts(125)">125</button>
@@ -1320,23 +1332,58 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
            </div>
         </div>
         
-        <div id="area-check" style="display:none; text-align:center; padding: 30px;">
-           <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
-           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
-              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
-              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
-              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
-              <button onclick="actionUndo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
+        <div id="area-check" style="display:none; text-align:center; padding: 15px;">
+           <h1 style="color:#ffb74d; margin-bottom:20px; font-size:2.5em;">🎯 Wieviele Darts?</h1>
+           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 10px;">
+              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:90px;">1 Dart</button>
+              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:90px;">2 Darts</button>
+              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:90px;">3 Darts</button>
+              <button onclick="actionUndo()" class="btn-undo" style="min-height:90px;">↩️ Zurück</button>
            </div>
         </div>
         
-        <div id="area-over" style="display:none; text-align:center; padding: 40px;">
-           <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
-           <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
-           <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
-              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
-              <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
-              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+        <div id="area-over" style="display:none; text-align:center; padding: 5px;">
+           <h2 id="winner-text" style="color:#4CAF50; margin-top:0; margin-bottom:10px;">🏆 Match beendet!</h2>
+           
+           <div style="background: #1e1e1e; border-radius: 12px; padding: 10px; margin-bottom: 12px; border: 2px solid #444;">
+               <table class="stat-table">
+                   <tr>
+                       <th style="width:35%;" id="stat-p1-name">P1</th>
+                       <th style="width:30%; color:#aaa; font-size:0.8em;">Statistik</th>
+                       <th style="width:35%;" id="stat-p2-name">P2</th>
+                   </tr>
+                   <tr>
+                       <td style="font-size:1.8em; font-weight:bold; color:#4CAF50;" id="stat-l1">0</td>
+                       <td style="color:#aaa; font-size:0.8em;">Legs</td>
+                       <td style="font-size:1.8em; font-weight:bold; color:#ff4b4b;" id="stat-l2">0</td>
+                   </tr>
+                   <tr>
+                       <td id="stat-avg1" style="font-weight:bold;">0.0</td>
+                       <td style="color:#aaa; font-size:0.8em;">Average</td>
+                       <td id="stat-avg2" style="font-weight:bold;">0.0</td>
+                   </tr>
+                   <tr>
+                       <td id="stat-180-1">0</td>
+                       <td style="color:#aaa; font-size:0.8em;">180er</td>
+                       <td id="stat-180-2">0</td>
+                   </tr>
+                   <tr>
+                       <td id="stat-sl1">0</td>
+                       <td style="color:#aaa; font-size:0.8em;">Short Legs (≤21)</td>
+                       <td id="stat-sl2">0</td>
+                   </tr>
+                   <tr>
+                       <td id="stat-hf1">0</td>
+                       <td style="color:#aaa; font-size:0.8em;">High Finishes</td>
+                       <td id="stat-hf2">0</td>
+                   </tr>
+               </table>
+           </div>
+
+           <div style="display:flex; gap:8px; justify-content:center;">
+              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="flex:2; min-height:60px; font-size:1.2rem; margin:0;">💾 Speichern & Beenden</button>
+              <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:60px; font-size:1.2rem; margin:0;">↩️ Zurück</button>
+              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="flex:1; min-height:60px; font-size:1.2rem; margin:0;">Abbruch</button>
            </div>
         </div>
 
@@ -1353,6 +1400,8 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             d1_leg: 0, d2_leg: 0,
             d1_tot: 0, d2_tot: 0,
             e180_1: 0, e180_2: 0,
+            sl1: 0, sl2: 0,
+            hf1: 0, hf2: 0,
             turn: 0, start: 0,
             mode: 'play',
             input: '', check_score: 0, error: '',
@@ -1415,8 +1464,24 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 document.getElementById('area-play').style.display = 'none';
                 document.getElementById('area-check').style.display = 'none';
                 document.getElementById('area-over').style.display = 'block';
+                
                 let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
                 document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
+                
+                // Abschluss-Statistiken abfüllen
+                document.getElementById('stat-p1-name').innerText = P1_NAME;
+                document.getElementById('stat-p2-name').innerText = P2_NAME;
+                document.getElementById('stat-l1').innerText = matchState.l1;
+                document.getElementById('stat-l2').innerText = matchState.l2;
+                document.getElementById('stat-avg1').innerText = avg1;
+                document.getElementById('stat-avg2').innerText = avg2;
+                document.getElementById('stat-180-1').innerText = matchState.e180_1;
+                document.getElementById('stat-180-2').innerText = matchState.e180_2;
+                document.getElementById('stat-sl1').innerText = matchState.sl1 || 0;
+                document.getElementById('stat-sl2').innerText = matchState.sl2 || 0;
+                document.getElementById('stat-hf1').innerText = matchState.hf1 || 0;
+                document.getElementById('stat-hf2').innerText = matchState.hf2 || 0;
+                
             } else {
                 document.getElementById('area-play').style.display = 'flex';
                 document.getElementById('area-check').style.display = 'none';
@@ -1477,6 +1542,18 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 matchState.error = "";
                 render();
             }
+        }
+        
+        // --- NEU: ANWURF WECHSELN (AUSBULLEN) ---
+        function actionSwitchStart() {
+            if(matchState.s1 !== 501 || matchState.s2 !== 501) {
+                showError("🚨 Anwurf kann nur gewechselt werden, solange noch keine Darts geworfen wurden!");
+                return;
+            }
+            saveMatchState("Anwurf gewechselt");
+            matchState.start = matchState.start === 0 ? 1 : 0;
+            matchState.turn = matchState.start;
+            render();
         }
         
         function actionClearUndone() {
@@ -1568,9 +1645,13 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
             if(active === 1) {
                 matchState.pts1 += pts; matchState.d1_leg += darts; matchState.d1_tot += darts; matchState.l1++; matchState.s1 = 0;
                 if(pts === 180) matchState.e180_1++;
+                if(matchState.d1_leg <= 21) matchState.sl1 = (matchState.sl1 || 0) + 1;
+                if(pts >= 100) matchState.hf1 = (matchState.hf1 || 0) + 1;
             } else {
                 matchState.pts2 += pts; matchState.d2_leg += darts; matchState.d2_tot += darts; matchState.l2++; matchState.s2 = 0;
                 if(pts === 180) matchState.e180_2++;
+                if(matchState.d2_leg <= 21) matchState.sl2 = (matchState.sl2 || 0) + 1;
+                if(pts >= 100) matchState.hf2 = (matchState.hf2 || 0) + 1;
             }
             
             if(matchState.l1 === REQ_WIN || matchState.l2 === REQ_WIN) {
@@ -1635,7 +1716,9 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
                 l1: matchState.l1, l2: matchState.l2,
                 e180_1: matchState.e180_1, e180_2: matchState.e180_2,
                 avg1: matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3) : 0,
-                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0
+                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0,
+                sl1: matchState.sl1 || 0, sl2: matchState.sl2 || 0,
+                hf1: matchState.hf1 || 0, hf2: matchState.hf2 || 0
             });
             clearLocal();
         }
@@ -1754,6 +1837,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                     "winner": winner, "loser": loser,
                     "180_s1": data["e180_1"], "180_s2": data["e180_2"],
                     "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
+                    "sl_s1": data.get("sl1", 0), "sl_s2": data.get("sl2", 0),
+                    "hf_s1": data.get("hf1", 0), "hf_s2": data.get("hf2", 0),
                     "is_live_locked": False,
                     "played": True
                 })
@@ -1779,744 +1864,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
 
     html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
-    components.html(html_content, height=810, scrolling=False)
-    
-# ==========================================
-# [BLOCK_5] Dialoge: Liga & Wettkampf
-# ==========================================
-@st.dialog("📆 Steelers Saison-Kalender", width="large")
-def open_saison_kalender_dialog():
-    import calendar
-    wettkampf_sessions = [s for s in st.session_state.sessions_list if s.get("is_wettkampf")]
-    d_list = []
-    for s in wettkampf_sessions:
-        try: d_list.append(datetime.strptime(s["datum"], "%d.%m.%Y").date())
-        except: pass
-    if not d_list:
-        st.info("Noch keine Liga-Spiele vorhanden. Bitte Spielplan importieren.")
-        if st.button("Schließen"): st.rerun()
-        return
-    min_d, max_d = min(d_list), max(d_list)
-    ics_lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wehringer Steelers//DE"]
-    def add_ics_event(dt, title):
-        ds = dt.strftime("%Y%m%d")
-        ics_lines.extend(["BEGIN:VEVENT", f"DTSTART;VALUE=DATE:{ds}", f"SUMMARY:{title}", "END:VEVENT"])
-    html_blocks = ["<div style='color: white;'>"]
-    html_blocks.append("""<style>
-    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 20px;}
-    .c-head { text-align: center; font-weight: bold; background: #333; padding: 4px; border-radius: 4px; font-size:0.85em;}
-    .c-day { border: 1px solid #444; border-radius: 4px; min-height: 70px; padding: 4px; font-size: 0.8em; background: #1e1e1e;}
-    .c-empty { border: none; background: transparent; }
-    .e-h { background: #2e7d32; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
-    .e-g { background: #d84315; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; font-weight:bold; text-align:center;}
-    .e-t { background: #1976d2; color: #fff; padding: 2px; border-radius: 2px; margin-top: 2px; text-align:center;}
-    </style>""")
-    days_of_week = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    month_names = ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
-    games_by_date = {}
-    games_by_week = set()
-    for s in wettkampf_sessions:
-        try:
-            d = datetime.strptime(s["datum"], "%d.%m.%Y").date()
-            is_h = (s.get("heim_team", "") == "FSV Wehringen")
-            gegner = s.get("gast_team") if is_h else s.get("heim_team")
-            games_by_date[d] = {"heim": is_h, "gegner": gegner}
-            games_by_week.add(d.isocalendar()[:2])
-        except: pass
-    curr_year, curr_month = min_d.year, min_d.month
-    while True:
-        html_blocks.append(f"<h4 style='margin-bottom:10px; margin-top:20px; color:#fff;'>{month_names[curr_month]} {curr_year}</h4><div class='c-grid'>")
-        for dw in days_of_week: html_blocks.append(f"<div class='c-head'>{dw}</div>")
-        for week in calendar.monthcalendar(curr_year, curr_month):
-            for day in week:
-                if day == 0: html_blocks.append("<div class='c-day c-empty'></div>")
-                else:
-                    curr_date = date(curr_year, curr_month, day)
-                    content = f"<div style='color:#aaa; margin-bottom:2px;'>{day}</div>"
-                    if curr_date in games_by_date:
-                        g = games_by_date[curr_date]
-                        if g["heim"]:
-                            content += f"<div class='e-h'>🏠 Heim<br><span style='font-size:0.8em; font-weight:normal;'>vs {g['gegner']}</span></div>"
-                            add_ics_event(curr_date, f"🎯 Heimspiel vs {g['gegner']}")
-                        else:
-                            content += f"<div class='e-g'>🚌 Auswärts<br><span style='font-size:0.8em; font-weight:normal;'>@ {g['gegner']}</span></div>"
-                            add_ics_event(curr_date, f"🎯 Auswärts @ {g['gegner']}")
-                    elif curr_date.weekday() == 1 and curr_date.isocalendar()[:2] not in games_by_week and min_d <= curr_date <= max_d:
-                        content += "<div class='e-t'>🎯 Training</div>"
-                        add_ics_event(curr_date, "🎯 Steelers Teamtraining")
-                    html_blocks.append(f"<div class='c-day'>{content}</div>")
-        html_blocks.append("</div>")
-        if curr_year == max_d.year and curr_month == max_d.month: break
-        curr_month += 1
-        if curr_month > 12: curr_month, curr_year = 1, curr_year + 1
-    html_blocks.append("</div>")
-    ics_lines.append("END:VCALENDAR")
-    st.markdown("".join(html_blocks), unsafe_allow_html=True)
-    st.divider()
-    col_pdf, col_ics = st.columns(2)
-    with col_pdf:
-        try:
-            pdf_bytes = generate_calendar_pdf(wettkampf_sessions, min_d, max_d)
-            st.download_button("📥 Kalender als PDF (A4 Querformat)", data=pdf_bytes, file_name="steelers_saison_kalender.pdf", mime="application/pdf", type="primary", use_container_width=True)
-        except Exception as e: st.error(f"PDF konnte nicht erstellt werden: {e}")
-    with col_ics:
-        st.download_button("📥 Kalender exportieren (.ics)", data="\r\n".join(ics_lines), file_name="steelers_saison.ics", mime="text/calendar", use_container_width=True)
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
-@st.dialog("➕ Neues Freundschaftsspiel starten", width="large")
-def open_new_liga_match_dialog():
-    st.write("Erstelle hier ein neues Freundschaftsspiel.")
-    match_type = st.radio("Modus-Auswahl", ["🏆 Standard Liga-Spiel (4er-Team, 2 Boards)", "⚙️ Freies Spiel auf Liga-Basis (wählbare Teamgröße & Boards)"])
-    c1, c2 = st.columns(2)
-    session_datum = c1.date_input("Datum des Spiels", date.today())
-    heim_team = c2.text_input("Heimmannschaft", value="Wehringer Steelers")
-    gast_team = st.text_input("Gastmannschaft", placeholder="z.B. DC Irgendwas")
-    if "Freies Spiel" in match_type:
-        team_size = st.selectbox("Team-Größe", [6, 8, 10, 12], format_func=lambda x: f"{x}er-Team")
-        b_count = st.selectbox("Anzahl paralleler Boards", [1, 2, 3, 4, 5, 6], index=1)
-    else:
-        team_size = 4
-        b_count = 2
-    st.write("Wähle die Boards aus (von links nach rechts):")
-    board_options = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
-    selected_boards = []
-    cols = st.columns(min(b_count, 4))
-    for i in range(b_count):
-        with cols[i % len(cols)]:
-            default_idx = i if i < len(board_options) else 0
-            b_sel = st.selectbox(f"Board {i+1}", board_options, index=default_idx, key=f"liga_b_sel_{i}")
-            selected_boards.append(b_sel)
-    cb1, cb2 = st.columns(2)
-    with cb1:
-        if st.button("Abbrechen", use_container_width=True): st.rerun()
-    with cb2:
-        if st.button("Spiel erstellen", type="primary", use_container_width=True):
-            max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "L-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
-            new_session = {"id": f"L-{max_id + 1}", "datum": session_datum.strftime("%d.%m.%Y"), "is_liga": True, "team_size": team_size, "boards_count": b_count, "heim_team": heim_team.strip(), "gast_team": gast_team.strip(), "liga_boards": selected_boards, "auf_heim": {}, "auf_gast": {}, "results": {}, "is_locked": False}
-            st.session_state.sessions_list.append(new_session)
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-
-@st.dialog("⚙️ Freundschaftsspiel bearbeiten")
-def open_edit_liga_session_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    
-    try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
-    except: curr_date = date.today()
-    session_datum = st.date_input("Datum", curr_date)
-    heim_team = st.text_input("Heimmannschaft", value=sess.get("heim_team", ""))
-    gast_team = st.text_input("Gastmannschaft", value=sess.get("gast_team", ""))
-    curr_boards = sess.get("liga_boards", ["Kaiser B1", "Board 2"])
-    b_count = sess.get("boards_count", len(curr_boards))
-    board_options = ["Kaiser B1", "Board 2", "Board 3", "Board 4", "Board 5", "Board 6"]
-    new_boards = []
-    cols = st.columns(min(b_count, 4))
-    for i in range(b_count):
-        with cols[i % len(cols)]:
-            curr_val = curr_boards[i] if i < len(curr_boards) else board_options[i]
-            b_sel = st.selectbox(f"Board {i+1}", board_options, index=board_options.index(curr_val) if curr_val in board_options else 0, key=f"edit_liga_b_{session_id}_{i}")
-            new_boards.append(b_sel)
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1:
-        if st.button("Abbrechen", use_container_width=True): st.rerun()
-    with c_btn2:
-        if st.button("Speichern", type="primary", use_container_width=True):
-            sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "heim_team": heim_team.strip(), "gast_team": gast_team.strip(), "liga_boards": new_boards})
-            st.session_state.sessions_list[real_idx] = sess
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-
-@st.dialog("📸 Spielbericht Original", width="large")
-def open_image_dialog(b64_str):
-    st.image(base64.b64decode(b64_str), use_container_width=True)
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
-@st.dialog("♻️ Liga-Notfall-Wiederherstellung", width="large")
-def open_liga_rollback_dialog():
-    st.warning("⚠️ Achtung: Dies stellt NUR gelöschte Liga-Spiele (Wettkämpfe) inkl. Fotos aus der Cloud wieder her. Dein normales Teamtraining bleibt davon komplett unberührt!")
-    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password")
-    if pwd != "1521":
-        if pwd != "": st.error("Nur für Administratoren!")
-        return
-    try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet_obj = client.open_by_url(SHEET_URL)
-        try:
-            backup_ws = spreadsheet_obj.worksheet("backups")
-            all_vals = backup_ws.get_all_values()
-            if len(all_vals) > 1:
-                backups = list(reversed(all_vals[1:]))
-                confirm = st.checkbox("Ja, ich möchte alte Liga-Daten aus der Cloud laden.")
-                for i, b in enumerate(backups[:10]):
-                    ts = b[0]
-                    json_str = b[1]
-                    try:
-                        data_preview = json.loads(json_str)
-                        liga_games = [s for s in data_preview if s.get("is_wettkampf")]
-                        data_info = f"{len(liga_games)} Liga-Spiele gesichert"
-                    except: data_info = "Fehlerhaftes JSON"
-                    c_t, c_b = st.columns([3, 1])
-                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
-                    with c_b:
-                        if st.button("Liga-Daten Laden", key=f"rest_liga_{i}", disabled=not confirm, use_container_width=True):
-                            try:
-                                backup_data = json.loads(json_str)
-                                backup_liga = [s for s in backup_data if s.get("is_wettkampf")]
-                                current_other = [s for s in st.session_state.sessions_list if not s.get("is_wettkampf")]
-                                merged_data = current_other + backup_liga
-                                sichere_sessions = make_serializable(merged_data)
-                                new_json_str = json.dumps(sichere_sessions, ensure_ascii=False)
-                                normal_sessions = [s for s in sichere_sessions if not s.get("is_wettkampf")]
-                                liga_sessions_list = [s for s in sichere_sessions if s.get("is_wettkampf")]
-                                completed_liga_list = [s for s in liga_sessions_list if s.get("is_locked")]
-                                ws_normal = ensure_worksheet(spreadsheet_obj, "sessions")
-                                chunked_save(ws_normal, normal_sessions)
-                                ws_liga = ensure_worksheet(spreadsheet_obj, "liga_sessions")
-                                chunked_save(ws_liga, liga_sessions_list)
-                                ws_completed_liga = ensure_worksheet(spreadsheet_obj, "completed_liga")
-                                chunked_save(ws_completed_liga, completed_liga_list)
-                                st.session_state.sessions_list = merged_data
-                                st.success("✅ Liga-Daten erfolgreich wiederhergestellt!")
-                                st.rerun()
-                            except Exception as e: st.error(f"Fehler: {e}")
-                    st.divider()
-            else: st.info("Noch keine Cloud-Backups vorhanden.")
-        except Exception as e: st.error("Konnte Backup-Tabelle nicht finden.")
-    except Exception as e: st.error(f"Verbindungsfehler zur Google Cloud: {e}")
-
-@st.dialog("🔒 Einzel-Aufstellung (Verdeckt)")
-def open_liga_aufstellung_einzel(session_id, is_heim):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
-    t_size = sess.get("team_size", 4)
-    st.write(f"### Aufstellung: {team_name}")
-    st.info(f"Trage hier die {t_size} Einzelspieler als Text ein.")
-    inputs = []
-    for i in range(t_size): inputs.append(st.text_input(f"Position {i+1}", key=f"auf_{session_id}_{is_heim}_{i}"))
-    if st.button("Speichern", type="primary", use_container_width=True):
-        if all(x.strip() for x in inputs):
-            update_dict = {}
-            for i, val in enumerate(inputs):
-                key = f"h{i+1}" if is_heim else f"g{i+1}"
-                update_dict[key] = val.strip()
-            if is_heim: sess["auf_heim"].update(update_dict)
-            else: sess["auf_gast"].update(update_dict)
-            st.session_state.sessions_list[real_idx] = sess
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-        else: st.error(f"Bitte alle {t_size} Positionen eintragen!")
-
-@st.dialog("🔒 Doppel-Aufstellung (Verdeckt)")
-def open_liga_aufstellung_doppel(session_id, is_heim):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    team_name = sess.get("heim_team") if is_heim else sess.get("gast_team")
-    t_size = sess.get("team_size", 4)
-    num_doubles = t_size // 2
-    st.write(f"### Doppel-Aufstellung: {team_name}")
-    st.markdown("🚨 **Wichtig:** Jeder Spieler darf in den Doppel insgesamt nur **1x** vorkommen (keine Dubletten).")
-    auf_dict = sess.get("auf_heim", {}) if is_heim else sess.get("auf_gast", {})
-    bisherige_spieler = []
-    for k, v in auf_dict.items():
-        if ("h" in k or "g" in k) and not "d" in k:
-            if v and v != "-": bisherige_spieler.append(v)
-    for m_key, m_data in sess.get("results", {}).items():
-        if is_heim:
-            if m_data.get("s1") and m_data.get("s1") not in bisherige_spieler: bisherige_spieler.append(m_data.get("s1"))
-            if m_data.get("s2") and m_data.get("s2") not in bisherige_spieler: bisherige_spieler.append(m_data.get("s2"))
-    bisherige_spieler = list(set(bisherige_spieler))
-    bisherige_spieler.sort()
-    options = bisherige_spieler if bisherige_spieler else ["Bitte zuerst Einzel spielen..."]
-    options_with_custom = options + ["+ Anderen Spieler eingeben..."]
-    doubles_data = []
-    for d_idx in range(num_doubles):
-        st.markdown(f"**Doppel {d_idx+1}**")
-        c1, c2 = st.columns(2)
-        p1_sel = c1.selectbox(f"Spieler 1 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p1_sel_{session_id}_{is_heim}")
-        p1 = c1.text_input(f"Name Spieler 1", key=f"d{d_idx+1}_p1_txt_{session_id}_{is_heim}") if p1_sel == "+ Anderen Spieler eingeben..." else p1_sel
-        p2_sel = c2.selectbox(f"Spieler 2 (Doppel {d_idx+1})", options_with_custom, key=f"d{d_idx+1}_p2_sel_{session_id}_{is_heim}")
-        p2 = c2.text_input(f"Name Spieler 2", key=f"d{d_idx+1}_p2_txt_{session_id}_{is_heim}") if p2_sel == "+ Anderen Spieler eingeben..." else p2_sel
-        doubles_data.append((p1.strip() if p1 else "", p2.strip() if p2 else ""))
-    if st.button("Speichern", type="primary", use_container_width=True):
-        all_selected = []
-        for p1, p2 in doubles_data:
-            if p1: all_selected.append(p1)
-            if p2: all_selected.append(p2)
-        seen, duplicates = set(), set()
-        for player in all_selected:
-            if player in seen: duplicates.add(player)
-            seen.add(player)
-        if any(not x for x in all_selected): st.error("🚨 Bitte alle Spieler für die Doppel ausfüllen!")
-        elif duplicates:
-            dup_names = ", ".join([f"'{d}'" for d in duplicates])
-            st.error(f"🚨 Fehler: Der Spieler {dup_names} steht in mehreren Feldern! Jeder Spieler darf nur 1x in den Doppel aufgestellt werden.")
-        else:
-            update_dict = {}
-            for d_idx, (p1, p2) in enumerate(doubles_data):
-                key = f"hd{d_idx+1}" if is_heim else f"gd{d_idx+1}"
-                update_dict[key] = format_doppel(p1, p2)
-            if is_heim: sess["auf_heim"].update(update_dict)
-            else: sess["auf_gast"].update(update_dict)
-            st.session_state.sessions_list[real_idx] = sess
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-
-@st.dialog("🔄 Spieler auswechseln")
-def open_liga_sub_dialog(session_id, p_key, is_heim, curr_name):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    st.write(f"Auswechslung für **{curr_name}**")
-    new_name = st.text_input("Name des Ersatzspielers:")
-    if st.button("Auswechslung Speichern", type="primary", use_container_width=True):
-        if new_name.strip():
-            if is_heim: sess["auf_heim"][p_key] = new_name.strip()
-            else: sess["auf_gast"][p_key] = new_name.strip()
-            st.session_state.sessions_list[real_idx] = sess
-            smart_sync_and_save(st.session_state.sessions_list)
-        st.rerun()
-
-@st.dialog("🎯 Live Board (Freundschaftsspiel)")
-def open_liga_live_board_dialog(session_id, m_key, board_name, m_label, p1, p2, is_right_board=False):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    res = sess.setdefault("results", {})
-    m_data = res.get(m_key, {})
-    st.write(f"### {board_name} — {m_label}")
-    st.caption("Best of 5 (Wer zuerst 3 Legs hat, gewinnt).")
-    if is_right_board:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"**Gast (Anwurf links):** `{p1}`")
-            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"lg_{session_id}_{m_key}")
-            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"180g_{session_id}_{m_key}")
-        with c2:
-            st.markdown(f"**Heim:** `{p2}`")
-            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"lh_{session_id}_{m_key}")
-            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"180h_{session_id}_{m_key}")
-    else:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"**Heim (Anwurf links):** `{p1}`")
-            lh = st.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"lh_{session_id}_{m_key}")
-            e180_h = st.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"180h_{session_id}_{m_key}")
-        with c2:
-            st.markdown(f"**Gast:** `{p2}`")
-            lg = st.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"lg_{session_id}_{m_key}")
-            e180_g = st.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"180g_{session_id}_{m_key}")
-    is_valid = (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
-    if not is_valid: st.error("🚨 Best of 5: Ein Spieler muss exakt 3 Legs zum Sieg haben!")
-    cb1, cb2 = st.columns(2)
-    with cb1:
-        if st.button("Speichern", type="primary", use_container_width=True, disabled=not is_valid):
-            res[m_key] = {"lh": lh, "lg": lg, "played": True, "180_h": e180_h, "180_g": e180_g}
-            sess["results"] = res
-            st.session_state.sessions_list[real_idx] = sess
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-    with cb2:
-        if st.button("Abbrechen", use_container_width=True): st.rerun()
-
-@st.dialog("📝 Offizieller Spielbericht (Korrektur)", width="large")
-def open_liga_bericht_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
-    res = sess.setdefault("results", {})
-    match_map = [match for round in get_liga_config(sess) for match in round]
-    st.write("Hier kannst du bei Bedarf alle Ergebnisse des Spielberichts manuell korrigieren.")
-    all_valid = True
-    for m_key, label, h_key, g_key in match_map:
-        m_data = res.get(m_key, {})
-        is_played = m_data.get("played", False)
-        val_h = m_data.get("s1", "")
-        p_heim = val_h if is_played and val_h and val_h.strip() not in ["", "-"] else auf_h.get(h_key, "-")
-        if not p_heim: p_heim = "-"
-        val_g = m_data.get("s2", "")
-        p_gast = val_g if is_played and val_g and val_g.strip() not in ["", "-"] else auf_g.get(g_key, "-")
-        if not p_gast: p_gast = "-"
-        
-        with st.expander(f"{label}: {p_heim} vs {p_gast}", expanded=False):
-            c_lh, c_vs, c_lg = st.columns([2, 1, 2])
-            lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"blh_{session_id}_{m_key}")
-            c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
-            lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"blg_{session_id}_{m_key}")
-            is_match_valid = (lh == 0 and lg == 0) or (lh == 3 and lg < 3) or (lg == 3 and lh < 3)
-            if not is_match_valid:
-                st.error(f"🚨 Ungültig! Best of 5 erfordert exakt 3 Legs für den Sieger.")
-                all_valid = False
-            res[m_key] = {"s1": p_heim, "s2": p_gast, "lh": lh, "lg": lg, "played": True if (lh>0 or lg>0) else False, "180_h": m_data.get("180_h", 0), "180_g": m_data.get("180_g", 0)}
-    st.divider()
-    is_locked = sess.get("is_locked", False)
-    if not is_locked: lock_spiel = st.checkbox("🔒 Spiel endgültig abschließen & ins Archiv verschieben", value=False)
-    else:
-        lock_spiel = True
-        st.info("Dieses Spiel ist bereits offiziell abgeschlossen.")
-    if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True, disabled=not all_valid):
-        sess["is_locked"] = lock_spiel
-        sess["results"] = res
-        st.session_state.sessions_list[real_idx] = sess
-        smart_sync_and_save(st.session_state.sessions_list)
-        st.rerun()
-
-@st.dialog("🏆 Neuen Liga-Spieltag manuell erfassen", width="large")
-def open_new_wettkampf_dialog():
-    c1, c2 = st.columns(2)
-    session_datum = c1.date_input("Datum des Spieltags", date.today(), key="wk_datum")
-    is_heimspiel = c2.checkbox("🏠 Heimspiel (FSV Wehringen ist Team 1)", value=True)
-    gegner = st.text_input("Gegnerische Mannschaft", placeholder="z.B. DC Irgendwas")
-    cb1, cb2 = st.columns(2)
-    with cb1:
-        if st.button("Abbrechen", use_container_width=True, key="wk_cancel"): st.rerun()
-    with cb2:
-        if st.button("Spieltag anlegen", type="primary", use_container_width=True, key="wk_save"):
-            if not gegner.strip(): st.error("Bitte Gegner eintragen!")
-            else:
-                max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "W-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
-                heim_team = "FSV Wehringen" if is_heimspiel else gegner.strip()
-                gast_team = gegner.strip() if is_heimspiel else "FSV Wehringen"
-                new_session = {"id": f"W-{max_id + 1}", "datum": session_datum.strftime("%d.%m.%Y"), "is_wettkampf": True, "heim_team": heim_team, "gast_team": gast_team, "is_heimspiel": is_heimspiel, "auf_heim": {}, "auf_gast": {}, "results": {}, "is_locked": False}
-                st.session_state.sessions_list.append(new_session)
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
-
-@st.dialog("⚡ Blitz-Erfassung: Liga-Spielbericht", width="large")
-def open_wettkampf_blitz_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    real_idx = st.session_state.sessions_list.index(sess)
-    
-    st.write("### 📸 Abtipp-Hilfe & Beleg-Upload")
-    st.info("Lade ein Foto hoch. Es wird komprimiert dauerhaft als Beleg gespeichert und dient dir jetzt als Abtipp-Hilfe.")
-    uploaded_file = st.file_uploader("Foto wählen", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-    if uploaded_file is not None:
-        st.image(uploaded_file, use_container_width=True)
-        try:
-            img = Image.open(uploaded_file)
-            img.thumbnail((800, 800))
-            buffer = io.BytesIO()
-            img.save(buffer, format="JPEG", quality=60)
-            sess["image_b64"] = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        except Exception as e: st.error(f"Bild konnte nicht komprimiert werden: {e}")
-    elif sess.get("image_b64"):
-        st.success("✅ Ein Spielbericht liegt bereits als Foto im Archiv.")
-        
-    if sess.get("image_b64"):
-        with st.expander("🪄 KI-Zauberstab: Automatische Erkennung (Google Gemini)", expanded=False):
-            st.write("Lass die Künstliche Intelligenz die Handschrift entziffern und alle Felder unten automatisch vorbefüllen!")
-            api_key = st.text_input("Dein Google Gemini API-Key", type="password", help="Der Key wird nicht gespeichert und nur für diesen Scan verwendet.")
-            if st.button("🤖 Bild scannen & Daten eintragen", disabled=not api_key, use_container_width=True):
-                with st.spinner("Die KI studiert die Handschrift... Das dauert ca. 10 bis 20 Sekunden..."):
-                    import urllib.request
-                    import json
-                    api_key_clean = api_key.strip()
-                    prompt_text = "Du bist ein Assistent, der handgeschriebene Dart-Spielberichte liest. Gib EXAKT dieses JSON-Format zurück, ohne Markdown-Codeblöcke: {\"auf_heim\": {\"h1\": \"\", \"h2\": \"\", \"h3\": \"\", \"h4\": \"\", \"hd1\": \"Name & Name\", \"hd2\": \"Name & Name\"}, \"auf_gast\": {\"g1\": \"\", \"g2\": \"\", \"g3\": \"\", \"g4\": \"\", \"gd1\": \"Name & Name\", \"gd2\": \"Name & Name\"}, \"matches\": {\"m1\": {\"lh\": 0, \"lg\": 0, \"180_h\": 0, \"180_g\": 0, \"sl_h\": 0, \"sl_g\": 0, \"hf_h\": 0, \"hf_g\": 0}, \"m2\": {... bis m10}}}\nRegeln: m1-m4=Einzel. m5-m8=Kreuz-Einzel. m9=Doppel1. m10=Doppel2. lh=Legs Heim, lg=Legs Gast. Highlights als Zahlen (0 wenn leer oder strich). Wenn ab den Kreuz-Einzeln nur noch Vornamen stehen, ergänze diese durch logisches Denken mit dem Nachnamen aus Block 1."
-                    
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key_clean}"
-                    payload = {
-                        "contents": [
-                            {
-                                "parts": [
-                                    {"text": prompt_text},
-                                    {
-                                        "inline_data": {
-                                            "mime_type": "image/jpeg",
-                                            "data": sess['image_b64']
-                                        }
-                                    }
-                                ]
-                            }
-                        ],
-                        "generationConfig": {
-                            "temperature": 0.1
-                        }
-                    }
-                    
-                    req = urllib.request.Request(
-                        url,
-                        data=json.dumps(payload).encode('utf-8'),
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
-                    )
-                    
-                    try:
-                        response = urllib.request.urlopen(req, timeout=45)
-                        result = json.loads(response.read().decode('utf-8'))
-                        result_json_str = result['candidates'][0]['content']['parts'][0]['text'].strip()
-                        
-                        b_ticks = chr(96) * 3
-                        if result_json_str.startswith(b_ticks + "json"):
-                            result_json_str = result_json_str[7:-3].strip()
-                        elif result_json_str.startswith(b_ticks):
-                            result_json_str = result_json_str[3:-3].strip()
-                            
-                        ki_data = json.loads(result_json_str)
-                        
-                        if "auf_heim" in ki_data: sess.setdefault("auf_heim", {}).update(ki_data["auf_heim"])
-                        if "auf_gast" in ki_data: sess.setdefault("auf_gast", {}).update(ki_data["auf_gast"])
-                        
-                        if "matches" in ki_data:
-                            res = sess.setdefault("results", {})
-                            for m_k, m_v in ki_data["matches"].items():
-                                res[m_k] = {**res.get(m_k, {}), **m_v}
-                                if res[m_k].get("lh", 0) > 0 or res[m_k].get("lg", 0) > 0:
-                                    res[m_k]["played"] = True
-                        
-                        st.session_state.sessions_list[real_idx] = sess
-                        smart_sync_and_save(st.session_state.sessions_list)
-                        st.success("✅ Erfolgreich eingelesen! Bitte prüfe die Vorbefüllung unten auf Fehler.")
-                        st.rerun()
-                    except Exception as e:
-                        err_details = ""
-                        if hasattr(e, 'read'):
-                            err_details = e.read().decode('utf-8')
-                        st.error(f"KI-Fehler: {e} | Details von Google: {err_details}")
-
-    st.divider()
-    
-    st.write("### 🎯 Aufstellung & Ergebnisse eintragen")
-    auf_h, auf_g = sess.get("auf_heim", {}), sess.get("auf_gast", {})
-    res = sess.setdefault("results", {})
-    is_heimspiel = sess.get("is_heimspiel", True)
-    kader_list = ["-"] + sorted(kader)
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"**Heim:** {sess['heim_team']}")
-        for i in range(1, 5): 
-            val = auf_h.get(f"h{i}", "")
-            if is_heimspiel:
-                idx = kader_list.index(val) if val in kader_list else 0
-                auf_h[f"h{i}"] = st.selectbox(f"Heim Pos {i}", kader_list, index=idx, key=f"wk_h{i}_{sess['id']}")
-            else:
-                auf_h[f"h{i}"] = st.text_input(f"Heim Pos {i}", val, key=f"wk_h{i}_{sess['id']}")
-                
-        st.markdown("**Heim Doppel 1**")
-        hd1_p1_val, hd1_p2_val = parse_doppel(auf_h.get("hd1", ""))
-        c_hd1a, c_hd1b = st.columns(2)
-        if is_heimspiel:
-            hd1_p1 = c_hd1a.selectbox("Spieler 1", kader_list, index=kader_list.index(hd1_p1_val) if hd1_p1_val in kader_list else 0, key=f"wk_hd1a_{sess['id']}")
-            hd1_p2 = c_hd1b.selectbox("Spieler 2", kader_list, index=kader_list.index(hd1_p2_val) if hd1_p2_val in kader_list else 0, key=f"wk_hd1b_{sess['id']}")
-        else:
-            hd1_p1 = c_hd1a.text_input("Spieler 1", hd1_p1_val, key=f"wk_hd1a_{sess['id']}")
-            hd1_p2 = c_hd1b.text_input("Spieler 2", hd1_p2_val, key=f"wk_hd1b_{sess['id']}")
-        auf_h["hd1"] = format_doppel(hd1_p1, hd1_p2)
-
-        st.markdown("**Heim Doppel 2**")
-        hd2_p1_val, hd2_p2_val = parse_doppel(auf_h.get("hd2", ""))
-        c_hd2a, c_hd2b = st.columns(2)
-        if is_heimspiel:
-            hd2_p1 = c_hd2a.selectbox("Spieler 1", kader_list, index=kader_list.index(hd2_p1_val) if hd2_p1_val in kader_list else 0, key=f"wk_hd2a_{sess['id']}")
-            hd2_p2 = c_hd2b.selectbox("Spieler 2", kader_list, index=kader_list.index(hd2_p2_val) if hd2_p2_val in kader_list else 0, key=f"wk_hd2b_{sess['id']}")
-        else:
-            hd2_p1 = c_hd2a.text_input("Spieler 1", hd2_p1_val, key=f"wk_hd2a_{sess['id']}")
-            hd2_p2 = c_hd2b.text_input("Spieler 2", hd2_p2_val, key=f"wk_hd2b_{sess['id']}")
-        auf_h["hd2"] = format_doppel(hd2_p1, hd2_p2)
-
-    with c2:
-        st.markdown(f"**Gast:** {sess['gast_team']}")
-        for i in range(1, 5): 
-            val = auf_g.get(f"g{i}", "")
-            if not is_heimspiel:
-                idx = kader_list.index(val) if val in kader_list else 0
-                auf_g[f"g{i}"] = st.selectbox(f"Gast Pos {i}", kader_list, index=idx, key=f"wk_g{i}_{sess['id']}")
-            else:
-                auf_g[f"g{i}"] = st.text_input(f"Gast Pos {i}", val, key=f"wk_g{i}_{sess['id']}")
-                
-        st.markdown("**Gast Doppel 1**")
-        gd1_p1_val, gd1_p2_val = parse_doppel(auf_g.get("gd1", ""))
-        c_gd1a, c_gd1b = st.columns(2)
-        if not is_heimspiel:
-            gd1_p1 = c_gd1a.selectbox("Spieler 1", kader_list, index=kader_list.index(gd1_p1_val) if gd1_p1_val in kader_list else 0, key=f"wk_gd1a_{sess['id']}")
-            gd1_p2 = c_gd1b.selectbox("Spieler 2", kader_list, index=kader_list.index(gd1_p2_val) if gd1_p2_val in kader_list else 0, key=f"wk_gd1b_{sess['id']}")
-        else:
-            gd1_p1 = c_gd1a.text_input("Spieler 1", gd1_p1_val, key=f"wk_gd1a_{sess['id']}")
-            gd1_p2 = c_gd1b.text_input("Spieler 2", gd1_p2_val, key=f"wk_gd1b_{sess['id']}")
-        auf_g["gd1"] = format_doppel(gd1_p1, gd1_p2)
-
-        st.markdown("**Gast Doppel 2**")
-        gd2_p1_val, gd2_p2_val = parse_doppel(auf_g.get("gd2", ""))
-        c_gd2a, c_gd2b = st.columns(2)
-        if not is_heimspiel:
-            gd2_p1 = c_gd2a.selectbox("Spieler 1", kader_list, index=kader_list.index(gd2_p1_val) if gd2_p1_val in kader_list else 0, key=f"wk_gd2a_{sess['id']}")
-            gd2_p2 = c_gd2b.selectbox("Spieler 2", kader_list, index=kader_list.index(gd2_p2_val) if gd2_p2_val in kader_list else 0, key=f"wk_gd2b_{sess['id']}")
-        else:
-            gd2_p1 = c_gd2a.text_input("Spieler 1", gd2_p1_val, key=f"wk_gd2a_{sess['id']}")
-            gd2_p2 = c_gd2b.text_input("Spieler 2", gd2_p2_val, key=f"wk_gd2b_{sess['id']}")
-        auf_g["gd2"] = format_doppel(gd2_p1, gd2_p2)
-
-    st.divider()
-    st.write("### ⚔️ Match-Ergebnisse & Auswechslungen")
-    st.caption("Standardmäßig werden die Spieler aus der Aufstellung übernommen. Aktiviere '🔄 Auswechseln', um einen Spieler zu ersetzen!")
-    match_plan = [("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"),("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"),("m5", "Kreuz 1", "h1", "g2"), ("m6", "Kreuz 2", "h2", "g1"),("m7", "Kreuz 3", "h3", "g4"), ("m8", "Kreuz 4", "h4", "g3"),("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")]
-    all_valid = True
-    
-    for m_key, label, h_key, g_key in match_plan:
-        m_data = res.get(m_key, {})
-        is_played = m_data.get("played", False)
-        
-        val_h = m_data.get("s1", "")
-        def_h = val_h if is_played and val_h and val_h.strip() not in ["", "-"] else auf_h.get(h_key, "-")
-        if not def_h: def_h = "-"
-        
-        val_g = m_data.get("s2", "")
-        def_g = val_g if is_played and val_g and val_g.strip() not in ["", "-"] else auf_g.get(g_key, "-")
-        if not def_g: def_g = "-"
-        
-        with st.expander(f"{label}: {def_h} vs {def_g}", expanded=False):
-            is_doppel = "Doppel" in label
-            c_name1, c_name2 = st.columns(2)
-            
-            with c_name1:
-                if st.checkbox(f"🔄 Auswechseln (Heim)", key=f"sub_h_check_{m_key}_{sess['id']}"):
-                    if is_heimspiel:
-                        if is_doppel:
-                            p_a, p_b = parse_doppel(def_h)
-                            s1_a = st.selectbox("Heim Spieler 1", kader_list, index=kader_list.index(p_a) if p_a in kader_list else 0, key=f"s1a_{m_key}_{sess['id']}")
-                            s1_b = st.selectbox("Heim Spieler 2", kader_list, index=kader_list.index(p_b) if p_b in kader_list else 0, key=f"s1b_{m_key}_{sess['id']}")
-                            s1 = f"{s1_a} & {s1_b}"
-                        else:
-                            s1 = st.selectbox("Heim Spieler", kader_list, index=kader_list.index(def_h) if def_h in kader_list else 0, key=f"s1_{m_key}_{sess['id']}")
-                    else:
-                        if is_doppel:
-                            p_a, p_b = parse_doppel(def_h)
-                            s1_a = st.text_input("Heim Spieler 1", p_a, key=f"s1a_{m_key}_{sess['id']}")
-                            s1_b = st.text_input("Heim Spieler 2", p_b, key=f"s1b_{m_key}_{sess['id']}")
-                            s1 = f"{s1_a} & {s1_b}"
-                        else:
-                            s1 = st.text_input("Heim Spieler", def_h, key=f"s1_{m_key}_{sess['id']}")
-                else:
-                    st.markdown(f"**Heim:** {def_h}")
-                    s1 = def_h
-
-            with c_name2:
-                if st.checkbox(f"🔄 Auswechseln (Gast)", key=f"sub_g_check_{m_key}_{sess['id']}"):
-                    if not is_heimspiel:
-                        if is_doppel:
-                            p_a, p_b = parse_doppel(def_g)
-                            s2_a = st.selectbox("Gast Spieler 1", kader_list, index=kader_list.index(p_a) if p_a in kader_list else 0, key=f"s2a_{m_key}_{sess['id']}")
-                            s2_b = st.selectbox("Gast Spieler 2", kader_list, index=kader_list.index(p_b) if p_b in kader_list else 0, key=f"s2b_{m_key}_{sess['id']}")
-                            s2 = f"{s2_a} & {s2_b}"
-                        else:
-                            s2 = st.selectbox("Gast Spieler", kader_list, index=kader_list.index(def_g) if def_g in kader_list else 0, key=f"s2_{m_key}_{sess['id']}")
-                    else:
-                        if is_doppel:
-                            p_a, p_b = parse_doppel(def_g)
-                            s2_a = st.text_input("Gast Spieler 1", p_a, key=f"s2a_{m_key}_{sess['id']}")
-                            s2_b = st.text_input("Gast Spieler 2", p_b, key=f"s2b_{m_key}_{sess['id']}")
-                            s2 = f"{s2_a} & {s2_b}"
-                        else:
-                            s2 = st.text_input("Gast Spieler", def_g, key=f"s2_{m_key}_{sess['id']}")
-                else:
-                    st.markdown(f"**Gast:** {def_g}")
-                    s2 = def_g
-                    
-            st.write("")
-            c_lh, c_vs, c_lg = st.columns([2, 1, 2])
-            lh = c_lh.number_input("Legs Heim", 0, 3, m_data.get("lh", 0), key=f"wk_lh_{m_key}_{sess['id']}")
-            c_vs.markdown("<div style='text-align: center; padding-top: 30px;'>:</div>", unsafe_allow_html=True)
-            lg = c_lg.number_input("Legs Gast", 0, 3, m_data.get("lg", 0), key=f"wk_lg_{m_key}_{sess['id']}")
-            c_stats1, c_stats2 = st.columns(2)
-            
-            ind_180_dict = m_data.get("ind_180_h", {})
-            if is_heimspiel and is_doppel:
-                p_a, p_b = parse_doppel(s1)
-                h180_a = c_stats1.number_input(f"180er ({p_a})", 0, 10, ind_180_dict.get(p_a, 0), key=f"180ha_{m_key}_{sess['id']}")
-                h180_b = c_stats1.number_input(f"180er ({p_b})", 0, 10, ind_180_dict.get(p_b, 0), key=f"180hb_{m_key}_{sess['id']}")
-                h180 = h180_a + h180_b
-                ind_180_h = {p_a: h180_a, p_b: h180_b}
-            else:
-                h180 = c_stats1.number_input("180er Heim", 0, 10, m_data.get("180_h", 0), key=f"wk_180h_{m_key}_{sess['id']}")
-                ind_180_h = {s1: h180}
-                
-            h_hf = c_stats1.number_input("High Finish Heim (>99)", 0, 170, m_data.get("hf_h", 0), key=f"wk_hfh_{m_key}_{sess['id']}")
-            h_sl = c_stats1.number_input("Short Leg Heim (<=21)", 0, 21, m_data.get("sl_h", 0), key=f"wk_slh_{m_key}_{sess['id']}")
-            
-            ind_180_dict_g = m_data.get("ind_180_g", {})
-            if not is_heimspiel and is_doppel:
-                p_a, p_b = parse_doppel(s2)
-                g180_a = c_stats2.number_input(f"180er ({p_a})", 0, 10, ind_180_dict_g.get(p_a, 0), key=f"180ga_{m_key}_{sess['id']}")
-                g180_b = c_stats2.number_input(f"180er ({p_b})", 0, 10, ind_180_dict_g.get(p_b, 0), key=f"180gb_{m_key}_{sess['id']}")
-                g180 = g180_a + g180_b
-                ind_180_g = {p_a: g180_a, p_b: g180_b}
-            else:
-                g180 = c_stats2.number_input("180er Gast", 0, 10, m_data.get("180_g", 0), key=f"wk_180g_{m_key}_{sess['id']}")
-                ind_180_g = {s2: g180}
-                
-            g_hf = c_stats2.number_input("High Finish Gast (>99)", 0, 170, m_data.get("hf_g", 0), key=f"wk_hfg_{m_key}_{sess['id']}")
-            g_sl = c_stats2.number_input("Short Leg Gast (<=21)", 0, 21, m_data.get("sl_g", 0), key=f"wk_slg_{m_key}_{sess['id']}")
-            is_played = (lh > 0 or lg > 0)
-            if is_played and not ((lh == 3 and lg < 3) or (lg == 3 and lh < 3)):
-                st.error("🚨 Best of 5: Ein Spieler muss exakt 3 Legs haben!")
-                all_valid = False
-            res[m_key] = {"s1": s1, "s2": s2, "lh": lh, "lg": lg, "played": is_played, "180_h": h180, "180_g": g180, "ind_180_h": ind_180_h, "ind_180_g": ind_180_g, "hf_h": h_hf, "hf_g": g_hf, "sl_h": h_sl, "sl_g": g_sl}
-    st.divider()
-    is_locked = sess.get("is_locked", False)
-    lock_spiel = st.checkbox("🔒 Spieltag abschließen (Wertung endgültig speichern)", value=is_locked, key=f"wk_lock_{sess['id']}")
-    if st.button("💾 Speichern & Schließen", type="primary", use_container_width=True, disabled=not all_valid):
-        sess["auf_heim"] = auf_h
-        sess["auf_gast"] = auf_g
-        sess["is_locked"] = lock_spiel
-        sess["results"] = res
-        st.session_state.sessions_list[real_idx] = sess
-        smart_sync_and_save(st.session_state.sessions_list)
-        st.rerun()
-
-@st.dialog("📊 Liga-Spielbericht", width="large")
-def open_wettkampf_view_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    st.write(f"### {sess.get('heim_team')} vs. {sess.get('gast_team')}")
-    st.caption(f"Datum: {sess.get('datum')} | Status: Abgeschlossen")
-    res = sess.get("results", {})
-    sets_h, sets_g, legs_h, legs_g = 0, 0, 0, 0
-    for m_data in res.values():
-        if m_data.get("played"):
-            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-            legs_h += lh; legs_g += lg
-            if lh > lg: sets_h += 1
-            elif lg > lh: sets_g += 1
-    st.markdown(f"#### Endstand: {sets_h} : {sets_g} Sets ({legs_h} : {legs_g} Legs)")
-    st.divider()
-    match_plan = [("m1", "Einzel 1", "h1", "g1"), ("m2", "Einzel 2", "h2", "g2"), ("m3", "Einzel 3", "h3", "g3"), ("m4", "Einzel 4", "h4", "g4"), ("m5", "Kreuz 1", "h1", "g2"), ("m6", "Kreuz 2", "h2", "g1"), ("m7", "Kreuz 3", "h3", "g4"), ("m8", "Kreuz 4", "h4", "g3"), ("m9", "Doppel 1", "hd1", "gd1"), ("m10", "Doppel 2", "hd2", "gd2")]
-    for m_key, label, h_key, g_key in match_plan:
-        m_data = res.get(m_key, {})
-        if m_data.get("played"):
-            s1, s2 = m_data.get("s1", "-"), m_data.get("s2", "-")
-            lh, lg = m_data.get("lh", 0), m_data.get("lg", 0)
-            hl_h = []
-            if m_data.get("180_h", 0) > 0: hl_h.append(f"{m_data['180_h']}x 180")
-            if m_data.get("hf_h", 0) >= 100: hl_h.append(f"HF {m_data['hf_h']}")
-            if m_data.get("sl_h", 0) > 0 and m_data.get("sl_h", 0) <= 21: hl_h.append(f"SL {m_data['sl_h']}")
-            hl_g = []
-            if m_data.get("180_g", 0) > 0: hl_g.append(f"{m_data['180_g']}x 180")
-            if m_data.get("hf_g", 0) >= 100: hl_g.append(f"HF {m_data['hf_g']}")
-            if m_data.get("sl_g", 0) > 0 and m_data.get("sl_g", 0) <= 21: hl_g.append(f"SL {m_data['sl_g']}")
-            h_str = f"*{', '.join(hl_h)}*" if hl_h else ""
-            g_str = f"*{', '.join(hl_g)}*" if hl_g else ""
-            ind_180_h = m_data.get("ind_180_h", {})
-            if ind_180_h and "Doppel" in label:
-                ind_h_str = [f"{p}: {v}x 180" for p, v in ind_180_h.items() if v > 0]
-                if ind_h_str: h_str += f" ({', '.join(ind_h_str)})"
-            ind_180_g = m_data.get("ind_180_g", {})
-            if ind_180_g and "Doppel" in label:
-                ind_g_str = [f"{p}: {v}x 180" for p, v in ind_180_g.items() if v > 0]
-                if ind_g_str: g_str += f" ({', '.join(ind_g_str)})"
-            st.markdown(f"**{label}**: {s1} **{lh} : {lg}** {s2}")
-            if h_str or g_str: st.caption(f"Highlights: Heim [{h_str}] | Gast [{g_str}]")
-            st.write("")
-    if st.button("Schließen", use_container_width=True): st.rerun()
+    # Höhe leicht reduziert für perfektes "Einseitig"-Gefühl ohne Scrollen
+    components.html(html_content, height=750, scrolling=False)
                 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
