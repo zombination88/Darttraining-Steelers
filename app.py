@@ -1211,10 +1211,11 @@ def open_session_summary_dialog(session_id):
 # ==========================================
 @st.dialog("🎯 Live Scoring Board", width="large")
 def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
-    ls_key = f"ls_{session_id}_{board_name}_{round_num}"
+    # NEU: Der Name überschneidet sich nicht mehr mit dem Button-Namen!
+    ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
     
     # 1. Status der laufenden Partie initialisieren
-    if ls_key not in st.session_state:
+    if ls_key not in st.session_state or not isinstance(st.session_state[ls_key], dict):
         st.session_state[ls_key] = {
             "p1": p1, "p2": p2,
             "l1": 0, "l2": 0,
@@ -1233,7 +1234,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     
     st_ls = st.session_state[ls_key]
     
-    # --- NEU: SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
+    # --- SICHERHEITS-FUNKTION FÜR DEN AVERAGE ---
     def get_safe_avg(pts, darts):
         try:
             pts_val = float(pts)
