@@ -849,53 +849,84 @@ def open_new_session_dialog():
                 smart_sync_and_save(st.session_state.sessions_list)
                 st.rerun()
 
-@st.dialog("⚙️ Session bearbeiten")
+@st.dialog("⚙️ Session bearbeiten", width="large")
 def open_edit_session_dialog(session_id):
     sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
     if not sess: return
     real_idx = st.session_state.sessions_list.index(sess)
+    
+    res = sess.get("results", {})
+    gespielte_matches = {k: v for k, v in res.items() if v.get("winner")}
+    
     try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
     except: curr_date = date.today()
+    
+    st.write("### Basis-Daten")
     session_datum = st.date_input("Datum", curr_date)
     c1, c2 = st.columns(2)
     edit_start_time = c1.text_input("Startzeit (HH:MM)", value=sess.get("start_time") or "")
     edit_end_time = c2.text_input("Endzeit (HH:MM)", value=sess.get("end_time") or "")
-    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], index=["Best of 5", "Best of 3"].index(sess.get("modus_leg", "Best of 5")))
-    modi_list = ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"]
-    curr_modus = sess.get("modus", "Up & Down")
-    if curr_modus not in modi_list: modi_list.append(curr_modus)
-    spielmodus = st.selectbox("Spielmodus", modi_list, index=modi_list.index(curr_modus))
-    if spielmodus == "Standard-Training (Einzel + Coop)":
-        curr_total, curr_singles = sess.get("total_rounds", 6), sess.get("singles_rounds", 4)
-        singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1)
-        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=(curr_total - curr_singles)-1)
-        total_rounds = singles_rounds + coop_rounds
-    elif spielmodus == "Koop 2vs2 (Up & Down)":
-        singles_rounds, total_rounds = 0, st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=sess.get("total_rounds", 2)-1)
-    else:
-        singles_rounds, total_rounds = 0, st.selectbox("Anzahl Runden", list(range(1, 11)), index=sess.get("total_rounds", 4)-1)
-    board_opts = ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"]
-    curr_b = sess.get("boards", "4 Boards")
-    if curr_b not in board_opts: board_opts.append(curr_b)
-    anzahl_boards = st.selectbox("Anzahl der Boards", board_opts, index=board_opts.index(curr_b))
-    st.write("### Spieler anpassen")
-    anwesende = []
-    cols = st.columns(2)
-    for i, sp in enumerate(kader):
-        with cols[0 if i < len(kader)//2 else 1]:
-            if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
-    curr_gaeste = sess.get("gaeste", [])
-    gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
-    aktive_spieler = anwesende + gaeste
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1:
-        if st.button("Abbrechen", use_container_width=True): st.rerun()
-    with c_btn2:
-        if st.button("Speichern", type="primary", use_container_width=True):
-            sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "start_time": edit_start_time.strip() or None, "end_time": edit_end_time.strip() or None, "modus": spielmodus, "boards_count": int(anzahl_boards.split()[0]), "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds, "total_rounds": total_rounds, "boards": anzahl_boards, "modus_leg": leg_modus, "spieler": aktive_spieler, "gaeste": gaeste})
+
+    # WENN SCHON GESPIELT WURDE -> KORREKTUR-MENÜ ANZEIGEN
+    if gespielte_matches:
+        st.info("💡 Diese Session enthält bereits Spielergebnisse. Die Rahmenbedingungen (Spieler, Runden, Boards) können daher nicht mehr geändert werden.")
+        if st.button("💾 Datum & Zeiten speichern", type="primary", use_container_width=True):
+            sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "start_time": edit_start_time.strip() or None, "end_time": edit_end_time.strip() or None})
             st.session_state.sessions_list[real_idx] = sess
             smart_sync_and_save(st.session_state.sessions_list)
             st.rerun()
+            
+        st.divider()
+        st.markdown("### 🛠️ Match-Ergebnisse korrigieren")
+        st.caption("Klicke bei einem Match auf 'Ändern', um das Ergebnis, den Average oder die 180er nachträglich zu korrigieren.")
+        for (r, b_name), m_info in sorted(gespielte_matches.items(), key=lambda x: (x[0][0], x[0][1])):
+            c_txt, c_btn = st.columns([3, 1])
+            c_txt.markdown(f"**Runde {r} | {b_name}**<br>{m_info.get('s1')} vs {m_info.get('s2')} **({m_info.get('ergebnis')})**", unsafe_allow_html=True)
+            if c_btn.button("✏️ Ändern", key=f"edit_arch_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                open_board_dialog(b_name, sess['id'], edit_round=r)
+            st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+            
+        if st.button("Schließen", use_container_width=True):
+            st.rerun()
+            
+    # WENN NOCH NICHTS GESPIELT WURDE -> DAS ALTE SETUP-MENÜ ANZEIGEN
+    else:
+        leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], index=["Best of 5", "Best of 3"].index(sess.get("modus_leg", "Best of 5")))
+        modi_list = ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"]
+        curr_modus = sess.get("modus", "Up & Down")
+        if curr_modus not in modi_list: modi_list.append(curr_modus)
+        spielmodus = st.selectbox("Spielmodus", modi_list, index=modi_list.index(curr_modus))
+        if spielmodus == "Standard-Training (Einzel + Coop)":
+            curr_total, curr_singles = sess.get("total_rounds", 6), sess.get("singles_rounds", 4)
+            singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1)
+            coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=(curr_total - curr_singles)-1)
+            total_rounds = singles_rounds + coop_rounds
+        elif spielmodus == "Koop 2vs2 (Up & Down)":
+            singles_rounds, total_rounds = 0, st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=sess.get("total_rounds", 2)-1)
+        else:
+            singles_rounds, total_rounds = 0, st.selectbox("Anzahl Runden", list(range(1, 11)), index=sess.get("total_rounds", 4)-1)
+        board_opts = ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"]
+        curr_b = sess.get("boards", "4 Boards")
+        if curr_b not in board_opts: board_opts.append(curr_b)
+        anzahl_boards = st.selectbox("Anzahl der Boards", board_opts, index=board_opts.index(curr_b))
+        st.write("### Spieler anpassen")
+        anwesende = []
+        cols = st.columns(2)
+        for i, sp in enumerate(kader):
+            with cols[0 if i < len(kader)//2 else 1]:
+                if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
+        curr_gaeste = sess.get("gaeste", [])
+        gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
+        aktive_spieler = anwesende + gaeste
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("Abbrechen", use_container_width=True): st.rerun()
+        with c_btn2:
+            if st.button("Speichern", type="primary", use_container_width=True):
+                sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "start_time": edit_start_time.strip() or None, "end_time": edit_end_time.strip() or None, "modus": spielmodus, "boards_count": int(anzahl_boards.split()[0]), "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds, "total_rounds": total_rounds, "boards": anzahl_boards, "modus_leg": leg_modus, "spieler": aktive_spieler, "gaeste": gaeste})
+                st.session_state.sessions_list[real_idx] = sess
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
 
 @st.dialog("🗑️ Session Löschen (Admin)")
 def open_delete_session_dialog(session_id):
