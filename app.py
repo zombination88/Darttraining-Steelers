@@ -2206,7 +2206,6 @@ with tab_übersicht:
             singles_rounds = curr_sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
             res = curr_sess.get("results", {})
 
-            # --- HIER IST DAS KORREKTUR- UND ZURÜCKSPUL-MENÜ (JETZT GANZ OBEN!) ---
             if is_admin:
                 with st.expander("🛠️ Falsche Eingabe? Korrigieren oder Zurückspulen", expanded=False):
                     st.markdown("**Szenario 1: Tippfehler (Zahlen/Average)**")
@@ -2277,15 +2276,21 @@ with tab_übersicht:
                                 if st.button("🔄", key=f"sub2_{curr_sess['id']}_{b_name}_{next_r}"): open_substitution_dialog(b_name, curr_sess['id'], next_r, 2, p2)
                         
                         st.write("")
-                        col_e1, col_e2 = st.columns([1, 1])
+                        # --- HIER SIND DIE 3 NEUEN BUTTONS ---
+                        col_e1, col_e2, col_e3 = st.columns([1, 1, 1])
                         with col_e1:
                             if is_admin:
                                 if st.button("🎯 Eintragen", key=f"live_{curr_sess['id']}_{b_name}_{next_r}", use_container_width=True, disabled=not ready):
                                     open_board_dialog(b_name, curr_sess['id'])
                         with col_e2:
+                            if is_admin:
+                                if st.button("📱 Live", key=f"ls_{curr_sess['id']}_{b_name}_{next_r}", type="primary", use_container_width=True, disabled=not ready):
+                                    req_w = 3 if curr_sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
+                                    open_live_scoring_dialog(b_name, curr_sess['id'], next_r, p1, p2, req_w)
+                        with col_e3:
                             prev_r = next_r - 1
                             if is_admin and prev_r > 0:
-                                if st.button("✏️ Korrigieren", key=f"korr_{curr_sess['id']}_{b_name}_{prev_r}", use_container_width=True):
+                                if st.button("✏️ Korrig.", key=f"korr_{curr_sess['id']}_{b_name}_{prev_r}", use_container_width=True):
                                     open_board_dialog(b_name, curr_sess['id'], edit_round=prev_r)
                     else:
                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.85em;'>Alle Runden beendet</p>", unsafe_allow_html=True)
@@ -2391,7 +2396,6 @@ with tab_übersicht:
                 with col_sb:
                     if st.button("📊 Ergebnisse", key=f"hist_btn_{s['id']}", use_container_width=True): open_session_summary_dialog(s['id'])
                 st.divider()
-
 
 # ==========================================
 # [BLOCK_8] UI: Tab Kader (Stats, ELO, Formkurven)
