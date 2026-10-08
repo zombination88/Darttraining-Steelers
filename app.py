@@ -1246,7 +1246,7 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
         <div class="row">
           <div class="col" style="flex: 1.2;">
              <div id="p1-box" class="box active">
-                <h3 id="p1-name" class="head-title">P1</h3>
+                 <h3 id="p1-name" class="head-title">P1</h3>
                 <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
                 <div id="p1-score" class="score">501</div>
                 <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
@@ -1320,9 +1320,10 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
            <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
            <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
            <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
-              <button onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
+              <!-- FIX: ID für den Save-Button hinzugefügt, um optisches Feedback zu geben -->
+              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
               <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
-              <button onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
+              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
            </div>
         </div>
 
@@ -1573,23 +1574,47 @@ def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
 
         function sendToStreamlit(payload) {
             if(!navigator.onLine && payload.action === 'save') {
-                alert("⚠️ DU BIST OFFLINE! ⚠️\\nDas Board bleibt sicher offen. Bitte schalte dein WLAN / Hotspot wieder ein. Erst wenn du wieder Empfang hast, klicke nochmal auf Speichern!");
+                alert("⚠️ DU BIST OFFLINE! ⚠️\\nBitte schalte dein WLAN ein und warte 5 Sekunden. Klicke dann nochmal auf Speichern!");
                 return;
             }
+            
+            // FIX: Timestamp hinzufügen! Das macht jedes Paket 100% einzigartig, 
+            // wodurch Streamlit gezwungen wird, auch bei mehrmaligem Klicken aufzuwachen.
+            payload._timestamp = Date.now();
+            
             const doc = window.parent.document;
             const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
+            
             if(inputs.length > 0) {
                 let target = inputs[inputs.length - 1];
                 
-                // React-sichere Wertzuweisung
+                // Visuelles Feedback am Button geben
+                let saveBtn = document.getElementById('save-btn');
+                let cancelBtn = document.getElementById('cancel-btn');
+                if(saveBtn && payload.action === 'save') {
+                    saveBtn.innerText = "⏳ Speichere...";
+                    saveBtn.style.opacity = "0.7";
+                } else if(cancelBtn && payload.action === 'cancel') {
+                    cancelBtn.innerText = "⏳ Breche ab...";
+                    cancelBtn.style.opacity = "0.7";
+                }
+                
                 let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
                 nativeInputValueSetter.call(target, JSON.stringify(payload));
                 
-                // Streamlit aufwecken (Input + Enter-Taste simulieren)
                 target.dispatchEvent(new Event("input", { bubbles: true }));
                 target.dispatchEvent(new Event("change", { bubbles: true }));
                 target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
                 target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
+                
+                // Button nach 3 Sekunden zurücksetzen, falls Streamlit klemmt
+                setTimeout(() => {
+                    if(saveBtn && payload.action === 'save') {
+                        saveBtn.innerText = "💾 Online Speichern & Beenden";
+                        saveBtn.style.opacity = "1";
+                    }
+                }, 3000);
+                
             } else {
                 alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
             }
