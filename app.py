@@ -1381,6 +1381,32 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 else:
                     st.error("Rest kann nicht höher sein als aktuelle Punkte!")
             st_ls["cur_input"] = ""
+        
+        with c_l:
+            st.caption("Standard")
+            for qv in [26, 41, 45, 60, 81, 85]: st.button(str(qv), key=f"ql_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
+        with c_m:
+            # Display
+            disp_val = st_ls.get('cur_input', '')
+            st.markdown(f"<div style='text-align: center; font-size: 2em; min-height: 50px; background: #111; border-radius: 5px; margin-bottom: 10px; color: #fff; line-height: 50px;'>{disp_val if disp_val else '...'}</div>", unsafe_allow_html=True)
+            # Ziffernblock
+            grid = [[1,2,3], [4,5,6], [7,8,9], ["⬅", 0, "OK"]]
+            for row in grid:
+                cols = st.columns(3)
+                for i, val in enumerate(row):
+                    if val == "⬅": cols[i].button("⬅", key=f"ndel_{row[0]}", on_click=n_del, use_container_width=True)
+                    elif val == "OK": cols[i].button("Geworfen", key=f"nok_{row[0]}", on_click=n_enter, type="primary", use_container_width=True)
+                    else: cols[i].button(str(val), key=f"n{val}_{row[0]}", on_click=n_pad, args=(val,), use_container_width=True)
+            st.button("Als REST eintragen", on_click=n_rest, use_container_width=True, help="Tippe deinen Rest-Score ein und drücke diesen Button. Die App errechnet deinen Wurf selbst!")
+        with c_r:
+            st.caption("Highs")
+            for qv in [100, 121, 125, 140, 180]: st.button(str(qv), key=f"qr_{qv}", on_click=n_throw, args=(qv,), use_container_width=True)
+
+    st.divider()
+    with st.expander("📋 Wurf-Historie ansehen"):
+        c_h1, c_h2 = st.columns(2)
+        c_h1.write("<br>".join(st_ls.get("hist1", [])[:12]), unsafe_allow_html=True)
+        c_h2.write("<br>".join(st_ls.get("hist2", [])[:12]), unsafe_allow_html=True)
 
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
