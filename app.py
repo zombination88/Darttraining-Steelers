@@ -4359,62 +4359,64 @@ with tab_wettkampf:
 @st.dialog("🆘 Notfall-Wiederherstellung (Alle Daten)", width="large")
 def open_full_rollback_dialog():
     st.warning("⚠️ Achtung: Dies überschreibt die aktuelle Datenbank mit einem alten Speicherpunkt. (Lade nur ein Backup, wenn wirklich Daten verschwunden sind!)")
+    
+    # FIX: Wir loggen uns nicht neu ein, sondern nutzen die bestehende, offene "Standleitung" zu Google (spart API-Limits!)
+    if not spreadsheet:
+        st.error("Keine Verbindung zur Google Cloud. Bitte lade die Seite neu.")
+        return
+        
     try:
-        creds_dict = json.loads(st.secrets["google_json"])
-        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        spreadsheet_obj = client.open_by_url(SHEET_URL)
-        try:
-            backup_ws = spreadsheet_obj.worksheet("backups")
-            all_vals = backup_ws.get_all_values()
-            if len(all_vals) > 1:
-                backups = list(reversed(all_vals[1:]))
-                confirm = st.checkbox("Ja, ich möchte alte Daten aus der Cloud laden.")
-                for i, b in enumerate(backups[:10]):
-                    ts = b[0]
-                    json_str = b[1]
-                    try:
-                        data_preview = json.loads(json_str)
-                        t_count = len([s for s in data_preview if not s.get("is_wettkampf") and not s.get("is_liga")])
-                        l_count = len([s for s in data_preview if s.get("is_wettkampf") or s.get("is_liga")])
-                        data_info = f"{t_count} Training, {l_count} Liga/FS"
-                    except: data_info = "Fehlerhaftes JSON"
-                    
-                    c_t, c_b = st.columns([3, 1])
-                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
-                    with c_b:
-                        if st.button("Laden", key=f"rest_full_{i}", disabled=not confirm, use_container_width=True):
-                            try:
-                                backup_data = json.loads(json_str)
-                                
-                                # Vorhandene Fotos retten
-                                current_images = {s["id"]: s["image_b64"] for s in st.session_state.sessions_list if s.get("image_b64")}
-                                for s in backup_data:
-                                    if s["id"] in current_images:
-                                        s["image_b64"] = current_images[s["id"]]
-                                        
-                                    # ---> FIX: JSON-Strings wieder in Python-Tupel verwandeln <---
-                                    fixed_results = {}
-                                    for k, v in s.get("results", {}).items():
-                                        if isinstance(k, str) and "_" in k and not s.get("is_liga") and not s.get("is_wettkampf"):
-                                            parts = k.split("_", 1)
-                                            if len(parts) == 2 and parts[0].isdigit():
-                                                fixed_results[(int(parts[0]), parts[1])] = v
-                                                continue
-                                        fixed_results[k] = v
-                                    s["results"] = fixed_results
-                                        
-                                st.session_state.sessions_list = backup_data
-                                save_data(backup_data)
-                                st.success("✅ Daten erfolgreich wiederhergestellt!")
-                                st.rerun()
-                            except Exception as e: st.error(f"Fehler beim Laden: {e}")
-                    st.divider()
-            else: st.info("Noch keine Cloud-Backups vorhanden.")
-        except Exception as e: st.error("Konnte Backup-Tabelle nicht finden.")
-    except Exception as e: st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+        backup_ws = spreadsheet.worksheet("backups")
+        all_vals = backup_ws.get_all_values()
+        if len(all_vals) > 1:
+            backups = list(reversed(all_vals[1:]))
+            confirm = st.checkbox("Ja, ich möchte alte Daten aus der Cloud laden.")
+            for i, b in enumerate(backups[:10]):
+                ts = b[0]
+                json_str = b[1]
+                try:
+                    data_preview = json.loads(json_str)
+                    t_count = len([s for s in data_preview if not s.get("is_wettkampf") and not s.get("is_liga")])
+                    l_count = len([s for s in data_preview if s.get("is_wettkampf") or s.get("is_liga")])
+                    data_info = f"{t_count} Training, {l_count} Liga/FS"
+                except: data_info = "Fehlerhaftes JSON"
+                
+                c_t, c_b = st.columns([3, 1])
+                c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                with c_b:
+                    if st.button("Laden", key=f"rest_full_{i}", disabled=not confirm, use_container_width=True):
+                        try:
+                            backup_data = json.loads(json_str)
+                            
+                            # Vorhandene Fotos retten
+                            current_images = {s["id"]: s["image_b64"] for s in st.session_state.sessions_list if s.get("image_b64")}
+                            for s in backup_data:
+                                if s["id"] in current_images:
+                                    s["image_b64"] = current_images[s["id"]]
+                                    
+                                # ---> FIX: JSON-Strings wieder in Python-Tupel verwandeln <---
+                                fixed_results = {}
+                                for k, v in s.get("results", {}).items():
+                                    if isinstance(k, str) and "_" in k and not s.get("is_liga") and not s.get("is_wettkampf"):
+                                        parts = k.split("_", 1)
+                                        if len(parts) == 2 and parts[0].isdigit():
+                                            fixed_results[(int(parts[0]), parts[1])] = v
+                                            continue
+                                    fixed_results[k] = v
+                                s["results"] = fixed_results
+                                    
+                            st.session_state.sessions_list = backup_data
+                            save_data(backup_data)
+                            st.success("✅ Daten erfolgreich wiederhergestellt!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Fehler beim Laden: {e}")
+                st.divider()
+        else: st.info("Noch keine Cloud-Backups vorhanden.")
+    except Exception as e: 
+        if "429" in str(e) or "Quota exceeded" in str(e):
+            st.error("⏳ Google API-Limit erreicht! Wir haben in der letzten Minute zu viele Anfragen an Google gesendet. Bitte warte exakt 1 Minute und klicke dann nochmal auf den Notfall-Button!")
+        else:
+            st.error(f"Konnte Backup-Tabelle nicht finden: {e}")
 
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
