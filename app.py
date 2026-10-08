@@ -119,11 +119,26 @@ def init_connection():
 spreadsheet = init_connection()
 
 def ensure_worksheet(sheet_obj, title):
-    try: return sheet_obj.worksheet(title)
-    except:
-        ws = sheet_obj.add_worksheet(title=title, rows=100, cols=2)
-        ws.update([["json_data"]])
-        return ws
+    import time
+    try:
+        # --- FIX: Kugelsichere Prüfung, ob das Blatt schon existiert ---
+        existing_worksheets = [ws.title for ws in sheet_obj.worksheets()]
+        if title in existing_worksheets:
+            return sheet_obj.worksheet(title)
+        else:
+            # Kurze Atempause, damit Google die API-Rate nicht blockt
+            time.sleep(0.5) 
+            ws = sheet_obj.add_worksheet(title=title, rows=100, cols=2)
+            ws.update(values=[["json_data"]], range_name="A1")
+            return ws
+    except Exception as e:
+        # Harter Fallback, falls die Liste aus irgendeinem Grund fehlschlägt
+        try:
+            return sheet_obj.worksheet(title)
+        except:
+            ws = sheet_obj.add_worksheet(title=title, rows=100, cols=2)
+            ws.update(values=[["json_data"]], range_name="A1")
+            return ws
 
 def load_chunked(ws):
     try:
