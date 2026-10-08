@@ -1206,8 +1206,8 @@ def open_session_summary_dialog(session_id):
                 rank += 1
     if st.button("Schließen", use_container_width=True): st.rerun()
 
-## ==========================================
-# [BLOCK_4b] Dialoge: Live Scoring Modul (Display-Fix für Undo)
+# ==========================================
+# [BLOCK_4b] Dialoge: Live Scoring Modul (Undo-Anzeige über den Namen)
 # ==========================================
 import json
 import streamlit.components.v1 as components
@@ -1307,10 +1307,16 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         .head-title { margin: 0; font-size: 1.5rem; }
         .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
         .stats { color: #ccc; font-size: 1.2em; }
+        .undo-banner { background: #ff9800; color: #000; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center; font-size: 1.4rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .memory-box { background: #1e1e1e; color: white; padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 1.1rem; border: 2px solid #ff9800; display: none; }
       </style>
     </head>
     <body>
+        <!-- BANNER ÜBER DEN SPIELERN FÜR DEN ZURÜCKGESPULTEN WURF -->
+        <div id="undo-banner" class="undo-banner">
+           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
+        </div>
+
         <div class="row">
           <div class="col" style="flex: 1.2;">
              <div id="p1-box" class="box active">
@@ -1414,7 +1420,8 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             mode: 'play',
             input: '', check_score: 0, error: '',
             history: [], 
-            undone_history: []
+            undone_history: [],
+            last_undone_val: ""
         };
 
         let state;
@@ -1479,6 +1486,15 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 document.getElementById('area-over').style.display = 'none';
             }
             
+            # Undo Banner über den Namen steuern
+            let banner = document.getElementById('undo-banner');
+            if(state.last_undone_val) {
+                banner.style.display = 'block';
+                document.getElementById('undo-val').innerText = state.last_undone_val;
+            } else {
+                banner.style.display = 'none';
+            }
+
             let memBox = document.getElementById('memory-box');
             if(state.undone_history && state.undone_history.length > 0 && state.mode === 'play') {
                 memBox.style.display = 'block';
@@ -1519,8 +1535,10 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
                 state.history = currentHist;
                 state.undone_history = currentUndone;
                 
-                // FIX: Den letzten Wurf direkt ins Display schreiben, damit man ihn sofort sieht!
-                state.input = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
+                # Wert im Display anzeigen und als Banner über den Spielern einblenden!
+                let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
+                state.input = valToDisplay;
+                state.last_undone_val = valToDisplay;
                 state.error = "";
                 render();
             }
@@ -1531,13 +1549,21 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
             render();
         }
 
-        function pad(n) { state.input += n; render(); }
-        function del() { state.input = state.input.slice(0, -1); render(); }
+        function pad(n) { 
+            state.last_undone_val = ""; // Banner ausblenden, sobald getippt wird
+            state.input += n; 
+            render(); 
+        }
+        function del() { 
+            state.input = state.input.slice(0, -1); 
+            render(); 
+        }
         
         function throwPts(pts) {
             let label = pts === 0 ? "No Score" : String(pts);
             saveState(label);
             state.undone_history = [];
+            state.last_undone_val = ""; // Banner ausblenden beim nächsten Wurf
             
             state.input = "";
             let active = state.turn === 0 ? 1 : 2;
@@ -1597,6 +1623,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
         function doCheck(darts) {
             saveState("Check in " + darts);
             state.undone_history = [];
+            state.last_undone_val = "";
             
             let pts = state.check_score;
             let active = state.turn === 0 ? 1 : 2;
@@ -1667,7 +1694,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
     </html>
     """.replace("__P1__", safe_p1).replace("__P2__", safe_p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", safe_bname).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
 
-    components.html(html_code, height=780, scrolling=False)
+    components.html(html_code, height=810, scrolling=False)
     
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
