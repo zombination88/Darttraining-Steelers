@@ -3596,12 +3596,67 @@ with tab_wettkampf:
 # ==========================================
 # [BLOCK_12] UI: Tab Match-Archiv
 # ==========================================
+@st.dialog("🆘 Notfall-Wiederherstellung (Alle Daten)", width="large")
+def open_full_rollback_dialog():
+    st.warning("⚠️ Achtung: Dies überschreibt die aktuelle Datenbank mit einem alten Speicherpunkt. (Lade nur ein Backup, wenn wirklich Daten verschwunden sind!)")
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        spreadsheet_obj = client.open_by_url(SHEET_URL)
+        try:
+            backup_ws = spreadsheet_obj.worksheet("backups")
+            all_vals = backup_ws.get_all_values()
+            if len(all_vals) > 1:
+                backups = list(reversed(all_vals[1:]))
+                confirm = st.checkbox("Ja, ich möchte alte Daten aus der Cloud laden.")
+                for i, b in enumerate(backups[:10]):
+                    ts = b[0]
+                    json_str = b[1]
+                    try:
+                        data_preview = json.loads(json_str)
+                        t_count = len([s for s in data_preview if not s.get("is_wettkampf") and not s.get("is_liga")])
+                        l_count = len([s for s in data_preview if s.get("is_wettkampf") or s.get("is_liga")])
+                        data_info = f"{t_count} Training, {l_count} Liga/FS"
+                    except: data_info = "Fehlerhaftes JSON"
+                    
+                    c_t, c_b = st.columns([3, 1])
+                    c_t.markdown(f"**Speicherpunkt:** {ts} *(Inhalt: {data_info})*")
+                    with c_b:
+                        if st.button("Laden", key=f"rest_full_{i}", disabled=not confirm, use_container_width=True):
+                            try:
+                                backup_data = json.loads(json_str)
+                                
+                                # Vorhandene Fotos retten, da sie nicht im Schnellspeicher liegen
+                                current_images = {s["id"]: s["image_b64"] for s in st.session_state.sessions_list if s.get("image_b64")}
+                                for s in backup_data:
+                                    if s["id"] in current_images:
+                                        s["image_b64"] = current_images[s["id"]]
+                                        
+                                st.session_state.sessions_list = backup_data
+                                save_data(backup_data)
+                                st.success("✅ Daten erfolgreich wiederhergestellt!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Fehler beim Laden: {e}")
+                    st.divider()
+            else: st.info("Noch keine Cloud-Backups vorhanden.")
+        except Exception as e: st.error("Konnte Backup-Tabelle nicht finden.")
+    except Exception as e: st.error(f"Verbindungsfehler zur Google Cloud: {e}")
+
 with tab_archiv:
     st.subheader("Match-Archiv & Verwaltung")
     st.caption("Die neueste Session steht hier immer ganz oben. Enthält Training und Freundschaftsspiele.")
     
+    # --- NEUER BUTTON FÜR ALLE EINGELOGGTEN SPIELER (Admin & Spieler) ---
+    if is_admin:
+        if st.button("🆘 Notfall: Gelöschte Spieldaten aus Backup wiederherstellen", type="primary", use_container_width=True):
+            open_full_rollback_dialog()
+        st.write("")
+    
     if st.session_state.role == "Spieler":
-        st.info("🔒 Das nachträgliche Bearbeiten und Löschen von vergangenen Sessions im Archiv ist nur für die Team-Admins freigeschaltet.")
+        st.info("🔒 Das nachträgliche Bearbeiten und Löschen von vergangenen Sessions im Archiv ist nur für die Team-Admins freigeschaltet. (Backups können aber geladen werden).")
     
     if st.session_state.sessions_list:
         safe_data_for_export = make_serializable(st.session_state.sessions_list)
@@ -3723,7 +3778,7 @@ with tab_archiv:
                                                     st.rerun()
                     elif is_admin:
                         st.checkbox(f"🔒 Runden-Schnellerfassung (Nur Admin)", key=f"blitz_check_lock_{sess['id']}", disabled=True)
-
+                        
 # ==========================================
 # [BLOCK_13] UI: Tab Modus & Regeln
 # ==========================================
