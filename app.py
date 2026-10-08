@@ -815,7 +815,413 @@ def format_doppel(p1, p2):
     return "-"
 
 # ==========================================
-# [BLOCK_4_1] Helper: PWA HTML & JS Template
+# [BLOCK_4_1] Dialoge: Session Management (Neu, Bearbeiten, Löschen)
+# ==========================================
+@st.dialog("➕ Neue Session starten")
+def open_new_session_dialog():
+    session_datum = st.date_input("Datum", date.today())
+    leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"])
+    spielmodus = st.selectbox("Spielmodus", ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"])
+    if spielmodus == "Standard-Training (Einzel + Coop)":
+        st.write("### Runden-Aufteilung")
+        singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=3)
+        coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=1)
+        total_rounds = singles_rounds + coop_rounds
+        st.info(f"ℹ️ Standard-Training: {singles_rounds} Runden Einzel + {coop_rounds} Runden Doppel.")
+    elif spielmodus == "Koop 2vs2 (Up & Down)":
+        singles_rounds, coop_rounds, total_rounds = 0, st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=1), 0
+        total_rounds = coop_rounds
+    else:
+        singles_rounds, coop_rounds = 0, 0
+        total_rounds = st.selectbox("Anzahl Runden", list(range(1, 11)), index=3)
+    anzahl_boards = st.selectbox("Anzahl der Boards (für Einzel)", ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"], index=2)
+    st.write("### Anwesende Spieler")
+    anwesende = []
+    cols = st.columns(2)
+    half = len(kader) // 2
+    for i, sp in enumerate(kader):
+        with cols[0 if i < half else 1]:
+            if st.checkbox(sp, value=True, key=f"form_kader_{sp}"): anwesende.append(sp)
+    st.write("### Gastspieler (optional)")
+    gaeste = [x for x in [st.text_input(f"Gastspieler {i+1}", key=f"form_gast_{i+1}") for i in range(4)] if x.strip() != ""]
+    aktive_spieler = anwesende + gaeste
+    gewaehlte_boards_zahl = int(anzahl_boards.split()[0])
+    max_moegliche_boards = get_max_boards_for_players(len(aktive_spieler))
+    can_save = True
+    if len(aktive_spieler) < 2:
+        st.error("🚨 Fehler: Bitte wähle mindestens 2 Spieler aus!")
+        can_save = False
+    elif gewaehlte_boards_zahl > max_moegliche_boards:
+        st.error(f"🚨 Fehler: Zu viele Boards! Für {len(aktive_spieler)} Spieler sind max. {max_moegliche_boards} Boards möglich.")
+        can_save = False
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Abbrechen", use_container_width=True): st.rerun()
+    with c2:
+        if st.button("Session starten", type="primary", use_container_width=True, disabled=not can_save):
+            if can_save:
+                max_id = max([int(s["id"].split("-")[1]) for s in st.session_state.sessions_list if "-" in s["id"] and s["id"].split("-")[1].isdigit()] + [0])
+                new_session = {"id": f"S-{max_id + 1}", "datum": session_datum.strftime("%d.%m.%Y"), "start_time": None, "end_time": None, "modus": spielmodus, "boards_count": gewaehlte_boards_zahl, "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds, "total_rounds": total_rounds, "boards": anzahl_boards, "modus_leg": leg_modus, "spieler": aktive_spieler, "gaeste": gaeste, "results": {}, "is_liga": False}
+                if spielmodus in ["Koop 2vs2 (Up & Down)", "Standard-Training (Einzel + Coop)"]: get_or_create_teams(new_session, [s for s in st.session_state.sessions_list if not s.get("is_liga") and not s.get("is_wettkampf")])
+                st.session_state.sessions_list.append(new_session)
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+
+@st.dialog("⚙️ Session bearbeiten", width="large")
+def open_edit_session_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    
+    res = sess.get("results", {})
+    gespielte_matches = {k: v for k, v in res.items() if v.get("winner")}
+    
+    try: curr_date = pd.to_datetime(sess.get("datum", ""), format="%d.%m.%Y").date()
+    except: curr_date = date.today()
+    
+    st.write("### Basis-Daten")
+    session_datum = st.date_input("Datum", curr_date)
+    c1, c2 = st.columns(2)
+    edit_start_time = c1.text_input("Startzeit (HH:MM)", value=sess.get("start_time") or "")
+    edit_end_time = c2.text_input("Endzeit (HH:MM)", value=sess.get("end_time") or "")
+
+    # WENN SCHON GESPIELT WURDE -> INLINE-KORREKTUR-MENÜ ANZEIGEN
+    if gespielte_matches:
+        st.info("💡 Diese Session enthält bereits Spielergebnisse. Die Rahmenbedingungen (Spieler, Runden, Boards) können daher nicht mehr geändert werden.")
+        if st.button("💾 Datum & Zeiten speichern", type="primary", use_container_width=True):
+            sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "start_time": edit_start_time.strip() or None, "end_time": edit_end_time.strip() or None})
+            st.session_state.sessions_list[real_idx] = sess
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+            
+        st.divider()
+        st.markdown("### 🛠️ Match-Ergebnisse korrigieren")
+        st.caption("Klappe ein Match auf, um das Ergebnis, den Average oder die 180er direkt hier zu überschreiben.")
+        for (r, b_name), m_info in sorted(gespielte_matches.items(), key=lambda x: (x[0][0], x[0][1])):
+            with st.expander(f"Runde {r} | {b_name} — {m_info.get('s1')} vs {m_info.get('s2')} ({m_info.get('ergebnis')})"):
+                try: score1, score2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
+                except: score1, score2 = 0, 0
+                
+                c_in1, c_in2 = st.columns(2)
+                with c_in1:
+                    new_s1 = st.number_input("Legs Heim", 0, 5, score1, key=f"ed_l1_{sess['id']}_{r}_{b_name}")
+                    new_180_1 = st.number_input("180er Heim", 0, 20, int(m_info.get("180_s1", 0)), key=f"ed_180_1_{sess['id']}_{r}_{b_name}")
+                    new_avg_1 = st.number_input("Avg Heim", 0.0, 180.0, float(m_info.get("avg_s1", 0.0)), step=0.1, key=f"ed_avg_1_{sess['id']}_{r}_{b_name}")
+                with c_in2:
+                    new_s2 = st.number_input("Legs Gast", 0, 5, score2, key=f"ed_l2_{sess['id']}_{r}_{b_name}")
+                    new_180_2 = st.number_input("180er Gast", 0, 20, int(m_info.get("180_s2", 0)), key=f"ed_180_2_{sess['id']}_{r}_{b_name}")
+                    new_avg_2 = st.number_input("Avg Gast", 0.0, 180.0, float(m_info.get("avg_s2", 0.0)), step=0.1, key=f"ed_avg_2_{sess['id']}_{r}_{b_name}")
+                
+                if st.button("💾 Ergebnis überschreiben", type="primary", key=f"save_inline_{sess['id']}_{r}_{b_name}", use_container_width=True):
+                    req_win = 3 if sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
+                    if new_s1 == new_s2: st.error("Unentschieden nicht möglich.")
+                    elif new_s1 > req_win or new_s2 > req_win: st.error(f"Max {req_win} Legs.")
+                    elif new_s1 != req_win and new_s2 != req_win: st.error(f"Sieger braucht genau {req_win} Legs.")
+                    else:
+                        winner = m_info.get("s1") if new_s1 > new_s2 else m_info.get("s2")
+                        loser = m_info.get("s2") if new_s1 > new_s2 else m_info.get("s1")
+                        
+                        sess["results"][(r, b_name)].update({
+                            "ergebnis": f"{new_s1}:{new_s2}",
+                            "winner": winner,
+                            "loser": loser,
+                            "180_s1": new_180_1,
+                            "180_s2": new_180_2,
+                            "avg_s1": new_avg_1,
+                            "avg_s2": new_avg_2
+                        })
+                        st.session_state.sessions_list[real_idx] = sess
+                        smart_sync_and_save(st.session_state.sessions_list)
+                        st.rerun()
+            
+        if st.button("Schließen", use_container_width=True):
+            st.rerun()
+            
+    # WENN NOCH NICHTS GESPIELT WURDE -> DAS ALTE SETUP-MENÜ ANZEIGEN
+    else:
+        leg_modus = st.selectbox("Leg-Modus", ["Best of 5", "Best of 3"], index=["Best of 5", "Best of 3"].index(sess.get("modus_leg", "Best of 5")))
+        modi_list = ["Standard-Training (Einzel + Coop)", "Up & Down", "Koop 2vs2 (Up & Down)"]
+        curr_modus = sess.get("modus", "Up & Down")
+        if curr_modus not in modi_list: modi_list.append(curr_modus)
+        spielmodus = st.selectbox("Spielmodus", modi_list, index=modi_list.index(curr_modus))
+        if spielmodus == "Standard-Training (Einzel + Coop)":
+            curr_total, curr_singles = sess.get("total_rounds", 6), sess.get("singles_rounds", 4)
+            singles_rounds = st.selectbox("Anzahl Einzel-Runden", list(range(1, 11)), index=curr_singles-1)
+            coop_rounds = st.selectbox("Anzahl Doppel (Koop)-Runden", list(range(1, 11)), index=(curr_total - curr_singles)-1)
+            total_rounds = singles_rounds + coop_rounds
+        elif spielmodus == "Koop 2vs2 (Up & Down)":
+            singles_rounds, total_rounds = 0, st.selectbox("Anzahl Koop-Runden", list(range(1, 11)), index=sess.get("total_rounds", 2)-1)
+        else:
+            singles_rounds, total_rounds = 0, st.selectbox("Anzahl Runden", list(range(1, 11)), index=sess.get("total_rounds", 4)-1)
+        board_opts = ["6 Boards", "5 Boards", "4 Boards", "3 Boards", "2 Boards", "1 Board"]
+        curr_b = sess.get("boards", "4 Boards")
+        if curr_b not in board_opts: board_opts.append(curr_b)
+        anzahl_boards = st.selectbox("Anzahl der Boards", board_opts, index=board_opts.index(curr_b))
+        st.write("### Spieler anpassen")
+        anwesende = []
+        cols = st.columns(2)
+        for i, sp in enumerate(kader):
+            with cols[0 if i < len(kader)//2 else 1]:
+                if st.checkbox(sp, value=(sp in sess.get("spieler", [])), key=f"edit_kader_{sp}_{session_id}"): anwesende.append(sp)
+        curr_gaeste = sess.get("gaeste", [])
+        gaeste = [x for x in [st.text_input(f"Gast {i+1}", value=curr_gaeste[i] if i<len(curr_gaeste) else "") for i in range(4)] if x.strip() != ""]
+        aktive_spieler = anwesende + gaeste
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("Abbrechen", use_container_width=True): st.rerun()
+        with c_btn2:
+            if st.button("Speichern", type="primary", use_container_width=True):
+                sess.update({"datum": session_datum.strftime("%d.%m.%Y"), "start_time": edit_start_time.strip() or None, "end_time": edit_end_time.strip() or None, "modus": spielmodus, "boards_count": int(anzahl_boards.split()[0]), "singles_rounds": singles_rounds if spielmodus == "Standard-Training (Einzel + Coop)" else total_rounds, "total_rounds": total_rounds, "boards": anzahl_boards, "modus_leg": leg_modus, "spieler": aktive_spieler, "gaeste": gaeste})
+                st.session_state.sessions_list[real_idx] = sess
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+
+@st.dialog("🗑️ Session Löschen (Admin)")
+def open_delete_session_dialog(session_id):
+    st.warning(f"Willst du die Session **{session_id}** wirklich unwiderruflich löschen?")
+    pwd = st.text_input("Admin-Passwort zur Bestätigung:", type="password", key=f"del_pwd_{session_id}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Abbrechen", use_container_width=True): st.rerun()
+    with c2:
+        if st.button("🗑️ Unwiderruflich löschen", type="primary", use_container_width=True):
+            if pwd == "1521" or pwd == "20Steelers25":
+                delete_session(session_id)
+                st.success("Session wurde erfolgreich gelöscht!")
+                st.rerun()
+            else: st.error("Falsches Admin-Passwort!")
+
+# ==========================================
+# [BLOCK_4_2] Dialoge: Match Management (Manuelle Erfassung & Auswechseln)
+# ==========================================
+@st.dialog("📋 Board-Erfassung & Tracking")
+def open_board_dialog(board_name, session_id, edit_round=None):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    total_rounds = sess.get("total_rounds", 4)
+    res = sess.get("results", {})
+    if edit_round: current_round = edit_round
+    else:
+        completed_rounds = [r for (r, b), v in res.items() if b == board_name and v.get("winner")]
+        current_round = max(completed_rounds) + 1 if completed_rounds else 1
+    if current_round > total_rounds and not edit_round:
+        st.warning(f"{board_name} has completed all rounds.")
+        if st.button("Schließen"): st.rerun()
+        return
+    modus = sess.get("modus", "Up & Down")
+    is_standard = (modus == "Standard-Training (Einzel + Coop)")
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard and total_rounds > 2 else total_rounds)
+    r_display = f"Doppelrunde {current_round - singles_rounds} (Coop)" if is_standard and current_round > singles_rounds else f"Runde {current_round} (Einzel)" if is_standard else f"Runde {current_round}"
+    st.write(f"### {board_name} — {r_display}")
+    existing_match = res.get((current_round, board_name))
+    if existing_match:
+        current_p1, current_p2 = existing_match.get("s1", "-"), existing_match.get("s2", "-")
+        try: score1, score2 = map(int, existing_match.get("ergebnis", "0:0").split(":"))
+        except: score1, score2 = 0, 0
+        t1_180, t2_180 = int(existing_match.get("180_s1", 0)), int(existing_match.get("180_s2", 0))
+        avg1, avg2 = float(existing_match.get("avg_s1", 0.0)), float(existing_match.get("avg_s2", 0.0))
+    else:
+        auto_players = get_board_players(sess, current_round, board_name)
+        current_p1, current_p2 = auto_players[0], auto_players[1]
+        score1, score2, t1_180, t2_180, avg1, avg2 = 0, 0, 0, 0, 0.0, 0.0
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**Heim:** `{current_p1}`")
+        in_score1 = st.number_input("Legs Heim", 0, 5, score1, key=f"score1_{session_id}_{board_name}")
+        in_180_1 = st.number_input("🎯 180er Heim", 0, 20, t1_180, key=f"180_1_{session_id}_{board_name}")
+        in_avg_1 = st.number_input("📊 Avg Heim", 0.0, 180.0, avg1, step=0.1, key=f"avg_1_{session_id}_{board_name}")
+    with c2:
+        st.markdown(f"**Gast:** `{current_p2}`")
+        in_score2 = st.number_input("Legs Gast", 0, 5, score2, key=f"score2_{session_id}_{board_name}")
+        in_180_2 = st.number_input("🎯 180er Gast", 0, 20, t2_180, key=f"180_2_{session_id}_{board_name}")
+        in_avg_2 = st.number_input("📊 Avg Gast", 0.0, 180.0, avg2, step=0.1, key=f"avg_2_{session_id}_{board_name}")
+    ergebnis = f"{in_score1}:{in_score2}"
+    winner = current_p1 if in_score1 > in_score2 else (current_p2 if in_score2 > in_score1 else "-")
+    loser = current_p2 if winner == current_p1 else (current_p1 if winner == current_p2 else "-")
+    st.info(f"📊 Ergebnis: **{ergebnis}** | 🏆 Sieger: **{winner if winner != '-' else 'Unentschieden'}**")
+    req_win = 3 if sess.get("modus_leg", "Best of 5") == "Best of 5" else 2
+    is_valid_result = True
+    if current_p1 != "-" and current_p2 != "-":
+        if in_score1 == in_score2: st.error("Unentschieden nicht möglich."); is_valid_result = False
+        elif in_score1 > req_win or in_score2 > req_win: st.error(f"Max {req_win} Legs."); is_valid_result = False
+        elif in_score1 != req_win and in_score2 != req_win: st.error(f"Sieger braucht genau {req_win} Legs."); is_valid_result = False
+    cb1, cb2 = st.columns(2)
+    with cb1:
+        btn_text = "Korrektur speichern" if edit_round else "Ergebnis abschließen"
+        if st.button(btn_text, type="primary", use_container_width=True, disabled=not is_valid_result):
+            if is_valid_result:
+                if "results" not in sess: sess["results"] = {}
+                sess["results"][(current_round, board_name)] = {"s1": current_p1, "s2": current_p2, "ergebnis": ergebnis, "winner": winner, "loser": loser, "180_s1": in_180_1, "180_s2": in_180_2, "avg_s1": in_avg_1, "avg_s2": in_avg_2}
+                st.session_state.sessions_list[real_idx] = sess
+                smart_sync_and_save(st.session_state.sessions_list)
+                st.rerun()
+    with cb2:
+        if st.button("Schließen", use_container_width=True): st.rerun()
+
+@st.dialog("🔄 Spieler auswechseln")
+def open_substitution_dialog(board_name, session_id, round_num, slot_num, current_player):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    real_idx = st.session_state.sessions_list.index(sess)
+    
+    modus = sess.get("modus", "Up & Down")
+    is_standard = (modus == "Standard-Training (Einzel + Coop)")
+    total_rounds = sess.get("total_rounds", 4)
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard and total_rounds > 2 else total_rounds)
+    is_doppel = (modus == "Koop 2vs2 (Up & Down)") or (is_standard and round_num > singles_rounds)
+    
+    alle_spieler = list(set(sess.get("spieler", kader)))
+    if "-" not in alle_spieler: alle_spieler.append("-")
+    alle_spieler.sort()
+    
+    st.write(f"### Auswechslung für {board_name} (Runde {round_num})")
+    
+    if is_doppel:
+        if "&" in current_player:
+            parts = [p.strip() for p in current_player.split("&")]
+            p1_curr = parts[0] if len(parts) > 0 and parts[0] else "-"
+            p2_curr = parts[1] if len(parts) > 1 and parts[1] else "-"
+        else:
+            p1_curr = current_player if current_player else "-"
+            p2_curr = "-"
+            
+        if p1_curr not in alle_spieler: alle_spieler.append(p1_curr)
+        if p2_curr not in alle_spieler: alle_spieler.append(p2_curr)
+        alle_spieler = sorted(list(set(alle_spieler)))
+        
+        idx1 = alle_spieler.index(p1_curr) if p1_curr in alle_spieler else 0
+        idx2 = alle_spieler.index(p2_curr) if p2_curr in alle_spieler else 0
+        
+        c_a, c_b = st.columns(2)
+        sel1 = c_a.selectbox("Spieler 1:", alle_spieler, index=idx1, key=f"sub1_{session_id}_{board_name}_{round_num}_{slot_num}")
+        txt1 = c_a.text_input("Oder Gast 1:", placeholder="Name...", key=f"subtxt1_{session_id}_{board_name}_{round_num}_{slot_num}")
+        
+        sel2 = c_b.selectbox("Spieler 2:", alle_spieler, index=idx2, key=f"sub2_{session_id}_{board_name}_{round_num}_{slot_num}")
+        txt2 = c_b.text_input("Oder Gast 2:", placeholder="Name...", key=f"subtxt2_{session_id}_{board_name}_{round_num}_{slot_num}")
+    else:
+        if current_player not in alle_spieler: alle_spieler.append(current_player)
+        alle_spieler = sorted(list(set(alle_spieler)))
+        idx = alle_spieler.index(current_player) if current_player in alle_spieler else 0
+        
+        sel1 = st.selectbox("Aus Kader wählen:", alle_spieler, index=idx, key=f"sub_sel_{session_id}_{board_name}_{round_num}_{slot_num}")
+        txt1 = st.text_input("Oder neuen Gast eintragen:", placeholder="Name...", key=f"sub_txt_{session_id}_{board_name}_{round_num}_{slot_num}")
+        
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Abbrechen", use_container_width=True): st.rerun()
+    with col2:
+        if st.button("Änderung speichern", type="primary", use_container_width=True):
+            if is_doppel:
+                f1 = txt1.strip() if txt1.strip() else sel1
+                f2 = txt2.strip() if txt2.strip() else sel2
+                if f1 != "-" and f2 != "-": final_name = f"{f1} & {f2}"
+                elif f1 != "-": final_name = f1
+                elif f2 != "-": final_name = f2
+                else: final_name = "-"
+            else:
+                final_name = txt1.strip() if txt1.strip() else sel1
+            
+            if "results" not in sess: sess["results"] = {}
+            if (round_num, board_name) not in sess["results"]:
+                auto_p = get_board_players(sess, round_num, board_name)
+                sess["results"][(round_num, board_name)] = {"s1": auto_p[0], "s2": auto_p[1], "ergebnis": "0:0", "winner": "", "loser": "", "180_s1": 0, "180_s2": 0, "avg_s1": 0.0, "avg_s2": 0.0}
+            
+            if slot_num == 1: sess["results"][(round_num, board_name)]["s1"] = final_name
+            else: sess["results"][(round_num, board_name)]["s2"] = final_name
+            
+            smart_sync_and_save(st.session_state.sessions_list)
+            st.rerun()
+
+# ==========================================
+# [BLOCK_4_3] Dialoge: Session Auswertung (Zusammenfassung)
+# ==========================================
+@st.dialog("📊 Session Endstand & Zusammenfassung", width="large")
+def open_session_summary_dialog(session_id):
+    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
+    if not sess: return
+    st.write(f"### Session {sess['id']} vom {sess['datum']}")
+    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
+    total_minutes = 0
+    if start_t != "–" and end_t != "–":
+        try:
+            t1 = datetime.strptime(start_t, "%H:%M")
+            t2 = datetime.strptime(end_t, "%H:%M")
+            diff_min = (t2 - t1).total_seconds() / 60
+            if diff_min < 0: diff_min += 24 * 60
+            total_minutes = diff_min
+        except: pass
+    total_rounds = sess.get("total_rounds", 4)
+    modus = sess.get("modus", "Up & Down")
+    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
+    is_pure_coop = (modus == "Koop 2vs2 (Up & Down)")
+    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
+    res = sess.get("results", {})
+    if total_minutes > 0:
+        total_legs = sum([sum(map(int, m.get("ergebnis", "0:0").split(":"))) for m in res.values() if ":" in m.get("ergebnis", "")])
+        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
+        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
+        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
+        st.divider()
+    st.markdown("#### 📋 Alle Spielergebnisse (Detail-Ansicht)")
+    for r in range(1, total_rounds + 1):
+        r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
+        has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
+        if has_matches:
+            with st.expander(f"🎯 {r_head}"):
+                for b_name in get_boards_list(sess, r):
+                    m_info = res.get((r, b_name))
+                    if m_info and m_info.get("winner"): st.markdown(f"**{b_name}:** {m_info['s1']} vs {m_info['s2']} ➔ **{m_info['ergebnis']}** *(Sieger: {m_info['winner']})*")
+    st.divider()
+    if singles_rounds > 0 and not is_pure_coop:
+        last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
+        if last_played_round > 0:
+            st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
+            w, l = {}, {}
+            b_list = get_boards_list(sess, last_played_round)
+            for b in b_list:
+                m_inf = res.get((last_played_round, b))
+                if m_inf and m_inf.get("winner"): w[b], l[b] = m_inf.get("winner"), m_inf.get("loser")
+                else: w[b], l[b] = "-", "-"
+            for b_idx, b_name in enumerate(b_list):
+                if b_idx == 0: platz1, platz2 = w.get("Kaiser B1", "-"), w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
+                else: platz1, platz2 = l.get(b_list[b_idx-1], "-"), w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
+                m_inf = res.get((last_played_round, b_name))
+                m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
+                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p><p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p></div>", unsafe_allow_html=True)
+            st.divider()
+        else: st.info("Noch keine Einzel-Matches beendet.")
+    coop_start_round = singles_rounds + 1 if is_standard_training else 1
+    has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
+    if has_coop:
+        st.markdown("#### 🤝 Koop / Doppel-Phase — Gesamtwertung")
+        teams = sess.get("coop_teams", [])
+        team_stats = {t: {"wins": 0, "losses": 0, "legs_won": 0, "legs_lost": 0, "matches": 0} for t in teams}
+        for r in range(coop_start_round, total_rounds + 1):
+            for b_name in get_boards_list(sess, r):
+                m_info = res.get((r, b_name))
+                if m_info and m_info.get("winner"):
+                    winner, s1, s2 = m_info.get("winner"), m_info.get("s1"), m_info.get("s2")
+                    try: l1, l2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
+                    except: l1, l2 = 0, 0
+                    for s_team, (w_l, l_l) in [(s1, (l1, l2) if winner == s1 else (l2, l1)), (s2, (l2, l1) if winner == s2 else (l1, l2))]:
+                        if s_team in team_stats:
+                            team_stats[s_team]["matches"] += 1
+                            if winner == s_team: team_stats[s_team]["wins"] += 1
+                            else: team_stats[s_team]["losses"] += 1
+                            team_stats[s_team]["legs_won"] += w_l
+                            team_stats[s_team]["legs_lost"] += l_l
+        sorted_teams = sorted(team_stats.items(), key=lambda x: (x[1]["wins"], x[1]["legs_won"] - x[1]["legs_lost"], x[1]["legs_won"]), reverse=True)
+        rank = 1
+        for team_name, stats in sorted_teams:
+            if stats["matches"] > 0 or len(sorted_teams) <= 5:
+                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
+                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'><p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p><p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p></div>", unsafe_allow_html=True)
+                rank += 1
+    if st.button("Schließen", use_container_width=True): st.rerun()
+
+# ==========================================
+# [BLOCK_4b_1] Helper: PWA HTML & JS Template
 # ==========================================
 def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
     html_code = """
@@ -1374,639 +1780,7 @@ def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win)
 
     html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
     components.html(html_content, height=810, scrolling=False)
-
-# ==========================================
-# [BLOCK_4_3] Dialoge: Session Auswertung (Zusammenfassung)
-# ==========================================
-@st.dialog("📊 Session Endstand & Zusammenfassung", width="large")
-def open_session_summary_dialog(session_id):
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    st.write(f"### Session {sess['id']} vom {sess['datum']}")
-    start_t, end_t = sess.get("start_time", "–"), sess.get("end_time", "–")
-    total_minutes = 0
-    if start_t != "–" and end_t != "–":
-        try:
-            t1 = datetime.strptime(start_t, "%H:%M")
-            t2 = datetime.strptime(end_t, "%H:%M")
-            diff_min = (t2 - t1).total_seconds() / 60
-            if diff_min < 0: diff_min += 24 * 60
-            total_minutes = diff_min
-        except: pass
-    total_rounds = sess.get("total_rounds", 4)
-    modus = sess.get("modus", "Up & Down")
-    is_standard_training = (modus == "Standard-Training (Einzel + Coop)")
-    is_pure_coop = (modus == "Koop 2vs2 (Up & Down)")
-    singles_rounds = sess.get("singles_rounds", total_rounds - 2 if is_standard_training and total_rounds > 2 else total_rounds)
-    res = sess.get("results", {})
-    if total_minutes > 0:
-        total_legs = sum([sum(map(int, m.get("ergebnis", "0:0").split(":"))) for m in res.values() if ":" in m.get("ergebnis", "")])
-        avg_round = total_minutes / total_rounds if total_rounds > 0 else 0
-        avg_leg = total_minutes / total_legs if total_legs > 0 else 0
-        st.markdown(f"**⏱️ Session Dauer:** {int(total_minutes)} Min. | **Ø Runde:** {avg_round:.1f} Min. | **Ø Leg:** {avg_leg:.1f} Min.")
-        st.divider()
-    st.markdown("#### 📋 Alle Spielergebnisse (Detail-Ansicht)")
-    for r in range(1, total_rounds + 1):
-        r_head = f"Doppelrunde {r - singles_rounds} (Coop)" if is_standard_training and r > singles_rounds else f"Runde {r} (Einzel)" if is_standard_training else f"Runde {r}"
-        has_matches = any(rnd == r and m.get("winner") for (rnd, b), m in res.items())
-        if has_matches:
-            with st.expander(f"🎯 {r_head}"):
-                for b_name in get_boards_list(sess, r):
-                    m_info = res.get((r, b_name))
-                    if m_info and m_info.get("winner"): st.markdown(f"**{b_name}:** {m_info['s1']} vs {m_info['s2']} ➔ **{m_info['ergebnis']}** *(Sieger: {m_info['winner']})*")
-    st.divider()
-    if singles_rounds > 0 and not is_pure_coop:
-        last_played_round = max([r for (r, b), info in res.items() if info.get("winner") and r <= singles_rounds] + [0])
-        if last_played_round > 0:
-            st.markdown(f"#### 🎯 Einzel-Phase (Stand nach Runde {last_played_round}/{singles_rounds})")
-            w, l = {}, {}
-            b_list = get_boards_list(sess, last_played_round)
-            for b in b_list:
-                m_inf = res.get((last_played_round, b))
-                if m_inf and m_inf.get("winner"): w[b], l[b] = m_inf.get("winner"), m_inf.get("loser")
-                else: w[b], l[b] = "-", "-"
-            for b_idx, b_name in enumerate(b_list):
-                if b_idx == 0: platz1, platz2 = w.get("Kaiser B1", "-"), w.get("Board 2", "-") if len(b_list) > 1 else l.get("Kaiser B1", "-")
-                else: platz1, platz2 = l.get(b_list[b_idx-1], "-"), w.get(b_list[b_idx+1], "-") if b_idx+1 < len(b_list) else l.get(b_list[b_idx], "-")
-                m_inf = res.get((last_played_round, b_name))
-                m_str = f"{m_inf['s1']} vs {m_inf['s2']} ➔ {m_inf['ergebnis']}" if m_inf and m_inf.get("winner") else "Match ausstehend."
-                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; background-color: #1e1e1e;'><h5 style='margin: 0; padding-bottom: 5px; color: #fff;'>{b_name}</h5><p style='margin: 0; font-size: 0.85em; color: gray;'>{m_str}</p><p style='margin: 5px 0 0 0; font-size: 0.95em;'>🥇 1. Platz: <b>{platz1}</b></p><p style='margin: 0; font-size: 0.95em;'>🥈 2. Platz: <b>{platz2}</b></p></div>", unsafe_allow_html=True)
-            st.divider()
-        else: st.info("Noch keine Einzel-Matches beendet.")
-    coop_start_round = singles_rounds + 1 if is_standard_training else 1
-    has_coop = is_pure_coop or (is_standard_training and total_rounds > singles_rounds)
-    if has_coop:
-        st.markdown("#### 🤝 Koop / Doppel-Phase — Gesamtwertung")
-        teams = sess.get("coop_teams", [])
-        team_stats = {t: {"wins": 0, "losses": 0, "legs_won": 0, "legs_lost": 0, "matches": 0} for t in teams}
-        for r in range(coop_start_round, total_rounds + 1):
-            for b_name in get_boards_list(sess, r):
-                m_info = res.get((r, b_name))
-                if m_info and m_info.get("winner"):
-                    winner, s1, s2 = m_info.get("winner"), m_info.get("s1"), m_info.get("s2")
-                    try: l1, l2 = map(int, m_info.get("ergebnis", "0:0").split(":"))
-                    except: l1, l2 = 0, 0
-                    for s_team, (w_l, l_l) in [(s1, (l1, l2) if winner == s1 else (l2, l1)), (s2, (l2, l1) if winner == s2 else (l1, l2))]:
-                        if s_team in team_stats:
-                            team_stats[s_team]["matches"] += 1
-                            if winner == s_team: team_stats[s_team]["wins"] += 1
-                            else: team_stats[s_team]["losses"] += 1
-                            team_stats[s_team]["legs_won"] += w_l
-                            team_stats[s_team]["legs_lost"] += l_l
-        sorted_teams = sorted(team_stats.items(), key=lambda x: (x[1]["wins"], x[1]["legs_won"] - x[1]["legs_lost"], x[1]["legs_won"]), reverse=True)
-        rank = 1
-        for team_name, stats in sorted_teams:
-            if stats["matches"] > 0 or len(sorted_teams) <= 5:
-                medal = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else f"{rank}."))
-                st.markdown(f"<div style='border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 8px; background-color: #1e1e1e;'><p style='margin: 0; font-size: 1.05em;'><b>{medal} Platz {rank}: {team_name}</b></p><p style='margin: 4px 0 0 0; font-size: 0.85em; color: #aaa;'>Siege: <b>{stats['wins']}</b> | Legs: {stats['legs_won']}:{stats['legs_lost']}</p></div>", unsafe_allow_html=True)
-                rank += 1
-    if st.button("Schließen", use_container_width=True): st.rerun()
-
-# ==========================================
-# [BLOCK_4b_1] Helper: PWA HTML & JS Template
-# ==========================================
-def get_live_scoring_html(p1, p2, session_id, board_name, round_num, req_win):
-    html_code = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { background: #0e1117; color: white; font-family: sans-serif; margin: 0; padding: 5px; user-select: none; }
-        .row { display: flex; gap: 10px; margin-bottom: 12px; }
-        .col { flex: 1; }
-        .box { border: 3px solid #444; background: #1e1e1e; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .box.active { border-color: #4CAF50; background: #2e7d32; }
-        .score { font-size: 5.5em; font-weight: bold; margin: 5px 0; line-height: 1.1; }
-        .display { background: #111; font-size: 2.8em; border-radius: 8px; text-align: center; min-height: 65px; line-height: 65px; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
-        button { background: #262730; color: white; border: 1px solid #444; border-radius: 10px; min-height: 70px; font-size: 1.5rem; font-weight: 900; cursor: pointer; transition: 0.1s; width: 100%; margin-bottom: 8px; }
-        button:active { opacity: 0.6; transform: scale(0.98); }
-        .btn-red { background: #d32f2f !important; border-color: #d32f2f !important; }
-        .btn-green { background: #388e3c !important; border-color: #388e3c !important; color: white !important; }
-        .btn-blue { background: #1976d2 !important; border-color: #1976d2 !important; }
-        .btn-undo { background: #ff9800 !important; border-color: #ff9800 !important; }
-        .error { background: #ff4b4b; color: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; display: none; font-weight: bold; text-align: center; font-size: 1.2rem;}
-        .head-title { margin: 0; font-size: 1.5rem; }
-        .head-sub { margin: 0; color: #ccc; font-size: 1.1rem; }
-        .stats { color: #ccc; font-size: 1.2em; }
-        .undo-banner { background: #ff9800; color: #000; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center; font-size: 1.4rem; font-weight: bold; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .memory-box { background: #1e1e1e; color: white; padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 1.1rem; border: 2px solid #ff9800; display: none; }
-      </style>
-    </head>
-    <body>
-        <div id="undo-banner" class="undo-banner">
-           ↩️ Korrigierter Wurf: <span id="undo-val" style="font-size: 1.5rem; text-decoration: underline;"></span>
-        </div>
-
-        <div class="row">
-          <div class="col" style="flex: 1.2;">
-             <div id="p1-box" class="box active">
-                 <h3 id="p1-name" class="head-title">P1</h3>
-                <h4 id="p1-legs" class="head-sub">Legs: 0</h4>
-                <div id="p1-score" class="score">501</div>
-                <div id="p1-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
-             </div>
-          </div>
-          <div class="col" style="flex: 1.2;">
-             <div id="p2-box" class="box">
-                <h3 id="p2-name" class="head-title">P2</h3>
-                <h4 id="p2-legs" class="head-sub">Legs: 0</h4>
-                <div id="p2-score" class="score">501</div>
-                <div id="p2-stats" class="stats">Avg: <b>0.0</b> | Darts: <b>0</b></div>
-             </div>
-          </div>
-        </div>
-        <div id="error" class="error"></div>
-        
-        <div id="area-play" class="row">
-           <div class="col" style="flex: 1.1;">
-              <button onclick="actionThrowPts(0)" class="btn-red">🔴 No Score</button>
-              <button onclick="actionCheck()" class="btn-blue">🎯 Check</button>
-              <div style="color:gray; text-align:center; margin: 4px 0; font-size:0.9em; font-weight:bold;">Standard</div>
-              <button onclick="actionThrowPts(26)">26</button>
-              <button onclick="actionThrowPts(41)">41</button>
-              <button onclick="actionThrowPts(45)">45</button>
-              <button onclick="actionThrowPts(60)">60</button>
-              <button onclick="actionThrowPts(81)">81</button>
-              <button onclick="actionThrowPts(85)">85</button>
-           </div>
-           
-           <div class="col" style="flex: 2.2;">
-              <div style="display:flex; gap:8px; margin-bottom:8px;">
-                 <div id="display" class="display" style="flex:3;"></div>
-                 <button onclick="actionUndo()" class="btn-undo" style="flex:1; min-height:65px;">↩️</button>
-              </div>
-              <div class="grid">
-                 <button onclick="actionPad(1)">1</button><button onclick="actionPad(2)">2</button><button onclick="actionPad(3)">3</button>
-                 <button onclick="actionPad(4)">4</button><button onclick="actionPad(5)">5</button><button onclick="actionPad(6)">6</button>
-                 <button onclick="actionPad(7)">7</button><button onclick="actionPad(8)">8</button><button onclick="actionPad(9)">9</button>
-                 <button onclick="actionDel()">⌫</button><button onclick="actionPad(0)">0</button><button onclick="actionRest()">REST</button>
-              </div>
-              <button onclick="actionEnter()" class="btn-green" style="min-height: 80px; font-size: 1.8rem;">🟢 Geworfen</button>
-              
-              <div id="memory-box" class="memory-box">
-                 💡 <b>Zurückgespult:</b> <span id="memory-text"></span>
-                 <button onclick="actionClearUndone()" style="float:right; background:transparent; border:none; color:white; font-size:1.1rem; cursor:pointer; margin-top:-2px;">❌</button>
-              </div>
-           </div>
-           
-           <div class="col" style="flex: 1.1;">
-              <div style="color:gray; text-align:center; margin-bottom:4px; font-size:0.9em; font-weight:bold;">Highs</div>
-              <button onclick="actionThrowPts(100)">100</button>
-              <button onclick="actionThrowPts(121)">121</button>
-              <button onclick="actionThrowPts(125)">125</button>
-              <button onclick="actionThrowPts(135)">135</button>
-              <button onclick="actionThrowPts(140)">140</button>
-              <button onclick="actionThrowPts(180)">180</button>
-           </div>
-        </div>
-        
-        <div id="area-check" style="display:none; text-align:center; padding: 30px;">
-           <h1 style="color:#ffb74d; margin-bottom:30px; font-size:3em;">🎯 Check! Wieviele Darts?</h1>
-           <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px;">
-              <button onclick="actionDoCheck(1)" class="btn-blue" style="min-height:100px;">1 Dart</button>
-              <button onclick="actionDoCheck(2)" class="btn-blue" style="min-height:100px;">2 Darts</button>
-              <button onclick="actionDoCheck(3)" class="btn-blue" style="min-height:100px;">3 Darts</button>
-              <button onclick="actionUndo()" class="btn-undo" style="min-height:100px;">↩️ Zurück</button>
-           </div>
-        </div>
-        
-        <div id="area-over" style="display:none; text-align:center; padding: 40px;">
-           <h1 id="winner-text" style="color:#4CAF50; font-size: 3.5em;">🏆 Match beendet!</h1>
-           <p style="color:#ccc; font-size: 1.5em;">Die Daten liegen sicher lokal bereit.</p>
-           <div style="display:flex; gap:15px; justify-content:center; margin-top:40px;">
-              <button id="save-btn" onclick="actionSaveMatch()" class="btn-green" style="width:400px; min-height:90px;">💾 Online Speichern & Beenden</button>
-              <button onclick="actionUndo()" class="btn-undo" style="width:200px; min-height:90px;">↩️ Zurück</button>
-              <button id="cancel-btn" onclick="actionCancelMatch()" class="btn-red" style="width:200px; min-height:90px;">Abbrechen</button>
-           </div>
-        </div>
-
-        <script>
-        const P1_NAME = "__P1__";
-        const P2_NAME = "__P2__";
-        const REQ_WIN = parseInt("__REQ_WIN__");
-        const STORAGE_KEY = "steelers_board___SESSION_ID_____BOARD_NAME_____ROUND_NUM__";
-
-        let defaultState = {
-            l1: 0, l2: 0,
-            s1: 501, s2: 501,
-            pts1: 0, pts2: 0,
-            d1_leg: 0, d2_leg: 0,
-            d1_tot: 0, d2_tot: 0,
-            e180_1: 0, e180_2: 0,
-            turn: 0, start: 0,
-            mode: 'play',
-            input: '', check_score: 0, error: '',
-            history: [], 
-            undone_history: [],
-            last_undone_val: ""
-        };
-
-        let matchState;
-        
-        try {
-            let saved = localStorage.getItem(STORAGE_KEY);
-            if(saved) { matchState = JSON.parse(saved); } 
-            else { matchState = defaultState; }
-        } catch(e) { matchState = defaultState; }
-
-        function saveToLocal() {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(matchState)); } 
-            catch(e) {}
-        }
-        
-        function clearLocal() {
-            try { localStorage.removeItem(STORAGE_KEY); } 
-            catch(e) {}
-        }
-
-        function showError(msg) {
-            matchState.error = msg;
-            render();
-            setTimeout(() => { matchState.error = ""; render(); }, 3000);
-        }
-
-        function render() {
-            document.getElementById('p1-name').innerText = P1_NAME;
-            document.getElementById('p2-name').innerText = P2_NAME;
-            document.getElementById('p1-score').innerText = matchState.s1;
-            document.getElementById('p2-score').innerText = matchState.s2;
-            document.getElementById('p1-legs').innerText = "Legs: " + matchState.l1;
-            document.getElementById('p2-legs').innerText = "Legs: " + matchState.l2;
-            
-            let avg1 = matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3).toFixed(1) : "0.0";
-            let avg2 = matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3).toFixed(1) : "0.0";
-            document.getElementById('p1-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg1}</b> | Darts: <b style='color:#fff;'>${matchState.d1_leg}</b>`;
-            document.getElementById('p2-stats').innerHTML = `Avg: <b style='color:#fff;'>${avg2}</b> | Darts: <b style='color:#fff;'>${matchState.d2_leg}</b>`;
-            
-            document.getElementById('p1-box').className = matchState.turn === 0 ? "box active" : "box";
-            document.getElementById('p2-box').className = matchState.turn === 1 ? "box active" : "box";
-
-            document.getElementById('display').innerText = matchState.input || "...";
-            
-            let errDiv = document.getElementById('error');
-            errDiv.innerText = matchState.error || "";
-            errDiv.style.display = matchState.error ? "block" : "none";
-
-            if(matchState.mode === 'check') {
-                document.getElementById('area-play').style.display = 'none';
-                document.getElementById('area-check').style.display = 'block';
-                document.getElementById('area-over').style.display = 'none';
-            } else if (matchState.mode === 'over') {
-                document.getElementById('area-play').style.display = 'none';
-                document.getElementById('area-check').style.display = 'none';
-                document.getElementById('area-over').style.display = 'block';
-                let winner = matchState.l1 > matchState.l2 ? P1_NAME : P2_NAME;
-                document.getElementById('winner-text').innerText = "🏆 " + winner + " gewinnt!";
-            } else {
-                document.getElementById('area-play').style.display = 'flex';
-                document.getElementById('area-check').style.display = 'none';
-                document.getElementById('area-over').style.display = 'none';
-            }
-            
-            let banner = document.getElementById('undo-banner');
-            if(matchState.last_undone_val) {
-                banner.style.display = 'block';
-                document.getElementById('undo-val').innerText = matchState.last_undone_val;
-            } else {
-                banner.style.display = 'none';
-            }
-
-            let memBox = document.getElementById('memory-box');
-            if(matchState.undone_history && matchState.undone_history.length > 0 && matchState.mode === 'play') {
-                memBox.style.display = 'block';
-                document.getElementById('memory-text').innerText = matchState.undone_history.join(", ");
-            } else {
-                memBox.style.display = 'none';
-            }
-            
-            saveToLocal();
-        }
-
-        function saveMatchState(actionLabel) {
-            let tempHist = matchState.history || [];
-            let tempUndone = matchState.undone_history || [];
-            matchState.history = [];
-            matchState.undone_history = [];
-            
-            let snap = JSON.stringify(matchState);
-            
-            matchState.history = tempHist;
-            matchState.undone_history = tempUndone;
-            
-            matchState.history.push({ stateStr: snap, action: actionLabel });
-            if(matchState.history.length > 40) matchState.history.shift();
-        }
-
-        function actionUndo() {
-            if(matchState.history && matchState.history.length > 0) {
-                let last = matchState.history.pop();
-                let parsed = JSON.parse(last.stateStr);
-                
-                let currentUndone = matchState.undone_history || [];
-                currentUndone.unshift(last.action);
-                
-                let currentHist = matchState.history;
-                
-                matchState = parsed;
-                matchState.history = currentHist;
-                matchState.undone_history = currentUndone;
-                
-                let valToDisplay = (last.action === "No Score" || last.action === "0") ? "0" : last.action;
-                matchState.input = valToDisplay;
-                matchState.last_undone_val = valToDisplay;
-                matchState.error = "";
-                render();
-            }
-        }
-        
-        function actionClearUndone() {
-            matchState.undone_history = [];
-            render();
-        }
-
-        function actionPad(n) { 
-            matchState.last_undone_val = ""; 
-            matchState.input += n; 
-            render(); 
-        }
-        function actionDel() { 
-            matchState.input = matchState.input.slice(0, -1); 
-            render(); 
-        }
-        
-        function actionThrowPts(pts) {
-            pts = parseInt(pts);
-            let label = pts === 0 ? "No Score" : String(pts);
-            saveMatchState(label);
-            matchState.undone_history = [];
-            matchState.last_undone_val = ""; 
-            
-            matchState.input = "";
-            let active = matchState.turn === 0 ? 1 : 2;
-            let curr = parseInt(active === 1 ? matchState.s1 : matchState.s2);
-            let rem = curr - pts;
-            
-            if (rem < 0 || rem === 1) {
-                if(active === 1) { matchState.d1_leg += 3; matchState.d1_tot += 3; }
-                else { matchState.d2_leg += 3; matchState.d2_tot += 3; }
-                matchState.turn = matchState.turn === 0 ? 1 : 0;
-            } else if (rem === 0) {
-                matchState.mode = 'check';
-                matchState.check_score = pts;
-            } else {
-                if(active === 1) { 
-                    matchState.s1 = rem; matchState.pts1 += pts; matchState.d1_leg += 3; matchState.d1_tot += 3; 
-                    if(pts === 180) matchState.e180_1++;
-                } else { 
-                    matchState.s2 = rem; matchState.pts2 += pts; matchState.d2_leg += 3; matchState.d2_tot += 3; 
-                    if(pts === 180) matchState.e180_2++;
-                }
-                matchState.turn = matchState.turn === 0 ? 1 : 0;
-            }
-            render();
-        }
-        
-        function actionEnter() {
-            if(!matchState.input) return;
-            let val = parseInt(matchState.input);
-            if(val <= 180) actionThrowPts(val);
-            else showError("🚨 Maximal 180 Punkte pro Aufnahme!");
-        }
-        
-        function actionRest() {
-            if(!matchState.input) return;
-            let val = parseInt(matchState.input);
-            let curr = parseInt(matchState.turn === 0 ? matchState.s1 : matchState.s2);
-            if(val <= curr) {
-                let thrown = curr - val;
-                if(thrown <= 180) actionThrowPts(thrown);
-                else showError("🚨 Fehler: Das würde bedeuten, du hast über 180 geworfen!");
-            } else {
-                showError("🚨 Rest kann nicht höher sein als deine Punkte!");
-            }
-        }
-        
-        function actionCheck() {
-            let activeP = matchState.turn === 0 ? 1 : 2;
-            let currScore = parseInt(activeP === 1 ? matchState.s1 : matchState.s2);
-            let bogies = [169, 168, 166, 165, 163, 162, 159];
-            
-            if (currScore <= 170 && bogies.indexOf(currScore) === -1) {
-                actionThrowPts(currScore);
-            } else {
-                showError("🚨 Fehler: " + currScore + " kann nicht gecheckt werden (Bogey oder >170)!");
-            }
-        }
-
-        function actionDoCheck(darts) {
-            saveMatchState("Check in " + darts);
-            matchState.undone_history = [];
-            matchState.last_undone_val = "";
-            
-            let pts = parseInt(matchState.check_score);
-            let active = matchState.turn === 0 ? 1 : 2;
-            if(active === 1) {
-                matchState.pts1 += pts; matchState.d1_leg += darts; matchState.d1_tot += darts; matchState.l1++; matchState.s1 = 0;
-                if(pts === 180) matchState.e180_1++;
-            } else {
-                matchState.pts2 += pts; matchState.d2_leg += darts; matchState.d2_tot += darts; matchState.l2++; matchState.s2 = 0;
-                if(pts === 180) matchState.e180_2++;
-            }
-            
-            if(matchState.l1 === REQ_WIN || matchState.l2 === REQ_WIN) {
-                matchState.mode = 'over';
-            } else {
-                matchState.s1 = 501; matchState.s2 = 501;
-                matchState.d1_leg = 0; matchState.d2_leg = 0;
-                matchState.start = matchState.start === 0 ? 1 : 0;
-                matchState.turn = matchState.start;
-                matchState.mode = 'play';
-            }
-            render();
-        }
-
-        function sendToStreamlit(payload) {
-            if(!navigator.onLine && payload.action === 'save') {
-                alert("⚠️ DU BIST OFFLINE! ⚠️\\nBitte schalte dein WLAN ein und warte 5 Sekunden. Klicke dann nochmal auf Speichern!");
-                return;
-            }
-            
-            payload._timestamp = Date.now();
-            
-            const doc = window.parent.document;
-            const inputs = doc.querySelectorAll('input[aria-label="payload_live"]');
-            
-            if(inputs.length > 0) {
-                let target = inputs[inputs.length - 1];
-                
-                let saveBtn = document.getElementById('save-btn');
-                let cancelBtn = document.getElementById('cancel-btn');
-                if(saveBtn && payload.action === 'save') {
-                    saveBtn.innerText = "⏳ Speichere...";
-                    saveBtn.style.opacity = "0.7";
-                } else if(cancelBtn && payload.action === 'cancel') {
-                    cancelBtn.innerText = "⏳ Breche ab...";
-                    cancelBtn.style.opacity = "0.7";
-                }
-                
-                let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                nativeInputValueSetter.call(target, JSON.stringify(payload));
-                
-                target.dispatchEvent(new Event("input", { bubbles: true }));
-                target.dispatchEvent(new Event("change", { bubbles: true }));
-                target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
-                target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, keyCode: 13, key: "Enter" }));
-                
-                setTimeout(() => {
-                    if(saveBtn && payload.action === 'save') {
-                        saveBtn.innerText = "💾 Online Speichern & Beenden";
-                        saveBtn.style.opacity = "1";
-                    }
-                }, 3000);
-                
-            } else {
-                alert("Fehler: Verbindung zur Datenbank verloren. Bitte drücke F5.");
-            }
-        }
-
-        function actionSaveMatch() {
-            sendToStreamlit({
-                action: 'save',
-                l1: matchState.l1, l2: matchState.l2,
-                e180_1: matchState.e180_1, e180_2: matchState.e180_2,
-                avg1: matchState.d1_tot > 0 ? (matchState.pts1 / matchState.d1_tot * 3) : 0,
-                avg2: matchState.d2_tot > 0 ? (matchState.pts2 / matchState.d2_tot * 3) : 0
-            });
-            clearLocal();
-        }
-
-        function actionCancelMatch() {
-            if(!navigator.onLine) {
-                if(!confirm("⚠️ Du bist offline! Wenn du jetzt abbrichst, geht das Match unwiderruflich verloren. Wirklich abbrechen?")) return;
-            }
-            sendToStreamlit({action: 'cancel'});
-            clearLocal();
-        }
-
-        render();
-        </script>
-    </body>
-    </html>
-    """
-    return html_code.replace("__P1__", p1).replace("__P2__", p2).replace("__SESSION_ID__", session_id).replace("__BOARD_NAME__", board_name).replace("__ROUND_NUM__", str(round_num)).replace("__REQ_WIN__", str(req_win))
-
-# ==========================================
-# [BLOCK_4b_2] Dialoge: Live Scoring (Streamlit Integration)
-# ==========================================
-import json
-import streamlit.components.v1 as components
-
-@st.dialog("🎯 Live Scoring Board (Offline-Ready)", width="large")
-def open_live_scoring_dialog(board_name, session_id, round_num, p1, p2, req_win):
-    ls_key = f"live_state_{session_id}_{board_name}_{round_num}"
     
-    # CSS Hack um das unschöne JSON-Feld komplett unsichtbar zu machen
-    st.markdown('<style>div[data-testid="stTextInput"] { display: none !important; }</style>', unsafe_allow_html=True)
-    
-    # --- ECHTZEIT CLOUD-CHECK (Verhindert gleichzeitiges Einloggen zu 100%) ---
-    if not st.session_state.get(f"my_lock_{ls_key}"):
-        with st.spinner("Prüfe Live-Sperre in der Cloud..."):
-            fresh_data = load_data()
-            if fresh_data:
-                fresh_sess = next((s for s in fresh_data if s["id"] == session_id), None)
-                if fresh_sess:
-                    fresh_res = fresh_sess.get("results", {})
-                    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
-                    for k, v in fresh_res.items():
-                        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
-                        if k_clean == target_clean:
-                            if v.get("is_live_locked"):
-                                st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-                                st.info("Ein anderes Tablet war schneller. Bitte schließe dieses Fenster und lade die Seite neu.")
-                                if st.button("Schließen", use_container_width=True):
-                                    st.rerun()
-                                return
-
-    # --- LOKALE GERÄTE-SPERRE ---
-    sess = next((s for s in st.session_state.sessions_list if s["id"] == session_id), None)
-    if not sess: return
-    
-    res = sess.setdefault("results", {})
-    target_clean = f"{round_num},{board_name}".replace(" ", "").replace('"', '').replace("'", "")
-    
-    m_info = None
-    actual_key = (round_num, board_name)
-    
-    for k, v in res.items():
-        k_clean = str(k).replace(" ", "").replace('"', '').replace("'", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")
-        if k_clean == target_clean:
-            m_info = v
-            actual_key = k
-            break
-            
-    if m_info is None:
-        m_info = {}
-        res[actual_key] = m_info
-        
-    if m_info.get("is_live_locked") and not st.session_state.get(f"my_lock_{ls_key}"):
-        st.error("🔒 Dieses Board wird bereits an einem anderen Gerät bespielt!")
-        if st.button("Sperre erzwingen / aufheben (Admin)", type="primary"):
-            m_info["is_live_locked"] = False
-            smart_sync_and_save(st.session_state.sessions_list)
-            st.rerun()
-        return
-
-    if not st.session_state.get(f"my_lock_{ls_key}"):
-        m_info["is_live_locked"] = True
-        m_info["s1"] = m_info.get("s1", p1)
-        m_info["s2"] = m_info.get("s2", p2)
-        st.session_state[f"my_lock_{ls_key}"] = True
-        smart_sync_and_save(st.session_state.sessions_list)
-        
-    payload_key = f"payload_{ls_key}"
-    payload_json = st.text_input("payload_live", key=payload_key, label_visibility="hidden")
-    
-    if payload_json:
-        try:
-            data = json.loads(payload_json)
-            if data.get("action") == "save":
-                winner = p1 if data["l1"] > data["l2"] else p2
-                loser = p2 if data["l1"] > data["l2"] else p1
-                m_info.update({
-                    "s1": p1, "s2": p2,
-                    "ergebnis": f"{data['l1']}:{data['l2']}",
-                    "winner": winner, "loser": loser,
-                    "180_s1": data["e180_1"], "180_s2": data["e180_2"],
-                    "avg_s1": float(data["avg1"]), "avg_s2": float(data["avg2"]),
-                    "is_live_locked": False,
-                    "played": True
-                })
-                if f"my_lock_{ls_key}" in st.session_state:
-                    del st.session_state[f"my_lock_{ls_key}"]
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
-            elif data.get("action") == "cancel":
-                m_info["is_live_locked"] = False
-                if not m_info.get("played", False):
-                    if actual_key in res:
-                        del res[actual_key]
-                
-                if f"my_lock_{ls_key}" in st.session_state:
-                    del st.session_state[f"my_lock_{ls_key}"]
-                smart_sync_and_save(st.session_state.sessions_list)
-                st.rerun()
-        except Exception as e:
-            st.error(f"Fehler bei der Datenübertragung: {e}")
-
-    safe_p1 = p1.replace('"', '\\"').replace("'", "\\'")
-    safe_p2 = p2.replace('"', '\\"').replace("'", "\\'")
-    safe_bname = board_name.replace('"', '\\"').replace("'", "\\'")
-
-    html_content = get_live_scoring_html(safe_p1, safe_p2, session_id, safe_bname, round_num, req_win)
-    components.html(html_content, height=810, scrolling=False)
-
 # ==========================================
 # [BLOCK_5] Dialoge: Liga & Wettkampf
 # ==========================================
