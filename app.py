@@ -18,14 +18,14 @@
         &#127968; Übersicht
       </button>
     </nav>
-    
+
     <main class="content">
       <div class="update-banner">
-        <h2>🚀 Es gibt eine neue Version der App!</h2>
+        <h2>&#128640; Es gibt eine neue Version der App!</h2>
         <p>Diese alte Version wird nicht mehr aktiv verwendet. Bitte wechsle auf unsere neue, verbesserte Plattform.</p>
         <br>
         <a href="https://steelers-app-94e32.web.app/" target="_blank" class="btn-goto-new">
-          🔗 Zur neuen Steelers-App wechseln
+          &#128279; Zur neuen Steelers-App wechseln
         </a>
       </div>
     </main>
