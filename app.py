@@ -15,10 +15,10 @@
     <!-- Nur noch ein einziger Reiter: Übersicht -->
     <nav class="tabs">
       <button class="tab-btn active">
-        🏠 Übersicht
+        &#127968; Übersicht
       </button>
     </nav>
-
+    
     <main class="content">
       <div class="update-banner">
         <h2>🚀 Es gibt eine neue Version der App!</h2>
