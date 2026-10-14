@@ -1,12 +1,18 @@
-<template>
-  <div class="app-container">
+import streamlit as st
+
+# Streamlit-Konfiguration für die volle Breite
+st.set_page_config(page_title="Wehringer Steelers - Team", layout="wide")
+
+# HTML und CSS sauber in einen Python-String verpackt
+html_code = """
+<div class="app-container">
 
     <!-- Stylischer Header -->
     <header class="header-hero">
       <div class="hero-content">
-        <img :src="'/header.png'" alt="Steelers Logo" class="header-logo" />
+        <img src="/header.png" alt="Steelers Logo" class="header-logo" />
         <div class="logo-text-group">
-         <h1>Wehringer Steelers - Team</h1>
+          <h1>Wehringer Steelers - Team</h1>
           <p class="subtitle">Alles rund um die Mannschaft</p>
         </div>
       </div>
@@ -29,12 +35,7 @@
         </a>
       </div>
     </main>
-  </div>
-</template>
-
-<script setup>
-// Keine Logik, Firebase oder Authentifizierung mehr nötig.
-</script>
+</div>
 
 <style>
 /* 1. Globales Layout */
@@ -93,7 +94,7 @@
 .logo-text-group h1 { 
   margin: 0; 
   color: #fff; 
-  font-size: clamp(1.4rem, 2.8vw, 2.1rem); 
+  font-size: 2.1rem; 
   font-weight: 900;
   letter-spacing: 0.8px;
   text-shadow: 2px 2px 6px rgba(0,0,0,0.8);
@@ -104,18 +105,8 @@
   margin: 4px 0 0 0; 
   color: #4CAF50; 
   font-weight: bold; 
-  font-size: clamp(0.85rem, 1.5vw, 1rem); 
+  font-size: 1rem; 
   text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
-}
-
-/* Basis-Body */
-body { 
-  background-color: #0e1117; 
-  color: white; 
-  font-family: sans-serif; 
-  margin: 0; 
-  padding: 0; 
-  overflow-x: hidden;
 }
 
 /* Tabs */
@@ -188,13 +179,7 @@ body {
   background: #388e3c;
   transform: translateY(-2px);
 }
-
-@media (max-width: 600px) { 
-  .app-container { padding: 5px; }
-  .header-hero { padding: 10px 12px; min-height: 80px; }
-  .header-logo { height: 45px; }
-  .logo-text-group h1 { font-size: 1.1rem; white-space: normal; }
-  .subtitle { font-size: 0.75rem; }
-  .content { padding: 15px; }
-}
 </style>
+"""
+
+st.markdown(html_code, unsafe_allow_html=True)
