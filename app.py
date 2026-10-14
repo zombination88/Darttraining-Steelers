@@ -6,7 +6,7 @@
       <div class="hero-content">
         <img :src="'/header.png'" alt="Steelers Logo" class="header-logo" />
         <div class="logo-text-group">
-          <h1>Wehringer Steelers — Team</h1>
+         <h1>Wehringer Steelers - Team</h1>
           <p class="subtitle">Alles rund um die Mannschaft</p>
         </div>
       </div>
